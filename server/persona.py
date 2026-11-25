@@ -1,0 +1,280 @@
+"""One system prompt for every model, so Theta answers the same whichever
+model is behind it, plus a light post-pass (`clean`) that strips model tells.
+
+    system_prompt(bot="theta", now=None, extra=None, tools=True) -> str   (stable, cacheable)
+    build(history, text, images=None, extra=None, bot="theta", now=None, context=None,
+          summary=None, tools=True) -> messages for models.stream / models.call
+    turn_context(now=None, extra=None, context=None) -> str   the volatile block for the latest turn
+    clean(text) -> str
+    Cleaner: the same post-pass for a stream (holds back only the first few words)
+    ack(tier, text, live, seed) -> str | None
+
+Prompt order (docs/HARNESS.md P5: providers cache by prefix, so stable first):
+  1. system: SOUL, STYLE, EXAMPLES, TOOL_GUIDE, the memory block (changes rarely)
+  2. system: the running summary of turns older than the last HISTORY (changes every 10+ turns)
+  3. the recent turns, as stored
+  4. the user turn, with the volatile context (date and time, search results,
+     Vantage) appended in a marked block. Nothing per-turn goes in the system prompt.
+"""
+
+import datetime
+import os
+import re
+
+from . import db, memory
+
+HISTORY = 20  # messages of history sent with each turn (memory.KEEP matches)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_TZ = "America/Denver"
+
+STYLE = """How to answer (same rules whichever model you are):
+- Short first: lead with the answer in a sentence or two. Details only if they help or are asked for.
+- You are Theta. Never say "As an AI" or "as a language model", and never name the model or provider you run on.
+- No filler openers ("Certainly!", "Great question!", "Of course!", "Sure!"). No sign-off offers ("Let me know if...").
+- Plain words, like texting a friend who's on their side. Light markdown only when it helps (a short list, code).
+- Never invent facts, numbers, links or memories. If you don't know, say so.
+- The user's latest message may end with a "Context for this turn" block from the app (time, live results, \
+Vantage). It isn't from the user: use it, don't recite it, never mention the block itself."""
+
+EXAMPLES = """Example exchanges (the voice, not a template; vary it):
+User: hey
+Theta: Hey. What's up?
+
+User: should I pay off the card or put the bonus in savings?
+Theta: Pay off the card. At ~24% interest nothing in savings beats it. Keep a month of bills aside, then throw the rest at the balance.
+
+User: ugh, today was a lot
+Theta: Sounds like it. Want to vent, or want me to just take something off your plate?
+
+User: what's the weather doing
+Theta: I can't check live right now, so I don't know today's forecast. Your weather app will have it."""
+
+TOOL_GUIDE = """Tools: some turns come with tools attached; most don't. Call one only through the real tool \
+interface. Never write a tool call, JSON or <tool_call> tags into your reply: if no tool fits or none is \
+attached, answer in plain words and say what you can't do yet.
+- Use a tool only when it changes the answer: live facts, something worth remembering, a promise for later, \
+an old chat to look up.
+- Say you did something only after a tool really did it. A "later" promise means a real reminder job, not just words.
+- Save durable facts about them to memory (short, one fact each). Don't store passing chat.
+- Anything that sends or spends (email, messages, purchases) waits for their Approve tap. Never say it's sent before that.
+- If a tool fails, say so plainly and offer the next best thing."""
+
+CONTEXT_HEAD = "Context for this turn (from the app, not the user):"
+_CONTEXT_SEP = "\n\n---\n"
+
+_FALLBACK_SOUL = "You're Theta: the user's own assistant. Warm, dry, a little cheeky, straight with them, short first."
+
+
+def soul():
+    path = os.environ.get("PROTOS_SOUL") or os.path.join(ROOT, "persona", "SOUL.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read().strip()
+    except OSError:
+        return _FALLBACK_SOUL
+    # drop the trailing "(Edit this file ...)" maintainer note
+    return re.sub(r"\n\(Edit this file[^\n]*\)\s*$", "", text).strip() or _FALLBACK_SOUL
+
+
+def _setting(key, default=None):
+    try:
+        v = db.get_setting(key)
+        if v is None:
+            v = (db.get_setting("settings") or {}).get(key)
+        return default if v is None else v
+    except Exception:
+        return default
+
+
+def tz_name():
+    return str(_setting("tz") or os.environ.get("PROTOS_TZ") or DEFAULT_TZ)
+
+
+def local_now(now=None):
+    """Now (or unix time `now`) in the user's tz setting."""
+    ts = now if now is not None else datetime.datetime.now().timestamp()
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(tz_name())
+    except Exception:
+        tz = datetime.timezone.utc
+    return datetime.datetime.fromtimestamp(ts, tz)
+
+
+def memory_notes(limit=8):
+    """The v0 notes (db setting "memory", $PROTOS_DATA/memory.md), newest last.
+    Kept for old callers; the prompt now uses memory.block()."""
+    return memory._legacy_notes()[-limit:]
+
+
+def system_prompt(bot="theta", now=None, extra=None, tools=True):
+    """The stable system prompt: SOUL, STYLE, EXAMPLES, TOOL_GUIDE, the memory block.
+    `now` is accepted for old callers but unused: the time goes in the latest
+    user turn (turn_context), never here, so the prefix stays cacheable.
+    `extra` is appended last; pass only text that is stable across turns."""
+    parts = [soul(), STYLE, EXAMPLES]
+    if tools:
+        parts.append(TOOL_GUIDE)
+    mem = memory.block()
+    if mem:
+        parts.append("What you remember about them (use naturally, don't recite):\n" + mem)
+    if extra:
+        parts.append(str(extra))
+    return "\n\n".join(parts)
+
+
+def when(now=None):
+    """e.g. 'Wednesday 25 November 2026, 14:03 MST (America/Denver)'."""
+    t = local_now(now)
+    zone = t.tzname() or ""
+    return t.strftime("%A %d %B %Y, %H:%M") + (f" {zone}" if zone else "") + f" ({tz_name()})"
+
+
+def _text(x):
+    if isinstance(x, (list, tuple)):
+        x = "\n\n".join(str(i).strip() for i in x if i and str(i).strip())
+    return str(x).strip() if x else ""
+
+
+def turn_context(now=None, extra=None, context=None):
+    """The volatile block for the latest user turn: the time, then `context`
+    (e.g. Vantage), then `extra` (e.g. search results). Strings or lists of strings."""
+    parts = [f"{CONTEXT_HEAD}\nNow: {when(now)}. Give times in this time zone."]
+    parts += [t for t in (_text(context), _text(extra)) if t]
+    return "\n\n".join(parts)
+
+
+def summary_note(text):
+    return ("Summary of your earlier conversation with them (older turns, folded; the exact words "
+            "can be found by searching past messages):\n" + text.strip())
+
+
+def build(history, text, images=None, extra=None, bot="theta", now=None, context=None, summary=None, tools=True):
+    """Messages for models.stream / models.call, in cache order:
+      1. {"role": "system"}: system_prompt (stable)
+      2. {"role": "system"}: the running summary, if there is one (memory.summary(bot),
+         or pass `summary`; "" leaves it out)
+      3. the last HISTORY stored messages (acks dropped)
+      4. this user turn, with turn_context(now, extra, context) appended after a "---" line.
+    `extra` (search results) and `context` (Vantage) are per-turn, so they only
+    ever go in the last message."""
+    msgs = [{"role": "system", "content": system_prompt(bot, tools=tools)}]
+    summ = memory.summary(bot) if summary is None else summary
+    if summ and summ.strip():
+        msgs.append({"role": "system", "content": summary_note(summ)})
+    for m in list(history or ())[-HISTORY:]:
+        if (m.get("meta") or {}).get("ack"):
+            continue  # acknowledgements are UI, not conversation
+        if m.get("role") in ("user", "assistant") and (m.get("text") or "").strip():
+            msgs.append({"role": m["role"], "content": m["text"]})
+    words = text or ("(image)" if images else "")
+    turn = {"role": "user", "content": words + _CONTEXT_SEP + turn_context(now, extra, context)}
+    if images:
+        turn["images"] = list(images)
+    msgs.append(turn)
+    return msgs
+
+
+def said(content):
+    """The user's own words from a built user turn (the context block dropped)."""
+    if not isinstance(content, str):
+        return content
+    return content.split(_CONTEXT_SEP + CONTEXT_HEAD, 1)[0]
+
+
+# ---- post-pass
+
+_LEAD = re.compile(
+    r"^\s*(?:(?:certainly|absolutely|of course|sure thing|sure|great question|good question|excellent question"
+    r"|i'd be (?:happy|glad) to help(?: with that)?|i'm happy to help|happy to help|what a great question)"
+    r"[!.,:]+\s*)+", re.I)
+_AI = re.compile(
+    r"(?:^|(?<=[.!?]\s))\s*as an ai(?: language model| assistant| model)?[^,.!?]*[,.]?\s*"
+    r"|(?:^|(?<=[.!?]\s))\s*as a (?:large )?language model[^,.!?]*[,.]?\s*"
+    r"|\bI(?:'m| am) (?:just )?an ai(?: language model| assistant)?(?: (?:developed|created|made|trained) by [^,.!?]+)?[,.]?\s*",
+    re.I)
+_TAIL = re.compile(r"\s*(?:let me know if (?:you (?:have|need)|there'?s) [^.!?\n]*[.!?]|"
+                   r"i hope (?:this|that) helps[.!?]?|feel free to ask[^.!?\n]*[.!?])\s*$", re.I)
+
+
+def _cap(s):
+    return s[:1].upper() + s[1:] if s and s[0].islower() else s
+
+
+def clean(text):
+    """Strip model tells: filler openers, "As an AI language model", sign-offs."""
+    if not text:
+        return text or ""
+    out = _LEAD.sub("", text, count=1)
+    out = _AI.sub("", out)
+    out = _TAIL.sub("", out)
+    out = _cap(out.lstrip())
+    return out.strip() or text.strip()
+
+
+class Cleaner:
+    """Streams through clean(): holds back the opening (until ~60 chars or a
+    sentence ends) so a filler opener never reaches the screen, then passes
+    chunks straight through. The final stored text is clean(full)."""
+
+    HOLD = 60
+
+    def __init__(self):
+        self.buf = ""
+        self.open = False
+        self.full = ""
+
+    def feed(self, chunk):
+        self.full += chunk
+        if self.open:
+            return chunk
+        self.buf += chunk
+        if len(self.buf) < self.HOLD and not re.search(r"[.!?]\s+\S{3,}", self.buf):
+            return ""
+        self.open = True
+        out = _cap(_AI.sub("", _LEAD.sub("", self.buf, count=1)).lstrip())
+        self.buf = ""
+        return out
+
+    def finish(self):
+        if self.open:
+            return ""
+        self.open = True
+        out = clean(self.buf)
+        self.buf = ""
+        return out
+
+    def text(self):
+        return clean(self.full)
+
+
+# ---- ack-then-result: a short acknowledgement before slow work (no model call)
+
+ACK_TIERS = ("think", "search")
+_ACKS = {
+    "think": ["On it. Let me think this one through.", "Give me a moment to work this out properly.",
+              "Good one. Thinking it through now."],
+    "search": ["On it. Checking live sources now.", "One sec, looking that up.", "On it. Pulling the latest now."],
+    "search_offline": ["On it. I can't check live right now, so this is from what I know.",],
+}
+_ACK_TOPICS = [
+    (re.compile(r"\b(price|prices|cost|stock|shares|bitcoin|btc|crypto|exchange rate|market)\b", re.I),
+     "On it. Checking live prices now."),
+    (re.compile(r"\b(weather|forecast|rain|snow|temperature)\b", re.I), "On it. Checking the forecast now."),
+    (re.compile(r"\b(news|headlines?|breaking|happened)\b", re.I), "On it. Checking the latest news now."),
+    (re.compile(r"\b(score|game|match|who won)\b", re.I), "On it. Checking the scores now."),
+]
+
+
+def ack(tier, text="", live=True, seed=0):
+    """The acknowledgement for a slow tier, or None for tiers that answer fast."""
+    if tier not in ACK_TIERS:
+        return None
+    if tier == "search":
+        if not live:
+            return _ACKS["search_offline"][0]
+        for rx, line in _ACK_TOPICS:
+            if rx.search(text or ""):
+                return line
+    opts = _ACKS[tier]
+    return opts[int(seed or 0) % len(opts)]

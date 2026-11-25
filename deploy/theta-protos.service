@@ -1,0 +1,30 @@
+# theta-protos: Theta's server for the phone app (python3 -m server). Install: see deploy/README.md, then
+#   sudo cp deploy/theta-protos.service /etc/systemd/system/ && sudo systemctl enable --now theta-protos
+# Keys go in /etc/theta-protos.env (PROTOS_KEY=..., DEEPSEEK_API_KEY=..., ...), readable only by root and theta-protos.
+# The proactive tick (Theta texting first, every 5 minutes) runs inside this service; nothing else to schedule.
+[Unit]
+Description=theta-protos (Theta, the assistant you text)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=theta-protos
+Group=theta-protos
+WorkingDirectory=/opt/theta-protos
+EnvironmentFile=/etc/theta-protos.env
+# The venv (with pywebpush for phone notifications) comes first on PATH when it exists; plain python3 otherwise.
+Environment=PROTOS_DATA=/var/lib/theta-protos HOST=127.0.0.1 PORT=8780 PYTHONUNBUFFERED=1
+Environment=PATH=/opt/theta-protos/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env python3 -m server
+Restart=always
+RestartSec=2
+StateDirectory=theta-protos
+# It may write its own data (/var/lib/theta-protos), nothing else on the disk.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/theta-protos
+
+[Install]
+WantedBy=multi-user.target

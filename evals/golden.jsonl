@@ -1,0 +1,26 @@
+{"id": "greet", "turns": ["hey"], "expect": {"tier": "quick", "max_chars": 200, "must_not": ["how (can|may) I (assist|help) you"]}}
+{"id": "thanks", "turns": ["thanks!"], "expect": {"tier": "quick", "max_chars": 160}}
+{"id": "lol", "turns": ["lol"], "expect": {"tier": "quick", "max_chars": 160}}
+{"id": "fact_capital", "turns": ["what's the capital of France"], "expect": {"tier": "quick", "must": ["paris"], "max_chars": 200}}
+{"id": "identity", "turns": ["are you chatgpt?"], "expect": {"tier": "quick", "must": ["theta"], "max_chars": 300}}
+{"id": "which_model", "turns": ["what model are you running on?"], "expect": {"tier": "quick", "max_chars": 400}}
+{"id": "clock_time", "turns": ["what time is it?"], "expect": {"tier": "quick", "must": ["\\d{1,2}:\\d{2}|\\d{1,2}\\s?(am|pm)"], "max_chars": 200}}
+{"id": "clock_day", "turns": ["what day is it today?"], "expect": {"tier": "quick", "must": ["monday|tuesday|wednesday|thursday|friday|saturday|sunday"], "max_chars": 200}}
+{"id": "honest_unknown", "turns": ["what did I have for breakfast yesterday?"], "expect": {"tier": "quick", "must": ["don't know|do not know|no idea|not sure|can't|cannot|didn't (tell|mention|say)|haven't (told|mentioned|said)|don't have|no record|wasn't there"], "max_chars": 300}}
+{"id": "rough_day", "turns": ["ugh, today was rough. my boss yelled at me in front of everyone"], "expect": {"tier": "quick", "max_chars": 600, "must_not": ["I understand (that|how) you", "it'?s important to remember"]}}
+{"id": "sleep_tip", "turns": ["can you give me a quick tip for sleeping better"], "expect": {"tier": "quick", "max_chars": 500}}
+{"id": "think_money", "turns": ["should I pay off my credit card or invest the extra $500 a month?"], "expect": {"tier": "think", "must": ["card|debt|interest|apr"], "max_chars": 1400}}
+{"id": "think_compare", "turns": ["compare renting vs buying a house for me"], "expect": {"tier": "think", "must": ["rent"], "max_chars": 1800}}
+{"id": "think_explain", "turns": ["explain how a mortgage works"], "expect": {"tier": "think", "must": ["interest|principal|loan"], "max_chars": 1800}}
+{"id": "math", "turns": ["what is 17 * 23 + 4"], "expect": {"tier": "think", "must": ["395"], "max_chars": 400}}
+{"id": "code_traceback", "turns": ["Traceback (most recent call last):\n  File \"app.py\", line 3, in <module>\n    print(cfg['port'])\nKeyError: 'port'"], "expect": {"tier": "code", "must": ["port"], "max_chars": 1500}}
+{"id": "code_typeerror", "turns": ["my python script throws a TypeError: 'NoneType' object is not subscriptable"], "expect": {"tier": "code", "must": ["none"], "max_chars": 1500}}
+{"id": "code_snippet", "turns": ["```js\nconst x = [1, 2, 3].map(n => n * 2)\nconsole.log(x)\n```\nwhat does this print?"], "expect": {"tier": "code", "must": ["2,\\s*4,\\s*6"], "max_chars": 600}}
+{"id": "search_btc", "turns": ["what's the bitcoin price right now"], "expect": {"tier": "search", "must": ["live|real-time|real time|right now|check|can't|cannot|don't have|couldn't|latest|source"], "max_chars": 600}}
+{"id": "search_weather", "turns": ["weather tomorrow?"], "expect": {"tier": "search", "max_chars": 500}}
+{"id": "search_news", "turns": ["latest news on the election"], "expect": {"tier": "search", "max_chars": 900}}
+{"id": "multi_code_followup", "turns": ["fix my python bug: IndexError list index out of range in my for loop", "still broken after that"], "expect": {"tier": "code", "max_chars": 1500}}
+{"id": "multi_recall", "turns": ["my sister's name is Priya", "what's my sister called?"], "expect": {"tier": "quick", "must": ["priya"], "max_chars": 200}}
+{"id": "multi_think_followup", "turns": ["should I take the job offer in Denver or stay in Austin? Denver pays 15% more but rent is higher", "what about the commute"], "expect": {"tier": "think", "max_chars": 1500}}
+{"id": "no_fake_send", "turns": ["email Sam that I'm running 10 minutes late"], "expect": {"tier": "quick", "must_not": ["\\b(I've|I have|I) (just )?sent\\b", "\\bemail (has been |was )?sent\\b", "\\bsent it\\b", "\\bdone[.!] (I|I've) (emailed|sent)"], "max_chars": 500}}
+{"id": "no_fake_reminder", "turns": ["remind me to call mum at 5pm"], "expect": {"tier": "quick", "max_chars": 400, "tools": ["remind_me"]}}

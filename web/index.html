@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="theme-color" content="#141414">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Theta">
+<meta name="description" content="Theta, your own assistant.">
+<title>Theta</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="18" cy="12" r="1.7" fill="currentColor"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6"/><path d="M16.75 13.5v6.5M13.5 16.75H20" stroke-linecap="round"/></g></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/></g></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21"/></g></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></g></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-person" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.4-3.6 4.2-5.4 7.5-5.4s6.1 1.8 7.5 5.4"/></g></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l4.5-4.5 3.5 3.5 2.5-2.5L20 18"/></g></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8.5h3.2L9 6h6l1.8 2.5H20v10H4z"/><circle cx="12" cy="13.2" r="3.2"/></g></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M7 3.5h7l4 4V20.5H7z"/><path d="M14 3.5v4h4"/></g></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 21s-6.5-6.1-6.5-11a6.5 6.5 0 0113 0c0 4.9-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></g></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 004 0"/></g></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<div id="app">
+  <!-- splash: Theta's dots converge into the globe -->
+  <section id="splash" class="view" aria-label="Theta is starting">
+    <canvas id="splash-orb" aria-hidden="true"></canvas>
+  </section>
+
+  <!-- login: only if the server says 401 -->
+  <section id="login" class="view" hidden aria-labelledby="login-title">
+    <div class="login-box">
+      <canvas class="login-orb" id="login-orb" aria-hidden="true"></canvas>
+      <h1 id="login-title">Theta</h1>
+      <p class="muted">Enter your key to talk to Theta.</p>
+      <form id="login-form" autocomplete="on">
+        <label class="sr" for="login-key">Key</label>
+        <input id="login-key" name="password" type="password" class="pill-input" placeholder="Key" autocomplete="current-password" required>
+        <button type="submit" class="btn-white">Sign in</button>
+        <p class="error" id="login-err" role="alert"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- home -->
+  <section id="home" class="view" hidden aria-label="Home">
+    <header class="topbar">
+      <button class="round" id="home-me" aria-label="Settings"><svg><use href="#i-person"/></svg></button>
+      <button class="round" id="home-new" aria-label="New message"><svg><use href="#i-plus"/></svg></button>
+    </header>
+    <div class="home-mid">
+      <button class="home-bot" id="home-bot" aria-label="Open chat with Theta">
+        <span class="home-orb-wrap"><canvas id="home-orb" aria-hidden="true"></canvas><span class="badge" id="home-badge" hidden></span></span>
+        <span class="home-name">Theta</span>
+        <span class="home-sub" id="home-sub"></span>
+      </button>
+    </div>
+    <div class="home-results" id="home-results" hidden role="list" aria-label="Search results"></div>
+    <div class="home-bottom">
+      <div class="banner" id="home-banner" hidden></div>
+      <div class="home-bar">
+        <button class="round lg" id="home-apps" aria-label="Connect apps"><svg><use href="#i-grid"/></svg></button>
+        <label class="search-pill">
+          <svg><use href="#i-search"/></svg>
+          <input id="home-search" type="search" placeholder="Search" enterkeyhint="search" aria-label="Search your chat with Theta" autocomplete="off">
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <!-- chat -->
+  <section id="chat" class="view" hidden aria-label="Chat with Theta">
+    <div class="scroller" id="scroller" role="log" aria-live="polite" aria-relevant="additions">
+      <div class="earlier" id="earlier"></div>
+      <div class="thread" id="thread"></div>
+    </div>
+    <header class="chat-head">
+      <button class="round" id="chat-back" aria-label="Back"><svg><use href="#i-back"/></svg></button>
+      <button class="name-pill" id="chat-name" aria-label="Theta">
+        <canvas id="head-orb" aria-hidden="true"></canvas><span>Theta</span>
+      </button>
+      <button class="round" id="chat-more" aria-label="More" aria-haspopup="menu"><svg><use href="#i-more"/></svg></button>
+    </header>
+    <button class="jump" id="jump" hidden aria-label="Jump to the newest message"><svg><use href="#i-down"/></svg><span>New</span></button>
+    <footer class="composer-wrap">
+      <div class="dock" id="dock" aria-live="polite"></div>
+      <div class="attach-chip" id="attach-chip" hidden></div>
+      <form class="composer" id="composer">
+        <button type="button" class="c-btn plus" id="c-plus" aria-label="Attach"><svg><use href="#i-plus"/></svg></button>
+        <textarea id="c-text" rows="1" placeholder="Ask Theta" aria-label="Message Theta" enterkeyhint="send"></textarea>
+        <button type="button" class="c-btn mic" id="c-mic" aria-label="Dictate"><svg><use href="#i-mic"/></svg></button>
+        <button type="submit" class="c-btn send" id="c-send" aria-label="Voice mode"><svg class="ic-wave"><use href="#i-wave"/></svg><svg class="ic-up"><use href="#i-up"/></svg></button>
+      </form>
+    </footer>
+  </section>
+
+  <!-- Connect apps (full-screen sheet) -->
+  <section id="connect" class="sheet full" hidden aria-labelledby="connect-title" role="dialog" aria-modal="true">
+    <header class="sheet-head">
+      <button class="round" data-close aria-label="Close"><svg><use href="#i-close"/></svg></button>
+      <h2 id="connect-title">Connect apps</h2>
+      <span class="count-pill" id="connect-count">0 connected</span>
+    </header>
+    <div class="chips" id="connect-chips" role="tablist" aria-label="Filter"></div>
+    <div class="sheet-body" id="connect-list"></div>
+    <div class="sheet-foot">
+      <label class="search-pill"><svg><use href="#i-search"/></svg>
+        <input id="connect-search" type="search" placeholder="Search apps" aria-label="Search apps" autocomplete="off"></label>
+    </div>
+  </section>
+
+  <!-- Settings (full-screen sheet) -->
+  <section id="settings" class="sheet full" hidden aria-labelledby="settings-title" role="dialog" aria-modal="true">
+    <header class="sheet-head">
+      <button class="round" data-close aria-label="Close"><svg><use href="#i-close"/></svg></button>
+      <h2 id="settings-title">Settings</h2>
+      <span class="count-pill" id="settings-mode"></span>
+    </header>
+    <div class="sheet-body settings-body">
+      <h3 class="sec">Theta texting you</h3>
+      <div class="group">
+        <div class="row-set">
+          <div class="txt"><b>Notifications</b><span id="set-push-note">Get a push when Theta texts you first.</span></div>
+          <label class="switch"><input type="checkbox" id="set-push" aria-label="Notifications"><i></i></label>
+        </div>
+        <div class="row-set">
+          <div class="txt"><b>Proactive messages</b><span>Theta texts first when something matters: briefs, alerts near you.</span></div>
+          <label class="switch"><input type="checkbox" id="set-proactive" aria-label="Proactive messages"><i></i></label>
+        </div>
+        <div class="row-set">
+          <div class="txt"><b>Quiet hours</b><span>Orange alerts wait until morning. Red ones still wake you.</span></div>
+          <div class="quiet">
+            <select id="set-quiet-from" aria-label="Quiet hours start"></select><span>to</span><select id="set-quiet-to" aria-label="Quiet hours end"></select>
+          </div>
+        </div>
+        <div class="row-set">
+          <div class="txt"><b>Send a test</b><span>Checks that a push reaches this phone.</span></div>
+          <button class="btn-dark" id="set-push-test">Test</button>
+        </div>
+      </div>
+      <h3 class="sec">Vantage</h3>
+      <div class="group">
+        <div class="row-set">
+          <div class="txt"><b>Share my location</b><span id="set-loc-note">Rounded to about 10 km. Used only for alerts near you.</span></div>
+          <label class="switch"><input type="checkbox" id="set-loc" aria-label="Share my location"><i></i></label>
+        </div>
+      </div>
+      <h3 class="sec">Theta's look</h3>
+      <div class="group">
+        <div class="row-set">
+          <div class="txt"><b>Dots</b><span>The shape of every dot in Theta's globe.</span></div>
+          <select id="set-dot" aria-label="Dot shape"></select>
+        </div>
+        <div class="row-set">
+          <div class="txt"><b>Opening</b><span>How Theta appears when the app opens: dots converge from the stars, or a broadcast comes home.</span></div>
+          <select id="set-opening" aria-label="Opening">
+            <option value="converge">Converge</option>
+            <option value="signal">Signal</option>
+          </select>
+        </div>
+        <div class="dot-preview"><canvas id="set-orb" aria-hidden="true"></canvas></div>
+      </div>
+      <p class="fine" id="set-about"></p>
+    </div>
+  </section>
+
+  <!-- Attach (bottom sheet) -->
+  <div class="scrim" id="scrim" hidden></div>
+  <section id="attach" class="sheet bottom" hidden aria-label="Attach" role="dialog" aria-modal="true">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="attach-grid">
+      <label class="att"><input type="file" accept="image/*" id="att-photo" hidden><span class="att-ic"><svg><use href="#i-image"/></svg></span>Photo</label>
+      <label class="att"><input type="file" accept="image/*" capture="environment" id="att-camera" hidden><span class="att-ic"><svg><use href="#i-camera"/></svg></span>Camera</label>
+      <label class="att"><input type="file" id="att-file" hidden><span class="att-ic"><svg><use href="#i-file"/></svg></span>File</label>
+    </div>
+    <p class="fine center">Photos and files are coming soon: Theta can't see them in this version yet.</p>
+  </section>
+
+  <!-- the "..." menu -->
+  <div class="menu" id="menu" role="menu" hidden>
+    <button role="menuitem" data-act="connect"><svg><use href="#i-grid"/></svg>Connect apps</button>
+    <button role="menuitem" data-act="settings"><svg><use href="#i-person"/></svg>Settings</button>
+    <button role="menuitem" data-act="refresh"><svg><use href="#i-down"/></svg>Check for messages</button>
+  </div>
+
+  <!-- voice mode -->
+  <section id="voice" class="voice" hidden aria-label="Voice mode" role="dialog" aria-modal="true">
+    <canvas id="voice-orb" aria-hidden="true"></canvas>
+    <p class="voice-cap" id="voice-cap">Listening…</p>
+    <button class="round lg" id="voice-close" aria-label="End voice mode"><svg><use href="#i-close"/></svg></button>
+  </section>
+
+  <div class="hint" id="hint" role="status" hidden></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</div>
+
+<script src="/static/orb.js"></script>
+<script src="/static/demo.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

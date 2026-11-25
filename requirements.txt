@@ -1,0 +1,4 @@
+# The server is Python 3.11+ standard library only; nothing here is required.
+# Optional, for Web Push (server/push.py):
+# pywebpush
+# http_ece
