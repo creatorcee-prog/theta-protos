@@ -22,13 +22,14 @@ def hsl(h, s, l):
     return int(r * 255), int(g * 255), int(b * 255)
 
 
-def globe(size, n=520, seed=7):
+def globe(size, n=520, seed=7, at=(0.5, 0.5), r=0.27, bg=BG, dot=0.027, halo_k=2.3):
+    """at: the globe's centre as a fraction of the tile; r: its radius as a fraction (over 0.5 runs off the edge)."""
     rnd = random.Random(seed)
     ss = 4  # supersampling
     S = size * ss
-    img = Image.new("RGB", (S, S), BG)
-    c = S / 2
-    R = S * 0.27
+    img = Image.new("RGB", (S, S), bg)
+    c, cy = S * at[0], S * at[1]
+    R = S * r
 
     # halo: cyan in the middle, blue at the edge
     halo = Image.new("RGB", (S, S), (0, 0, 0))
@@ -36,12 +37,12 @@ def globe(size, n=520, seed=7):
     steps = 60
     for i in range(steps, 0, -1):
         u = i / steps
-        rr = R * 2.3 * u
+        rr = R * halo_k * u
         k = (1 - u) ** 1.6
         h = HUE + (EDGE_HUE - HUE) * u
         col = hsl(h, 1, 0.5)
         a = 0.55 * k
-        hd.ellipse([c - rr, c - rr, c + rr, c + rr], fill=tuple(int(v * a) for v in col))
+        hd.ellipse([c - rr, cy - rr, c + rr, cy + rr], fill=tuple(int(v * a) for v in col))
     halo = halo.filter(ImageFilter.GaussianBlur(S * 0.02))
     img = add(img, halo)
 
@@ -58,14 +59,14 @@ def globe(size, n=520, seed=7):
         x1, z1 = x * cy_ - z * sy_, x * sy_ + z * cy_
         y2, z2 = y * cp - z1 * sp, y * sp + z1 * cp
         pr = D / (D + z2)
-        pts.append((c + x1 * R * pr, c + y2 * R * pr, z2, pr, s))
+        pts.append((c + x1 * R * pr, cy + y2 * R * pr, z2, pr, s))
     pts.sort(key=lambda p: -p[2])
     layer = Image.new("RGB", (S, S), (0, 0, 0))
     ld = ImageDraw.Draw(layer)
     core_done = False
     for px, py, z, pr, s in pts:
         if not core_done and z < 0:
-            layer = add(layer, core(S, c, R))
+            layer = add(layer, core(S, c, R, cy))
             ld = ImageDraw.Draw(layer)
             core_done = True
         fog = max(0.12, min(1, 0.62 - z * 0.55))
@@ -73,15 +74,16 @@ def globe(size, n=520, seed=7):
         l = LIGHT + ((pr - 0.8) * 50) / 100
         a = min(1, (0.1 + 0.55 * (0.4 + 0.6 * s)) * fog * 1.5)
         col = tuple(int(v * a) for v in hsl(h, SAT, l))
-        rad = max(1.2 * ss, R * 0.027 * pr * pr * (0.8 + 0.4 * s))
+        rad = max(1.2 * ss, R * dot * pr * pr * (0.8 + 0.4 * s))
         ld.ellipse([px - rad, py - rad, px + rad, py + rad], fill=col)
     if not core_done:
-        layer = add(layer, core(S, c, R))
+        layer = add(layer, core(S, c, R, cy))
     img = add(img, layer)
     return img.resize((size, size), Image.LANCZOS)
 
 
-def core(S, c, R):
+def core(S, c, R, cy=None):
+    cy = c if cy is None else cy
     im = Image.new("RGB", (S, S), (0, 0, 0))
     d = ImageDraw.Draw(im)
     cr = R * 0.2 * 3.2
@@ -93,7 +95,7 @@ def core(S, c, R):
             col, a = (255, 255, 255), 1
         else:
             col, a = hsl(HUE, SAT, LIGHT + 0.3 * (1 - u) ** 3), (1 - u) ** 2.2 * 0.9
-        d.ellipse([c - rr, c - rr, c + rr, c + rr], fill=tuple(int(v * a) for v in col))
+        d.ellipse([c - rr, cy - rr, c + rr, cy + rr], fill=tuple(int(v * a) for v in col))
     return im.filter(ImageFilter.GaussianBlur(R * 0.03))
 
 
@@ -122,8 +124,14 @@ def badge(size=72):
 
 
 if __name__ == "__main__":
+    # The app icon: one big globe of Theta's dots on black, too big for the tile, running off the bottom-left
+    # edge, its bright core up and to the right of centre. (The splash and in-app globes stay centred.)
+    big = dict(n=700, at=(0.5, 0.74), r=0.47, bg=(0, 0, 0), dot=0.02, halo_k=1.3)
     for name, size in (("icon-192.png", 192), ("icon-512.png", 512), ("apple-touch-icon.png", 180)):
-        globe(size).save(os.path.join(HERE, name), optimize=True)
+        globe(size, **big).save(os.path.join(HERE, name), optimize=True)
         print("wrote", name)
+    # maskable (Android crops to a circle or squircle): keep the whole globe inside the safe zone
+    globe(512, n=520, r=0.3, bg=(0, 0, 0)).save(os.path.join(HERE, "icon-maskable-512.png"), optimize=True)
+    print("wrote icon-maskable-512.png")
     badge().save(os.path.join(HERE, "badge-72.png"), optimize=True)
     print("wrote badge-72.png")
