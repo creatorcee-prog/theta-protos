@@ -130,7 +130,7 @@ svg { width: 22px; height: 22px; display: block; flex: none; }
 /* ---------- chat ---------- */
 .scroller {
   position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
-  padding: calc(var(--sat) + 76px) calc(var(--sar) + 14px) calc(var(--sab) + 96px) calc(var(--sal) + 14px);
+  padding: calc(var(--sat) + 76px) calc(var(--sar) + 14px) calc(var(--composer-h, calc(var(--sab) + 84px)) + 12px) calc(var(--sal) + 14px);
 }
 .chat-head {
   position: absolute; left: 0; right: 0; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -215,7 +215,7 @@ svg { width: 22px; height: 22px; display: block; flex: none; }
 .sys .acts { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 
 .jump {
-  position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--sab) + 96px); z-index: 6;
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--composer-h, calc(var(--sab) + 84px)) + 12px); z-index: 6;
   display: flex; align-items: center; gap: 6px; padding: 8px 14px 8px 10px; border-radius: 999px; background: #2a2a2a; border: 1px solid #3a3a3a;
   font-size: 14px; animation: fadeUp .25s var(--ease);
 }

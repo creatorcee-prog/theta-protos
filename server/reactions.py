@@ -4,6 +4,7 @@
     POST /api/messages/react  {id, emoji, by?: "user"}   -> {"ok": true, "id", "reactions": {...}}
     GET  /api/messages/react?id=<id>                     -> {"id", "reactions": {...}}
     set(msg_id, who, emoji)                              Python, for Theta reacting (who = "user" | "theta")
+    POST /api/messages/effect {id, effect}               the bubble effect of your message (slam|loud|gentle|ink)
 
 Theta reacts through the `react` tool (write): on the user's last message, sparingly. The app shows the
 reaction in the bubble's corner. The tapback names iMessage uses (heart, like, dislike, haha, emphasize,
@@ -121,4 +122,28 @@ TOOLS = [
          "required": ["emoji"]}},
 ]
 
-ROUTES = {"/api/messages/react": route}
+EFFECTS = ("slam", "loud", "gentle", "ink")
+
+
+def effect_route(req, start):
+    """POST /api/messages/effect {id, effect}: the bubble effect you sent your message with (meta.effect), so
+    Invisible Ink stays hidden after a reload. Only on your own messages."""
+    from . import app
+    if req.method != "POST":
+        raise app.HTTPError(405, "method not allowed")
+    body = req.json()
+    try:
+        mid = int(body.get("id"))
+    except (TypeError, ValueError):
+        raise app.HTTPError(400, "id is required") from None
+    fx = body.get("effect") or None
+    if fx is not None and fx not in EFFECTS:
+        raise app.HTTPError(400, "effect must be one of " + ", ".join(EFFECTS))
+    m = db.get_message(mid)
+    if m is None or m.get("role") != "user":
+        raise app.HTTPError(404, "no such message of yours")
+    db.update_message(mid, meta={"effect": fx})
+    return app.respond_json(start, {"ok": True, "id": mid, "effect": fx})
+
+
+ROUTES = {"/api/messages/react": route, "/api/messages/effect": effect_route}

@@ -22,8 +22,8 @@ import threading
 
 FEATURES = ("google", "gcal", "routines", "workflows", "subagents", "media", "browser", "calls", "passkeys")
 FEATURES += ("reactions", "uploads", "gifs")  # stage 5, builder A: tapbacks, photos, GIFs
-FEATURES += ("live",)  # stage 5, builder B: the live view of Theta's browser
-FEATURES += ("cards", "onboarding")  # stage 5, builder C: the card kit, connect cards, the in-chat intro
+# paused (stage 5 B, kept in commit 75eb145): FEATURES += ("live",)
+# paused (stage 5 C, kept in commit 75eb145): FEATURES += ("cards", "onboarding")
 
 _lock = threading.Lock()
 _mods = None

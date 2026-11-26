@@ -96,6 +96,13 @@ ok, out = tools.execute("react", {"emoji": "😂"}, {"bot": "theta"})
 latest = db.last_user_message("theta")
 check("without a user_id it uses the user's last message", ok and db.get_message(latest["id"])["meta"]["reactions"]["theta"] == "😂", out)
 
+s, j = call("/api/messages/effect", "POST", {"id": u["id"], "effect": "ink"})
+check("a bubble effect is stored on your message", s == 200 and db.get_message(u["id"])["meta"]["effect"] == "ink", (s, j))
+s, _ = call("/api/messages/effect", "POST", {"id": u["id"], "effect": "explode"})
+check("only known effects", s == 400, s)
+s, _ = call("/api/messages/effect", "POST", {"id": a["id"], "effect": "slam"})
+check("only on your own messages", s == 404, s)
+
 if FAILED:
     print(f"\n{len(FAILED)} failed")
     sys.exit(1)

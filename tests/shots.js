@@ -106,7 +106,8 @@ async function waitUp(url) {
 
     // the action bar (long-press; right-click in a desktop browser): Copy, Copy with prompt, Like, Dislike + the Model line
     const openBarOn = async pred => {
-      const h = await page.evaluateHandle(pred); await sleep(250);
+      const h = await page.evaluateHandle(pred);
+      await h.asElement().evaluate(e => e.scrollIntoView({block: "center"})); await sleep(250); // above the composer, as a person would
       const bb = await h.asElement().boundingBox();
       await h.asElement().click({button: "right", position: {x: 8, y: bb.height / 2}}); await sleep(250); // the padding, not a link
       return page.$eval("#msgbar", e => (e.hidden ? null : {text: e.textContent, labels: [...e.querySelectorAll(".mb-acts button")].map(b => b.getAttribute("aria-label"))}));

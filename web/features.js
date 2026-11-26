@@ -2,8 +2,8 @@
 (() => {
   "use strict";
   const FEATURES = ["calendar", "routines", "calls", "browser", "media", "passkeys"];
-  FEATURES.push("activity", "live"); // stage 5, builder B: activity summary, Theta's screen
-  FEATURES.push("cards", "onboarding"); // stage 5, builder C: the card kit, the in-chat intro
+  // paused (stage 5 B, kept in commit 75eb145): FEATURES.push("activity", "live");
+  // paused (stage 5 C, kept in commit 75eb145): FEATURES.push("cards", "onboarding");
   for (const f of FEATURES) {
     const s = document.createElement("script");
     s.src = "/static/features/" + f + ".js"; s.async = false;

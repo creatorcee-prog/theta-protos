@@ -289,6 +289,55 @@
     [/\bpew\s*pew\b/i, "lasers"], [/\bhappy\s+anniversary\b/i, "celebration"]];
   const fxFor = text => { for (const [re, k] of FX_WORDS) if (re.test(String(text || ""))) return k; return null; };
   // ---- pace: end
+  // screen effects (balloons, confetti...): a short, light canvas animation over the thread; skipped with
+  // reduced motion. Each message plays its effect once.
+  const fxPlayed = new Set();
+  function playFx(kind, key) {
+    if (!kind || REDUCE.matches || fxPlayed.has(key)) return;
+    fxPlayed.add(key);
+    const cv = el("canvas", "fx-canvas"); cv.setAttribute("aria-hidden", "true");
+    cv.style.cssText = "position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50";
+    document.body.append(cv);
+    const dpr = Math.min(2, devicePixelRatio || 1), W = cv.width = innerWidth * dpr, H = cv.height = innerHeight * dpr, g = cv.getContext("2d");
+    const hues = kind === "lasers" ? [190, 280, 330] : [195, 220, 262, 330, 45];
+    const n = kind === "balloons" ? 14 : kind === "lasers" ? 10 : 90, parts = [];
+    for (let i = 0; i < n; i++) {
+      const up = kind === "balloons";
+      parts.push({x: Math.random() * W, y: up ? H + Math.random() * H * 0.4 : (kind === "fireworks" ? H * (0.2 + Math.random() * 0.3) : -Math.random() * H * 0.3),
+        vx: (Math.random() - 0.5) * (kind === "fireworks" ? 14 : 3) * dpr, vy: (up ? -(2 + Math.random() * 2) : (kind === "fireworks" ? (Math.random() - 0.7) * 12 : 2 + Math.random() * 4)) * dpr,
+        r: (up ? 26 + Math.random() * 14 : 3 + Math.random() * 4) * dpr, h: hues[i % hues.length], a: Math.random() * 6});
+    }
+    const t0 = performance.now();
+    const frame = now => {
+      const t = (now - t0) / 1000; g.clearRect(0, 0, W, H);
+      for (const p of parts) {
+        p.x += p.vx; p.y += p.vy; if (kind !== "balloons") p.vy += 0.12 * dpr; p.a += 0.05;
+        g.globalAlpha = Math.max(0, 1 - t / 2.6);
+        g.fillStyle = `hsl(${p.h} 90% 62%)`;
+        if (kind === "lasers") { g.strokeStyle = g.fillStyle; g.lineWidth = 3 * dpr; g.beginPath(); g.moveTo(p.x, 0); g.lineTo(p.x + Math.sin(p.a) * W * 0.3, H); g.stroke(); }
+        else if (kind === "balloons") { g.beginPath(); g.ellipse(p.x + Math.sin(p.a) * 8 * dpr, p.y, p.r * 0.8, p.r, 0, 0, Math.PI * 2); g.fill(); }
+        else { g.save(); g.translate(p.x, p.y); g.rotate(p.a); g.fillRect(-p.r, -p.r / 2, p.r * 2, p.r); g.restore(); }
+      }
+      if (t < 2.6) requestAnimationFrame(frame); else cv.remove();
+    };
+    requestAnimationFrame(frame);
+  }
+
+  // photos for the vision model: shrunk to at most 1600 px and sent as a data: URL (what the server reads)
+  async function prepImages(imgs) {
+    for (const i of imgs) {
+      if (i.data || !i.blob) continue;
+      try {
+        const bmp = await createImageBitmap(i.blob), k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+        const c = document.createElement("canvas"); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+        c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+        i.data = c.toDataURL("image/jpeg", 0.85);
+      } catch (e) {
+        i.data = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(i.blob); });
+      }
+    }
+  }
+
 
   const UPLOAD = /^\/api\/uploads\/[0-9a-f]{32}$/;
   const viewUrl = new Map(); // /api/uploads/<id> -> the blob: URL this phone already has (no reload flash)
@@ -797,19 +846,94 @@
   }
 
   // ---------------------------------------------------------------- composer
+  // grows with what you type (up to about six lines); the send arrow shows when there's something to send, the
+  // mic and voice button when there isn't. Long-press the arrow to send with an effect.
   const form = $("composer"), ta = $("c-text");
-  function sizeTa() { ta.style.height = "auto"; ta.style.height = Math.min(140, ta.scrollHeight) + "px"; form.classList.toggle("has-text", !!ta.value.trim());
-    $("c-send").setAttribute("aria-label", ta.value.trim() ? "Send" : "Voice mode"); }
+  const queue = []; // photos waiting in the composer: {blob, view, type}
+  function sizeTa() {
+    ta.style.height = "auto"; ta.style.height = Math.min(140, ta.scrollHeight) + "px";
+    const has = !!ta.value.trim() || queue.length > 0;
+    if (has && !form.classList.contains("has-text")) { const d = $("c-send").querySelector(".disc"); d.classList.remove("in"); void d.offsetWidth; d.classList.add("in"); }
+    form.classList.toggle("has-text", has);
+    $("c-send").setAttribute("aria-label", has ? "Send" : "Voice mode");
+  }
   ta.addEventListener("input", () => { sizeTa(); if (orbs.head.state === "waiting") setStatus("idle"); });
   ta.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && HOVER.matches) { e.preventDefault(); form.requestSubmit(); } });
-  form.addEventListener("submit", e => {
-    e.preventDefault();
+  // the thread's bottom space follows the message box's real height (it grows with text, photos and chips), so
+  // the newest message always scrolls clear of it
+  const cwrap = document.querySelector(".composer-wrap");
+  if (cwrap && window.ResizeObserver) {
+    new ResizeObserver(() => document.documentElement.style.setProperty("--composer-h", Math.ceil(cwrap.getBoundingClientRect().height) + "px")).observe(cwrap);
+  }
+  function renderQueue() {
+    const chip = $("attach-chip"); chip.replaceChildren();
+    if (!queue.length) { chip.hidden = true; return; }
+    for (const q of queue) {
+      const t = el("img"); t.src = q.view; t.alt = "Photo to send"; t.style.cssText = "width:44px;height:44px;object-fit:cover;border-radius:10px";
+      const x = el("button"); x.type = "button"; x.setAttribute("aria-label", "Remove photo"); x.append(svg("i-close"));
+      x.addEventListener("click", () => { const i = queue.indexOf(q); if (i >= 0) queue.splice(i, 1); URL.revokeObjectURL(q.view); renderQueue(); sizeTa(); });
+      const w = el("span"); w.style.cssText = "display:inline-flex;align-items:center;gap:4px"; w.append(t, x); chip.append(w);
+    }
+    chip.hidden = false;
+  }
+  window.__thetaQueue = (f) => { if (queue.length >= 4) { toast("Up to 4 photos at a time."); return; } queue.push({blob: f, view: URL.createObjectURL(f), type: f.type}); renderQueue(); sizeTa(); };
+  function submit(effect) {
     const text = ta.value.trim();
-    if (!text) { voiceMode(); return; }
+    if (!text && !queue.length) { voiceMode(); return; }
     if (S.streaming) { toast("One sec, Theta's still answering."); return; }
     const editing = S.editing; endEdit(false);
-    stopMic(); ta.value = ""; sizeTa(); send(text, editing != null ? {edit: editing} : undefined);
+    const images = queue.splice(0).map(q => ({blob: q.blob, view: q.view, type: q.type}));
+    renderQueue();
+    stopMic(); ta.value = ""; sizeTa();
+    const o = {}; if (editing != null) o.edit = editing; if (images.length) o.images = images; if (effect) o.effect = effect;
+    send(text, o);
+  }
+  form.addEventListener("submit", e => { e.preventDefault(); submit(); });
+
+  // long-press the send arrow: Slam, Loud, Gentle, Invisible Ink
+  const EFFECTS = [["slam", "Slam", "Lands hard and shakes the thread"], ["loud", "Loud", "Big for a moment, then settles"],
+    ["gentle", "Gentle", "Arrives small and soft"], ["ink", "Invisible Ink", "Hidden until it's tapped"]];
+  let sendPress = 0, sendLong = false;
+  $("c-send").addEventListener("pointerdown", () => {
+    sendLong = false; clearTimeout(sendPress);
+    if (!ta.value.trim() || S.editing != null) return;
+    sendPress = setTimeout(() => { sendLong = true; openFxPick(); }, 430);
   });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) $("c-send").addEventListener(ev, () => clearTimeout(sendPress));
+  $("c-send").addEventListener("click", e => { if (sendLong) { e.preventDefault(); e.stopPropagation(); sendLong = false; } }, true);
+  $("c-send").addEventListener("contextmenu", e => { if (ta.value.trim()) { e.preventDefault(); openFxPick(); } });
+  let fxChoice = null;
+  function openFxPick() {
+    const list = $("fx-list"); list.replaceChildren(); fxChoice = null;
+    haptic("light");
+    for (const [id, name, what] of EFFECTS) {
+      const r = el("div", "fx-opt"); r.setAttribute("role", "listitem"); r.dataset.fx = id;
+      const pick = el("button", "fx-name"); pick.type = "button"; pick.setAttribute("aria-pressed", "false");
+      pick.append(el("b", null, name), el("span", null, what));
+      const prev = el("div", "fx-prev msg u text tail", ta.value.trim().slice(0, 60));
+      const go = el("button", "fx-send"); go.type = "button"; go.setAttribute("aria-label", "Send with " + name); go.append(el("span", "disc"));
+      go.firstChild.append(svg("i-up"));
+      pick.addEventListener("click", () => {
+        fxChoice = id;
+        list.querySelectorAll(".fx-opt").forEach(o => { const on = o.dataset.fx === id; o.classList.toggle("on", on); o.querySelector(".fx-name").setAttribute("aria-pressed", String(on)); });
+        const p = r.querySelector(".fx-prev"); p.className = "fx-prev msg u text tail"; void p.offsetWidth; applyEffect(p, id, true);
+        haptic("light");
+      });
+      go.addEventListener("click", () => { closeFxPick(); submit(id); });
+      r.append(pick, prev, go); list.append(r);
+    }
+    $("fxpick").hidden = false; $("scrim").hidden = false;
+    list.querySelector(".fx-name").focus({preventScroll: true});
+  }
+  function closeFxPick() { $("fxpick").hidden = true; if ($("attach").hidden && $("gifs").hidden) $("scrim").hidden = true; }
+  $("fx-close").addEventListener("click", closeFxPick);
+
+  // bubble effects: the animation plays once when sent (now=true); Invisible Ink stays until you tap it
+  function applyEffect(b, fx, now) {
+    if (!b || !fx) return;
+    if (fx === "ink") { b.classList.add("ink"); ink.add(b); return; }
+    if (now && ["slam", "loud", "gentle"].includes(fx)) { b.classList.add("fx-" + fx); setTimeout(() => b.classList.remove("fx-" + fx), 1600); }
+  }
   // editing your last message: the composer holds its words, with an "Editing" chip to cancel
   function startEdit(m) {
     S.editing = m.id; ta.value = m.text; sizeTa();
@@ -1121,6 +1245,7 @@
   $("scrim").addEventListener("click", closeAttach);
   for (const id of ["att-photo", "att-camera", "att-file"]) $(id).addEventListener("change", e => {
     const f = e.target.files && e.target.files[0]; closeAttach(); if (!f) return;
+    if (/^image\//.test(f.type) && id !== "att-file") { window.__thetaQueue(f); e.target.value = ""; return; }
     const chip = $("attach-chip"); chip.replaceChildren(svg(id === "att-file" ? "i-file" : "i-image"),
       el("span", null, `${f.name}: Theta can't see attachments yet, so this one stays on your phone.`));
     const x = el("button", null); x.type = "button"; x.setAttribute("aria-label", "Remove"); x.append(svg("i-close")); x.addEventListener("click", () => { chip.hidden = true; });
