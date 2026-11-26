@@ -1,6 +1,6 @@
 /* Theta's service worker: a cache-first app shell, Web Push, and opening the right message from a notification.
  * Served at /sw.js (scope /). The API (/api/*) is never cached. */
-const VERSION = "theta-shell-v1";
+const VERSION = "theta-shell-v2";
 const SHELL = ["/", "/static/style.css", "/static/orb.js", "/static/demo.js", "/static/app.js", "/manifest.webmanifest",
   "/static/icons/icon-192.png", "/static/icons/icon-512.png", "/static/icons/apple-touch-icon.png", "/static/icons/badge-72.png"];
 const ICON = "/static/icons/icon-192.png", BADGE = "/static/icons/badge-72.png";
@@ -22,11 +22,16 @@ self.addEventListener("fetch", e => {
     }).catch(() => caches.match("/")));
     return;
   }
-  // cache first, then the network (and keep what it brings)
-  e.respondWith(caches.match(req, {ignoreSearch: true}).then(hit => hit || fetch(req).then(r => {
-    if (r.ok && r.type === "basic") { const copy = r.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
-    return r;
-  })));
+  // the saved copy at once (fast, works offline), while the network refreshes it for next time, so an update
+  // reaches the phone on the next open instead of never
+  e.respondWith(caches.match(req, {ignoreSearch: true}).then(hit => {
+    const net = fetch(req).then(r => {
+      if (r.ok && r.type === "basic") { const copy = r.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
+      return r;
+    });
+    if (hit) { e.waitUntil(net.catch(() => {})); return hit; }
+    return net;
+  }));
 });
 
 // ---- push: {title, body, url, id, tag}. Skipped while Theta is open and in front: the message just appears there.

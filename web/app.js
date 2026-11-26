@@ -781,9 +781,26 @@
   }
 
   // keep the layout above the keyboard on iPhone
+  // iOS doesn't shrink the page for the keyboard: it scrolls the visible part down by visualViewport.offsetTop and
+  // leaves the page full height, so a full-screen app slides up and leaves a blank gap. So the app sizes itself to
+  // what's visible, follows that scroll, and drops the home-bar padding while the keyboard is up.
   if (window.visualViewport) {
-    const vv = () => document.documentElement.style.setProperty("--vh", visualViewport.height + "px");
-    visualViewport.addEventListener("resize", vv); vv();
+    const root = document.documentElement, appEl = document.getElementById("app");
+    let raf = 0;
+    const fit = () => {
+      raf = 0;
+      const v = window.visualViewport, top = Math.max(0, Math.round(v.offsetTop));
+      root.style.setProperty("--vh", Math.round(v.height) + "px");
+      if (appEl) appEl.style.transform = top ? `translateY(${top}px)` : "";
+      root.classList.toggle("kb", window.innerHeight - v.height > 120);
+    };
+    const later = () => { if (!raf) raf = requestAnimationFrame(fit); };
+    visualViewport.addEventListener("resize", later);
+    visualViewport.addEventListener("scroll", later);
+    // after the keyboard closes, put the page back where it started
+    addEventListener("focusout", () => setTimeout(() => { if (window.scrollY) window.scrollTo(0, 0); fit(); }, 60));
+    addEventListener("focusin", () => setTimeout(fit, 60));
+    fit();
   }
 
   // ---------------------------------------------------------------- boot

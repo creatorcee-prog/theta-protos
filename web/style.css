@@ -344,3 +344,7 @@ svg { width: 22px; height: 22px; display: block; flex: none; }
   /* on a big screen, keep the phone column */
   #app { left: 50%; width: 430px; transform: translateX(-50%); border-left: 1px solid #1f1f1f; border-right: 1px solid #1f1f1f; }
 }
+
+/* keyboard up (set by app.js): the home bar is hidden behind the keyboard, so its padding would only leave a gap */
+html.kb { --sab: 0px; }
+#app { will-change: transform; }
