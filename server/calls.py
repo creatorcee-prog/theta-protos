@@ -196,6 +196,15 @@ def check_other(to, now):
                         "calls to the same number.")
 
 
+def _connect_card():
+    """Attach the Twilio setup card (server/cards.py) to the running tool call."""
+    try:
+        from . import cards
+        cards.connect_card(None, "twilio")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ---------------------------------------------------------------- Twilio REST
 
 def _twilio(path, params):
@@ -220,6 +229,7 @@ def _twilio(path, params):
 def _dial(kind, to, *, name="", purpose="", script="", message="", conversation=False, bot="theta", now=None):
     """Start one call. Returns the call row."""
     if not configured():
+        _connect_card()
         raise ToolError("phone calls aren't set up (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM are "
                         "needed on the server). Nothing was dialed.")
     base = public_base()
@@ -277,6 +287,7 @@ def _someone_check(args, now=None):
     if len(args.get("script") or "") > 600:
         raise ToolError("keep script under 600 characters")
     if not configured():
+        _connect_card()
         raise ToolError("phone calls aren't set up on this server (Twilio), so this can't be offered")
     check_other(to, now)
     return to, purpose

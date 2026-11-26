@@ -183,9 +183,18 @@ def _signed_out(note):
         try:
             db.add_message("theta", "assistant", "Google signed me out of your account, so I can't reach Gmail, "
                            "Calendar or Drive right now. Open Connect apps and tap Connect on Gmail to sign in again.",
-                           {"proactive": True, "source": "google"})
+                           {"proactive": True, "source": "google", "cards": _connect_card(attach=False)})
         except Exception:  # noqa: BLE001
             pass
+
+
+def _connect_card(attach=True):
+    """The Google connect card (server/cards.py), attached to the running tool call; [card] for a message's meta."""
+    try:
+        from . import cards
+        return [cards.connect_card(None, "google") if attach else cards.connect("google")]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 EXPIRED_NOTE = ("Google signed Theta out (apps in Testing mode are signed out after 7 days, or access was removed). "
@@ -195,6 +204,7 @@ EXPIRED_NOTE = ("Google signed Theta out (apps in Testing mode are signed out af
 def _refresh(rec):
     if not rec.get("refresh_token"):
         _signed_out(EXPIRED_NOTE)
+        _connect_card()
         raise GoogleError("Google isn't connected any more (the sign-in expired). Ask the user to tap Connect on "
                           "Gmail in Connect apps, then try again.")
     status, j = _post_form(TOKEN_URL, {"client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
@@ -204,6 +214,7 @@ def _refresh(rec):
         if j.get("error") in ("invalid_grant", "unauthorized_client", "invalid_client"):
             log(f"refresh refused ({j.get('error')}); marked signed out")
             _signed_out(EXPIRED_NOTE)
+            _connect_card()
             raise GoogleError("Google signed Theta out (the sign-in expired or was removed). Ask the user to tap "
                               "Connect on Gmail in Connect apps, then try again.")
         log(f"refresh failed: HTTP {status} {j.get('error', '')}")
@@ -224,6 +235,7 @@ def access_token(force=False):
     with _lock:
         rec = _store()
         if not (rec.get("refresh_token") or rec.get("access_token")):
+            _connect_card()
             raise GoogleError("Google isn't connected, so this can't be done. Ask the user to tap Connect on Gmail "
                               "in Connect apps (the ... menu).")
         if force or not rec.get("access_token") or float(rec.get("expires_at") or 0) < time.time() + 60:
@@ -448,6 +460,7 @@ def _need(service):
     if not connected(service):
         if not connected():
             access_token()  # raises the "not connected" error
+        _connect_card()
         raise GoogleError(f"Google is connected but without {service} access. Ask the user to reconnect in Connect "
                           "apps and allow everything.")
 
@@ -496,6 +509,15 @@ def _body_text(payload):
 READ_CHARS = 1600
 
 
+def _auto(ctx, kind, data):
+    """A card from this tool's own result (server/cards.py), shown every time it applies."""
+    try:
+        from . import cards
+        cards.auto(ctx, kind, data)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _gmail_read(args, ctx):
     _need("gmail")
     m = api("GET", f"{GMAIL}/messages/{urllib.parse.quote(args['message_id'].strip())}", params={"format": "full"})
@@ -506,6 +528,9 @@ def _gmail_read(args, ctx):
     head = (f"id={m.get('id')} thread={m.get('threadId')}\nFrom: {_oneline(_hdr(m, 'From'))}\n"
             f"To: {_oneline(_hdr(m, 'To'))}\nDate: {_oneline(_hdr(m, 'Date'))}\nSubject: {_oneline(_hdr(m, 'Subject'))}\n\n")
     tail = f"\n…({more} more chars; call again with offset={off + len(part)})" if more > 0 else ""
+    _auto(ctx, "email", {"from": _oneline(_hdr(m, "From")), "to": _oneline(_hdr(m, "To")), "date": _oneline(_hdr(m, "Date")),
+                         "subject": _oneline(_hdr(m, "Subject")) or "(no subject)", "snippet": (m.get("snippet") or "")[:280],
+                         "id": m.get("id"), "url": f"https://mail.google.com/mail/u/0/#all/{m.get('id')}"})
     return head + (part or "(no text body)") + tail
 
 
@@ -658,6 +683,11 @@ def _calendar_list(args, ctx):
     items = list_events(d0, d1, (args.get("query") or "").strip() or None)
     if not items:
         return f"No events from {d0} to {d1}" + (f" matching {args['query']!r}" if args.get("query") else "") + "."
+    for e in items[:3]:  # the first few as event cards, every time
+        st, en = (e.get("start") or {}), (e.get("end") or {})
+        _auto(ctx, "event", {"title": e.get("summary") or "(no title)", "start": st.get("dateTime") or st.get("date"),
+                             "end": en.get("dateTime") or en.get("date"), "location": e.get("location"),
+                             "calendar": "Google Calendar"})
     lines = [f"{len(items)} event(s), {d0} to {d1}, times in {_tz()}:"]
     for e in items[:40]:
         s, allday = _ev_time(e.get("start"))
@@ -726,6 +756,9 @@ def add_event(args):
 def _calendar_add(args, ctx):
     body = _event_body(args)
     e = add_event(args)
+    _auto(ctx, "event", {"title": body["summary"], "start": (body["start"].get("dateTime") or body["start"].get("date")),
+                         "end": (body["end"].get("dateTime") or body["end"].get("date")), "location": body.get("location"),
+                         "calendar": "Google Calendar"})
     return (f"Added to the user's Google Calendar (no guests): {body['summary']} on {_fmt_ev(body)}. "
             f"Link: {e.get('htmlLink', '')}")
 

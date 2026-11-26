@@ -3,7 +3,7 @@
   "use strict";
   const FEATURES = ["calendar", "routines", "calls", "browser", "media", "passkeys"];
   // paused (stage 5 B, kept in commit 75eb145): FEATURES.push("activity", "live");
-  // paused (stage 5 C, kept in commit 75eb145): FEATURES.push("cards", "onboarding");
+  FEATURES.push("cards"); // the card kit (onboarding paused, kept in commit 75eb145)
   for (const f of FEATURES) {
     const s = document.createElement("script");
     s.src = "/static/features/" + f + ".js"; s.async = false;

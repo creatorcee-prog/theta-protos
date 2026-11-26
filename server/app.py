@@ -411,6 +411,7 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
         rmeta["actions"] = _approval_actions(approvals)
     if info.get("sources"):
         rmeta["sources"] = info["sources"]
+    cards = _connect_from_text(out, cards)
     if cards:  # rich cards tools asked for (ctx["cards"]): weather, link, connect...
         rmeta["cards"] = cards
     usage = _usage_meta(info.get("usage"), log_row["provider"], log_row["model"], tctx.get("research_usage") or ())
@@ -564,6 +565,9 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None):
             rmeta = {"model": model, "provider": provider, "tier": route.tier}
             if sources:
                 rmeta["sources"] = sources
+            pc = _connect_from_text(full, [])
+            if pc:
+                rmeta["cards"] = pc
             um = _usage_meta(usage, provider, model)
             if um:
                 rmeta["usage"] = um
@@ -671,6 +675,19 @@ def _deliver_reminder(job, now):
         except Exception:
             log("reminder push failed:\n" + traceback.format_exc())
     return msg
+
+
+def _connect_from_text(text, cards):
+    """A reply that says something isn't connected or set up gets that service's connect card, even when no tool
+    ran (the model knew from context). Code-made, so it happens every time."""
+    try:
+        from . import cards as C
+        card = C.from_tool_error("", text)
+    except Exception:  # noqa: BLE001
+        return cards
+    if card and not any(c.get("type") == "connect" and c.get("service") == card.get("service") for c in cards):
+        cards = cards + [card]
+    return cards
 
 
 def _ext_job(kind):

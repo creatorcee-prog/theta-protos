@@ -254,7 +254,7 @@ def main():
     check("chat persisted", s == 200 and [m["id"] for m in j["messages"]] == [user["id"], done["id"]])
 
     # ---- think tier: ack first, as its own message
-    s, _, evs = cl.sse({"text": "why should I compare these two plans step by step"}, AUTH)
+    s, _, evs = cl.sse({"text": "why should I pick one plan over the other? think it through"}, AUTH)
     names = [e[0] for e in evs]
     check("think tier SSE order user, route, ack, delta..., done",
           names[:3] == ["user", "route", "ack"] and names[-1] == "done" and "delta" in names, names)
@@ -265,7 +265,7 @@ def main():
 
     # ---- fallback: first provider fails before any text
     BEHAVIOR[("deepseek", "deepseek-reasoner")] = "fail"
-    s, _, evs = cl.sse({"text": "why should I compare these two plans step by step"}, AUTH)
+    s, _, evs = cl.sse({"text": "why should I pick one plan over the other? think it through"}, AUTH)
     routes = [e[1] for e in evs if e[0] == "route"]
     check("fallback retries next candidate", len(routes) == 2 and routes[1]["provider"] == "anthropic"
           and "fallback" in routes[1]["why"] and evs[-1][0] == "done"

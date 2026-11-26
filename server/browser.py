@@ -484,8 +484,15 @@ def _browse_open(args, ctx):
         s = eng.session(_key(ctx))
         _goto(s, url)
         title, text, els = _snap(s)
-        return _render(s, title, text, els, find)
-    return _engine.call(work)
+        return _render(s, title, text, els, find), title, s.page.url, text
+    out, title, final_url, text = _engine.call(work)
+    try:  # a link card for the page Theta opened, every time (https pages only)
+        from . import cards
+        cards.auto(ctx, "link", {"url": final_url, "title": title or final_url,
+                                 "summary": " ".join(str(text or "").split())[:280]})
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def _el(s, ref):

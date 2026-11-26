@@ -50,6 +50,22 @@ def _with_guide(messages):
     return msgs
 
 
+_NEEDS = {"send_email_draft": "google", "calendar_invite": "google", "call_someone": "twilio"}
+
+
+def _service_ready(service):
+    try:
+        if service == "google":
+            from . import google
+            return bool(google.connected("gmail"))
+        if service == "twilio":
+            import os
+            return bool(os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN"))
+    except Exception:  # noqa: BLE001
+        return True  # unsure: don't claim it's missing
+    return True
+
+
 def _approval(call, ctx, emit, info):
     """Turn a send-risk call into a pending approval. Returns the text the model sees."""
     name, args = call["name"], call.get("args") or {}
@@ -67,6 +83,16 @@ def _approval(call, ctx, emit, info):
     aid = db.add_approval(action)
     info["approvals"].append({"id": aid, "tool": name, "preview": text})
     emit("approval", {"id": aid, "tool": name, "preview": text, "expires": action["expires"]})
+    needs = _NEEDS.get(name)
+    if needs and not _service_ready(needs):  # say so now, not when they tap Approve: the connect card comes too
+        try:
+            from . import cards
+            cards.attach(ctx, cards.connect(needs))
+        except Exception:  # noqa: BLE001
+            pass
+        return True, ("Not sent, and it can't be yet: " + needs.title() + " isn't connected. The user sees the "
+                      "approval card and a card to connect it. Tell them plainly it'll only go out once they connect "
+                      "it and tap Approve.")
     return True, ("Not sent. The user now sees an approval card with the exact content and Approve / Discard "
                   "buttons; it runs only if they tap Approve (it expires in 24 h). Tell them briefly that it's "
                   "waiting for their OK. Don't say it was sent.")
@@ -112,7 +138,7 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
     info = info if info is not None else {}
     info.update(steps=0, tools=[], usage={}, approvals=[], sources=[], emitted=False, side_effects=False,
                 ttft=None, cost_usd=0.0, tried=[])
-    ctx = dict(ctx or {})
+    ctx = ctx if isinstance(ctx, dict) else {}  # shared with the caller: tools add cards and images to it
     ctx.setdefault("sources", info["sources"])
     info["sources"] = ctx["sources"]
     specs = tools.specs()

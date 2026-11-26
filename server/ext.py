@@ -23,7 +23,7 @@ import threading
 FEATURES = ("google", "gcal", "routines", "workflows", "subagents", "media", "browser", "calls", "passkeys")
 FEATURES += ("reactions", "uploads", "gifs")  # stage 5, builder A: tapbacks, photos, GIFs
 # paused (stage 5 B, kept in commit 75eb145): FEATURES += ("live",)
-# paused (stage 5 C, kept in commit 75eb145): FEATURES += ("cards", "onboarding")
+FEATURES += ("cards",)  # the card kit, connect cards, weather (onboarding paused, kept in 75eb145)
 
 _lock = threading.Lock()
 _mods = None
