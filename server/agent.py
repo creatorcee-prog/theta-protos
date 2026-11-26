@@ -50,7 +50,8 @@ def _with_guide(messages):
     return msgs
 
 
-_NEEDS = {"send_email_draft": "google", "calendar_invite": "google", "call_someone": "twilio", "send_text": "twilio"}
+_NEEDS = {"send_email_draft": "google", "calendar_invite": "google", "call_someone": "twilio", "send_text": "twilio",
+          "gmail_trash": "google", "gmail_unsubscribe": "google", "calendar_delete": "google", "calendar_move": "google"}
 
 
 def _service_ready(service):
@@ -112,8 +113,26 @@ def _run_tools(calls, ctx, emit, info, deadline):
         name = c["name"]
         info["tools"].append(name)
         tool = tools.BY_NAME.get(name)
+        if tool is not None and tool["risk"] == "send" and callable(tool.get("auto")):
+            # a send the user may let through without a tap (reviewed texts to saved contacts): the tool's own
+            # check decides; anything it doesn't clear falls back to the approval card below
+            emit("tool", {"id": c["id"], "name": name, "state": "running"})
+            try:
+                done = tool["auto"](c.get("args") or {}, ctx, info)
+            except Exception as e:  # noqa: BLE001
+                done = None
+                ctx["auto_note"] = f"the automatic check failed ({type(e).__name__})"
+            if done is not None:
+                ok, text = done
+                info["side_effects"] = info["side_effects"] or ok
+                emit("tool", {"id": c["id"], "name": name, "state": "done", "ok": ok})
+                results[i] = (c, ok, text)
+                continue
         if tool is not None and tool["risk"] == "send":
             ok, text = _approval(c, ctx, emit, info)
+            note = ctx.pop("auto_note", None) if isinstance(ctx, dict) else None
+            if ok and note:
+                text += f" It wasn't sent automatically because {note}; say that in a few words."
             emit("tool", {"id": c["id"], "name": name, "state": "waiting" if ok else "done", "ok": ok})
             results[i] = (c, ok, text)
             continue

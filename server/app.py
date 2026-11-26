@@ -46,7 +46,7 @@ BOTS = [{"id": "theta", "name": "Theta",
          "avatar": {"kind": "dot-globe", "theme": "theta", "color": "#7cc4ff"}}]
 BOT_IDS = {b["id"] for b in BOTS}
 
-SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None, "bot_name": "Theta"}
+SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None, "bot_name": "Theta", "texts_auto": True}
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
        "font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; media-src 'self' blob:; "
@@ -1076,6 +1076,8 @@ def _clean_settings(body):
         except Exception:
             raise HTTPError(400, "unknown time zone") from None
         out["tz"] = str(tz)
+    if "texts_auto" in body:
+        out["texts_auto"] = bool(body["texts_auto"])
     if "bot_name" in body:
         n = re.sub(r"\s+", " ", str(body["bot_name"] or "")).strip()
         if not re.fullmatch(r"[\w .'-]{1,24}", n):

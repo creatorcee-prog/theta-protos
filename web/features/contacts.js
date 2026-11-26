@@ -21,13 +21,24 @@
   const g = T.settings("Contacts", "general");
   const fine = el("p", "fine set-fine", "Theta can text, call or email these people by name, and always shows you the message first.");
 
-  let list = [];
+  let list = [], autoOn = true;
+  const autoRow = el("div", "row-set"), autoTxt = el("div", "txt");
+  autoTxt.append(el("b", null, "Send texts without asking"),
+    el("span", null, "To saved contacts only, after a second model checks each one is safe, says only what you asked, and fits how you two text. Anything it isn't sure about waits for your tap."));
+  const autoSw = el("label", "switch"), autoIn = el("input"); autoIn.type = "checkbox"; autoIn.setAttribute("switch", ""); autoIn.setAttribute("aria-label", "Send texts without asking");
+  autoSw.append(autoIn, el("i")); autoRow.append(autoTxt, autoSw);
+  autoIn.addEventListener("change", async () => {
+    const want = autoIn.checked;
+    try { await T.post("/api/settings", {texts_auto: want}); autoOn = want; T.toast(want ? "Reviewed texts go without asking." : "Every text waits for your tap."); }
+    catch (e) { autoIn.checked = autoOn; T.toast("Couldn't change that. Try again.", 3000); }
+  });
   const field = (ph, type, label) => { const i = el("input"); i.placeholder = ph; i.type = type || "text"; i.autocomplete = "off"; i.setAttribute("aria-label", label || ph); return i; };
   const fName = field("Name"), fRel = field("Who (mom, boss)", "text", "Who they are"), fPhone = field("Phone", "tel"), fEmail = field("Email", "email");
   const save = el("button", "btn-dark", "Add contact"); save.type = "button";
 
   function render() {
     g.replaceChildren();
+    autoIn.checked = autoOn; g.append(autoRow);
     for (const c of list) {
       const row = el("div", "row-set ct-row"), txt = el("div", "txt");
       const bits = [c.note, c.phone, c.email].filter(Boolean).join(" · ");
@@ -61,6 +72,7 @@
   async function load() {
     if (T.state.demo) { render(); return; }
     try { const r = await T.api("/api/contacts"); list = Array.isArray(r) ? r : []; } catch (e) { /* signed out or offline */ }
+    try { const st = await T.api("/api/settings"); autoOn = !st || st.texts_auto !== false; } catch (e) {}
     render();
   }
   render();

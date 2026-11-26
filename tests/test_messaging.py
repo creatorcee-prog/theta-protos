@@ -114,4 +114,57 @@ check("it runs once", resume.run_ready() == [] and len(ran) == 1)
 resume.record({"bot": "theta", "routine": 3, "user_id": u2["id"]}, "tavily")
 check("routines aren't saved for later", not resume._items())
 
+# ---------------------------------------------------------------- reviewed texts, sent without a tap
+from server import models
+os.environ.update(TWILIO_ACCOUNT_SID="AC1", TWILIO_AUTH_TOKEN="t", TWILIO_FROM="+15550001111")
+db.set_setting("texts_sent", {})
+sent.clear()
+seen = []
+verdict = {"v": '{"verdict": "send", "reason": "Plain heads-up, matches the request."}'}
+models.available = lambda: {"deepseek", "anthropic"}
+models.complete = lambda p, m, msgs, max_tokens=1024: seen.append((p, msgs)) or verdict["v"]
+texts._log("+13035551234", "in", "Are you still coming tonight?", time.time() - 600)
+u3 = db.add_message("theta", "user", "text mom I'm running 15 late", {})
+c3 = {"bot": "theta", "user_id": u3["id"]}
+info3 = {"tools": ["send_text"], "provider": "deepseek"}
+res = texts._auto({"to": "Mom", "message": "Running 15 late, sorry! - Cee"}, c3, info3)
+check("a reviewed text to a saved contact goes without a tap", res and res[0] and "without asking" in res[1]
+      and sent[-1][1]["Body"] == "Running 15 late, sorry! - Cee", res)
+check("the reviewer is a different provider from the writer", seen[-1][0] == "anthropic", seen[-1][0])
+check("the reviewer sees the request, the contact and how they've texted", "running 15 late" in seen[-1][1][1]["content"]
+      and "Them: Are you still coming tonight?" in seen[-1][1][1]["content"], seen[-1][1][1]["content"][:300])
+check("the sent text is logged for next time", texts.log_of("+13035551234")[-1]["dir"] == "out")
+check("and the chat gets a card of what was sent", any(cd.get("title") == "Texted Mom" for cd in c3.get("cards", [])), c3.get("cards"))
+
+verdict["v"] = '{"verdict": "ask", "reason": "This sounds like news they should hear from you."}'
+c4 = {"bot": "theta", "user_id": u3["id"]}
+check("when the reviewer says ask, it falls back to the approval card", texts._auto({"to": "Mom", "message": "Grandpa is in the hospital"}, c4, info3) is None
+      and "hear from you" in c4["auto_note"], c4)
+verdict["v"] = "not json at all"
+c5 = {"bot": "theta", "user_id": u3["id"]}
+check("a garbled review is an ask, never a send", texts._auto({"to": "Mom", "message": "hi"}, c5, info3) is None)
+verdict["v"] = '{"verdict": "send", "reason": "ok"}'
+n = len(sent)
+check("not a saved contact: approval card", texts._auto({"to": "+13035559999", "message": "hi"}, {"bot": "theta", "user_id": u3["id"]}, info3) is None)
+c6 = {"bot": "theta", "user_id": u3["id"]}
+check("a turn that read mail first never auto-sends", texts._auto({"to": "Mom", "message": "hi"}, c6, {"tools": ["gmail_read", "send_text"]}) is None
+      and "outside text" in c6["auto_note"])
+check("routines never auto-send", texts._auto({"to": "Mom", "message": "hi"}, {"bot": "theta", "user_id": u3["id"], "routine": 1}, info3) is None)
+db.set_setting("texts_auto", False)
+check("the setting turns it off", texts._auto({"to": "Mom", "message": "hi"}, {"bot": "theta", "user_id": u3["id"]}, info3) is None)
+db.set_setting("texts_auto", True)
+check("none of those sent anything", len(sent) == n)
+
+# through the agent loop: the tool result says it was sent; a declined one becomes an approval card
+emits = []
+ainfo = {"tools": [], "approvals": [], "side_effects": False, "provider": "deepseek"}
+r = agent._run_tools([{"id": "t1", "name": "send_text", "args": {"to": "Mom", "message": "Leaving now"}}],
+                     {"bot": "theta", "user_id": u3["id"]}, lambda e, d: emits.append((e, d)), ainfo, time.monotonic() + 30)
+check("agent loop: a cleared text is sent, no approval card", r[0][1] and not ainfo["approvals"] and sent[-1][1]["Body"] == "Leaving now", r)
+verdict["v"] = '{"verdict": "ask", "reason": "unsure"}'
+ainfo = {"tools": [], "approvals": [], "side_effects": False, "provider": "deepseek"}
+r = agent._run_tools([{"id": "t2", "name": "send_text", "args": {"to": "Mom", "message": "Call me"}}],
+                     {"bot": "theta", "user_id": u3["id"]}, lambda e, d: None, ainfo, time.monotonic() + 30)
+check("agent loop: a held text becomes an approval card, and the model hears why", ainfo["approvals"] and "wasn't sent automatically" in r[0][2], r[0][2])
+
 print("all messaging checks passed")

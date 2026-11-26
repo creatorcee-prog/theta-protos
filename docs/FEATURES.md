@@ -80,3 +80,9 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 - Picking a request back up (`server/resume.py`): when a request fails because an app isn't connected, or a
   draft waits on one, it's saved; once the app connects, Theta texts first and carries on (a waiting draft
   gets Approve / Discard again; anything else runs again as a tool turn).
+- Gmail and Calendar actions (`server/gactions.py`): archive, mark read and restore run directly (undoable);
+  trash, unsubscribe (one-click link or mailto, never a blind web page), delete and move an event need Approve.
+- Reviewed texts: a send tool may define `auto(args, ctx, info)`; it returns (ok, text) when it handled the call,
+  or None for the approval card (setting `ctx["auto_note"]` says why). `send_text` uses it: saved contact, a turn
+  the user typed, nothing untrusted read this turn, and a reviewer model on another provider says send.
+  Incoming texts: POST /api/texts/inbound (the Twilio number's messaging webhook), signed by Twilio.
