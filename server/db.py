@@ -13,6 +13,9 @@ docs/HARNESS-PLAN.md).
     add_job(due_t, kind, payload) -> id / due_jobs(now, claim=False) / finish_job(id, state, result) / jobs()
     get_plan(bot) / set_plan(bot, plan|None)
     search_messages(query, bot=None, limit=5)
+    update_message(id, text=None, meta=None) / delete_messages(ids) / last_user_message(bot, before=None)
+    set_feedback(message_id, vote, reason, prompt, reply, model, tier) / feedback(limit, include_dismissed)
+    dismiss_feedback(ids) / feedback_version()
 """
 
 import json
@@ -104,6 +107,18 @@ CREATE TABLE IF NOT EXISTS jobs (
     done_t  REAL
 );
 CREATE INDEX IF NOT EXISTS jobs_state_due ON jobs (state, due_t);
+CREATE TABLE IF NOT EXISTS feedback (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    t          REAL NOT NULL,
+    message_id INTEGER NOT NULL UNIQUE,
+    vote       INTEGER NOT NULL,
+    reason     TEXT NOT NULL DEFAULT '',
+    prompt     TEXT NOT NULL DEFAULT '',
+    reply      TEXT NOT NULL DEFAULT '',
+    model      TEXT,
+    tier       TEXT,
+    dismissed  INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS plans (
     bot   TEXT PRIMARY KEY,
     plan  TEXT NOT NULL,
@@ -218,6 +233,53 @@ def since(msg_id, bot=None, limit=500):
 def get_message(msg_id):
     """One Message by id, or None."""
     row = _conn().execute("SELECT * FROM messages WHERE id = ?", (int(msg_id),)).fetchone()
+    return _msg(row) if row else None
+
+
+def update_message(msg_id, text=None, meta=None):
+    """Change a message's text and/or merge `meta` keys into its meta (a key set to None is removed).
+    Returns the updated Message, or None if there is no such message."""
+    c = _conn()
+    c.execute("BEGIN IMMEDIATE")
+    try:
+        row = c.execute("SELECT * FROM messages WHERE id = ?", (int(msg_id),)).fetchone()
+        if row is None:
+            c.execute("COMMIT")
+            return None
+        m = _msg(row)
+        if meta:
+            for k, v in meta.items():
+                if v is None:
+                    m["meta"].pop(k, None)
+                else:
+                    m["meta"][k] = v
+        if text is not None:
+            m["text"] = text
+        c.execute("UPDATE messages SET text = ?, meta = ? WHERE id = ?",
+                  (m["text"], json.dumps(m["meta"], ensure_ascii=False), m["id"]))
+        c.execute("COMMIT")
+    except BaseException:
+        c.execute("ROLLBACK")
+        raise
+    return m
+
+
+def delete_messages(ids):
+    """Delete messages by id; returns how many went."""
+    ids = [int(i) for i in (ids or [])]
+    if not ids:
+        return 0
+    return _conn().execute(f"DELETE FROM messages WHERE id IN ({', '.join('?' * len(ids))})", ids).rowcount
+
+
+def last_user_message(bot, before=None):
+    """The bot's most recent user message (older than id `before` if given), or None."""
+    if before:
+        row = _conn().execute("SELECT * FROM messages WHERE bot = ? AND role = 'user' AND id < ? "
+                              "ORDER BY id DESC LIMIT 1", (bot, int(before))).fetchone()
+    else:
+        row = _conn().execute("SELECT * FROM messages WHERE bot = ? AND role = 'user' ORDER BY id DESC LIMIT 1",
+                              (bot,)).fetchone()
     return _msg(row) if row else None
 
 
@@ -534,3 +596,63 @@ def search_messages(query, bot=None, limit=5):
     if not found and len(words) > 1:
         found = run(words[:8])
     return found
+
+
+# ---- feedback: the user's like / dislike on a reply (persona.py turns it into lessons)
+
+def _feedback(row):
+    d = dict(row)
+    d["dismissed"] = bool(d["dismissed"])
+    return d
+
+
+def set_feedback(message_id, vote, reason="", prompt="", reply="", model=None, tier=None):
+    """Store (or replace) the vote on one message: 1 like, -1 dislike, 0 removes it. Returns the row or None."""
+    vote = int(vote)
+    if vote not in (-1, 0, 1):
+        raise ValueError("vote must be 1, -1 or 0")
+    c = _conn()
+    if vote == 0:
+        c.execute("DELETE FROM feedback WHERE message_id = ?", (int(message_id),))
+        _bump_feedback()
+        return None
+    c.execute("INSERT INTO feedback (t, message_id, vote, reason, prompt, reply, model, tier) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(message_id) DO UPDATE SET t = excluded.t, "
+              "vote = excluded.vote, reason = excluded.reason, prompt = excluded.prompt, reply = excluded.reply, "
+              "model = excluded.model, tier = excluded.tier, dismissed = 0",
+              (time.time(), int(message_id), vote, str(reason or "")[:300], str(prompt or "")[:4000],
+               str(reply or "")[:8000], model, tier))
+    _bump_feedback()
+    row = c.execute("SELECT * FROM feedback WHERE message_id = ?", (int(message_id),)).fetchone()
+    return _feedback(row) if row else None
+
+
+def feedback(limit=200, include_dismissed=False, vote=None):
+    """Feedback rows, newest first."""
+    where, args = [], []
+    if not include_dismissed:
+        where.append("dismissed = 0")
+    if vote is not None:
+        where.append("vote = ?")
+        args.append(int(vote))
+    sql = "SELECT * FROM feedback" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY t DESC, id DESC LIMIT ?"
+    return [_feedback(r) for r in _conn().execute(sql, args + [max(1, min(int(limit or 200), 5000))]).fetchall()]
+
+
+def dismiss_feedback(ids):
+    """Hide these feedback rows from the lessons (the user removed the lesson). Returns how many changed."""
+    ids = [int(i) for i in (ids or [])]
+    if not ids:
+        return 0
+    n = _conn().execute(f"UPDATE feedback SET dismissed = 1 WHERE id IN ({', '.join('?' * len(ids))})", ids).rowcount
+    _bump_feedback()
+    return n
+
+
+def _bump_feedback():
+    set_setting("feedback_version", int(get_setting("feedback_version", 0) or 0) + 1)
+
+
+def feedback_version():
+    """A counter that changes whenever feedback does (persona.py rebuilds its lessons block only then)."""
+    return int(get_setting("feedback_version", 0) or 0)

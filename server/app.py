@@ -296,6 +296,22 @@ def _build(history, text, bot, images=None, extra=None, context=None):
     return persona.build(history, text, images=images, extra=extra, bot=bot)
 
 
+def _usage_meta(usage, provider, model, extra=()):
+    """A reply's meta.usage: {in, out, cached, cost_usd, model} from the turn's summed usage, plus `extra`
+    usage records (research helpers: {"usage", "cost_usd"}). None when the provider reported nothing."""
+    total = dict(usage or {})
+    cost = models.cost(model, total, provider) if total else 0.0
+    for rec in extra or ():
+        if isinstance(rec, dict) and rec.get("usage"):
+            models.add_usage(total, rec["usage"])
+            cost += float(rec.get("cost_usd") or 0)
+    t_in, t_out = int(total.get("tokens_in") or 0), int(total.get("tokens_out") or 0)
+    if not (t_in or t_out):
+        return None
+    return {"in": t_in, "out": t_out, "cached": int(total.get("cache_read") or 0),
+            "cost_usd": round(float(cost or 0), 6), "model": model}
+
+
 def _usage_row(log_row, usage, provider, model):
     if not usage:
         return
@@ -337,25 +353,29 @@ def _approval_actions(approvals):
     return out[:4]
 
 
-def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0):
-    """A tool turn: agent.run, then the stored reply (with approval chips if a send is waiting)."""
+def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=None):
+    """A tool turn: agent.run, then the stored reply (with approval chips if a send is waiting).
+    `tag` is merged into the meta of every message this turn stores (reply_to, an edit's note)."""
+    tag = dict(tag or {})
     cands = list(route.candidates) or [(route.provider, route.model)]
     provider, model = cands[0]
     emit("route", {"model": model, "provider": provider, "tier": route.tier, "why": route.why})
     acked = {"done": False}
     if ack_text:
-        emit("ack", db.add_message(bot, "assistant", ack_text, {"ack": True, "tier": route.tier}))
+        emit("ack", db.add_message(bot, "assistant", ack_text, {"ack": True, "tier": route.tier,
+                                                                 "reply_to": user["id"]}))
         acked["done"] = True
 
     def on_tool_start(_calls):  # ack-then-result for tool turns: the first step called a tool
         if not acked["done"]:
             acked["done"] = True
-            emit("ack", db.add_message(bot, "assistant", TOOL_ACK, {"ack": True, "tier": route.tier, "tool": True}))
+            emit("ack", db.add_message(bot, "assistant", TOOL_ACK, {"ack": True, "tier": route.tier, "tool": True,
+                                                                    "reply_to": user["id"]}))
 
     msgs = _build(history, text, bot, context=tools.context_block(bot))
     info = {}
+    tctx = {"bot": bot, "user_id": user["id"]}
     try:
-        tctx = {"bot": bot, "user_id": user["id"]}
         final = agent.run(route, msgs, emit, info=info, ctx=tctx,
                           on_tool_start=on_tool_start, max_tokens=MAX_TOKENS)
     finally:
@@ -390,6 +410,10 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0):
         rmeta["actions"] = _approval_actions(approvals)
     if info.get("sources"):
         rmeta["sources"] = info["sources"]
+    usage = _usage_meta(info.get("usage"), log_row["provider"], log_row["model"], tctx.get("research_usage") or ())
+    if usage:
+        rmeta["usage"] = usage
+    rmeta.update(tag)
     if not approvals and not info.get("error"):  # a multi-step job that worked: offer to save it as a workflow
         try:
             from . import workflows
@@ -408,7 +432,7 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0):
     return reply
 
 
-def _chat_worker(bot, text, images, client_id, emit):
+def _chat_worker(bot, text, images, client_id, emit, edit=None):
     """Runs one chat turn, calling emit(event, data) for
     user, route, [ack], [tool..., approval...], delta..., done | error.
     Think and search turns first get a short templated acknowledgement (its own
@@ -417,24 +441,38 @@ def _chat_worker(bot, text, images, client_id, emit):
     agent.run; quick chat streams straight from the model. The text
     "approve:<id>" / "deny:<id>" (the approval chips) is handled in code, with no
     model. The worker runs to completion even if the client goes away, so the
-    reply is stored (and shows up in /api/inbox). Every turn is logged to `turns`."""
+    reply is stored (and shows up in /api/inbox). Every turn is logged to `turns`.
+    edit={"user": Message, "deleted": [ids], "note": str|None} (POST /api/messages/edit): the user message
+    was already rewritten and the old replies deleted, so this emits deleted, then the updated user message,
+    and regenerates the reply; the note (tool effects the old reply had) goes in the reply's meta."""
     t0 = time.monotonic()
     log_row = {"bot": bot, "chars_in": len(text), "ok": False, "tried": []}
     ttft = None
     replied = False
     try:
-        history = db.messages(bot, limit=persona.HISTORY)
-        meta = {}
-        if client_id:
-            meta["client_id"] = str(client_id)[:80]
-        if images:
-            meta["images"] = len(images)
-        tap = _APPROVE_TEXT.match(text) if not images else None
-        shown = text
-        if tap:  # the chat shows the button's word, not "approve:12"
-            meta["tap"] = text
-            shown = "Approve" if tap.group(1).lower() == "approve" else "Discard"
-        user = db.add_message(bot, "user", shown, meta)
+        if edit:
+            user = edit["user"]
+            history = db.messages(bot, before=user["id"], limit=persona.HISTORY)
+            tap = None
+            emit("deleted", {"ids": list(edit.get("deleted") or []), "user_id": user["id"]})
+        else:
+            history = db.messages(bot, limit=persona.HISTORY)
+            meta = {}
+            if client_id:
+                meta["client_id"] = str(client_id)[:80]
+            if images:
+                meta["images"] = len(images)
+            tap = _APPROVE_TEXT.match(text) if not images else None
+            shown = text
+            if tap:  # the chat shows the button's word, not "approve:12"
+                meta["tap"] = text
+                shown = "Approve" if tap.group(1).lower() == "approve" else "Discard"
+            user = db.add_message(bot, "user", shown, meta)
+        tag = {"reply_to": user["id"]}
+        if edit:
+            tag["edited"] = True
+            if edit.get("note"):
+                tag["note"] = edit["note"]
         log_row["user_id"] = user["id"]
         emit("user", user)
         if tap:
@@ -457,7 +495,7 @@ def _chat_worker(bot, text, images, client_id, emit):
         ack_text = persona.ack(route.tier, text, live=live, seed=user["id"])
         if _use_tools(text, images, route):
             try:
-                _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0)
+                _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=tag)
                 replied = True
             except models.ModelError as e:
                 log_row["error"] = str(e)[:300]
@@ -470,7 +508,8 @@ def _chat_worker(bot, text, images, client_id, emit):
             emit("route", {"model": model, "provider": provider, "tier": route.tier, "why": why})
             if i == 0:
                 if ack_text:
-                    emit("ack", db.add_message(bot, "assistant", ack_text, {"ack": True, "tier": route.tier}))
+                    emit("ack", db.add_message(bot, "assistant", ack_text, {"ack": True, "tier": route.tier,
+                                                                             "reply_to": user["id"]}))
                 extra, sources = None, []
                 if route.tier == "search":
                     extra, sources = router.search_context(text)
@@ -503,9 +542,13 @@ def _chat_worker(bot, text, images, client_id, emit):
                 if not sent:
                     ttft = None
                     continue  # nothing reached the user: try the next candidate
-                reply = db.add_message(bot, "assistant", cleaner.text(),
-                                       {"model": model, "provider": provider, "tier": route.tier,
-                                        "partial": True, "error": "the model stopped mid-reply"})
+                pmeta = {"model": model, "provider": provider, "tier": route.tier,
+                         "partial": True, "error": "the model stopped mid-reply", **tag}
+                if _usage_meta(usage, provider, model):
+                    pmeta["usage"] = _usage_meta(usage, provider, model)
+                if sources:
+                    pmeta["sources"] = sources
+                reply = db.add_message(bot, "assistant", cleaner.text(), pmeta)
                 log_row.update(reply_id=reply["id"], chars_out=len(reply["text"]), error=last_err)
                 _usage_row(log_row, usage, provider, model)
                 emit("done", reply)
@@ -518,6 +561,10 @@ def _chat_worker(bot, text, images, client_id, emit):
             rmeta = {"model": model, "provider": provider, "tier": route.tier}
             if sources:
                 rmeta["sources"] = sources
+            um = _usage_meta(usage, provider, model)
+            if um:
+                rmeta["usage"] = um
+            rmeta.update(tag)
             reply = db.add_message(bot, "assistant", full, rmeta)
             log_row.update(reply_id=reply["id"], chars_out=len(full), ok=True)
             _usage_row(log_row, usage, provider, model)
@@ -694,13 +741,17 @@ def chat(req, start):
     if len(text) > 20000:
         raise HTTPError(413, "message too long")
     client_id = body.get("client_id")
+    return _run_chat(req, start, bot, text, images, client_id)
 
+
+def _run_chat(req, start, bot, text, images, client_id, edit=None):
+    """Run _chat_worker and answer with its SSE stream (or one JSON object with ?stream=0)."""
     if req.query.get("stream") == "0":
         got = {}
 
         def keep(ev, data):
             got[ev] = data
-        _chat_worker(bot, text, images, client_id, keep)
+        _chat_worker(bot, text, images, client_id, keep, edit=edit)
         if "done" in got:
             out = {"user": got["user"], "reply": got["done"]}
             if "ack" in got:
@@ -711,7 +762,7 @@ def chat(req, start):
 
     q = queue.Queue()
     threading.Thread(target=_chat_worker, args=(bot, text, images, client_id, lambda e, d: q.put((e, d))),
-                     name="chat", daemon=True).start()
+                     kwargs={"edit": edit}, name="chat", daemon=True).start()
 
     def gen():
         yield b": stream open\n\n"
@@ -728,6 +779,147 @@ def chat(req, start):
     start("200 OK", _headers("text/event-stream; charset=utf-8",
                              [("Cache-Control", "no-cache, no-transform"), ("X-Accel-Buffering", "no")]))
     return gen()
+
+
+# ---- message actions: edit your last message, like / dislike a reply
+
+_edit_lock = threading.Lock()
+_TOOL_DID = {"memory_edit": "updated what I remember about you", "remind_me": "set a reminder",
+             "plan_update": "updated the plan"}
+
+
+def _did(names):
+    out = []
+    for n in names:
+        tool = tools.BY_NAME.get(n) or {}
+        if tool.get("risk") != "write":
+            continue
+        what = _TOOL_DID.get(n) or f"ran {n.replace('_', ' ')}"
+        if what not in out:
+            out.append(what)
+    return out
+
+
+def _and(items):
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _turn_replies(bot, user):
+    """The assistant messages that answered `user` (the latest user message): the ack, the reply, approval
+    results and anything else stored after it, except proactive texts another source sent meanwhile."""
+    out = []
+    for m in db.since(user["id"], bot=bot, limit=500):
+        meta = m.get("meta") or {}
+        if m["role"] != "assistant":
+            continue
+        if meta.get("proactive") and meta.get("reply_to") != user["id"]:
+            continue  # a brief, an alert, a reminder: not part of this turn
+        out.append(m)
+    return out
+
+
+def edit_message(req, start):
+    """POST /api/messages/edit {id, text}: rewrite the latest user message, drop the replies to it and
+    answer again (streams like /api/chat). Tool effects the old reply had stay done; the new reply's
+    meta.note says so."""
+    body = req.json()
+    bot = body.get("bot") or "theta"
+    if bot not in BOT_IDS:
+        raise HTTPError(404, "unknown bot")
+    try:
+        mid = int(body.get("id"))
+    except (TypeError, ValueError):
+        raise HTTPError(400, "id (the message id) is required") from None
+    text = body.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise HTTPError(400, "text is required")
+    text = text.strip()
+    if len(text) > 20000:
+        raise HTTPError(413, "message too long")
+    if _APPROVE_TEXT.match(text):
+        raise HTTPError(400, "that text is reserved for approval taps")
+    with _edit_lock:
+        msg = db.get_message(mid)
+        if not msg or msg["bot"] != bot or msg["role"] != "user":
+            raise HTTPError(404, "no such message")
+        last = db.last_user_message(bot)
+        if not last or last["id"] != mid:
+            raise HTTPError(409, "only your latest message can be edited")
+        if (msg.get("meta") or {}).get("tap") or (msg.get("meta") or {}).get("images"):
+            raise HTTPError(409, "this message can't be edited")
+        old = _turn_replies(bot, msg)
+        did, discarded = [], 0
+        for m in old:
+            meta = m.get("meta") or {}
+            did += [d for d in _did(meta.get("tools") or []) if d not in did]
+            for aid in meta.get("approvals") or []:
+                ap = db.get_approval(aid)
+                if ap and ap["state"] == "pending" and db.set_approval(aid, "denied", expect="pending"):
+                    discarded += 1  # its card is going away, so it must not be approvable later
+                elif ap and ap["state"] == "done" and "sent what you approved" not in did:
+                    did.append("sent what you approved")
+        note = None
+        if did:
+            note = f"Note: the earlier reply already {_and(did)}; that wasn't undone."
+        if discarded:
+            note = (note + " " if note else "Note: ") + "The action that was waiting for your OK was discarded."
+        db.delete_messages([m["id"] for m in old])
+        user = db.update_message(mid, text=text, meta={"edited": int(time.time())})
+    edit = {"user": user, "deleted": [m["id"] for m in old], "note": note}
+    return _run_chat(req, start, bot, text, [], None, edit=edit)
+
+
+def _lesson_list():
+    return [{"id": x["id"], "text": x["text"], "n": x["n"], "t": x["t"]} for x in persona.lessons()]
+
+
+def feedback_route(req, start):
+    p, m = req.path, req.method
+    if p == "/api/feedback" and m == "POST":
+        body = req.json()
+        try:
+            mid, vote = int(body.get("message_id")), int(body.get("vote"))
+        except (TypeError, ValueError):
+            raise HTTPError(400, "message_id and vote (1, -1 or 0) are required") from None
+        if vote not in (1, -1, 0) or isinstance(body.get("vote"), bool):
+            raise HTTPError(400, "vote must be 1, -1 or 0")
+        reason = body.get("reason") or ""
+        if not isinstance(reason, str):
+            raise HTTPError(400, "reason must be a string")
+        reason = re.sub(r"\s+", " ", reason).strip()[:300]
+        msg = db.get_message(mid)
+        if not msg or msg["role"] != "assistant":
+            raise HTTPError(404, "no such reply")
+        meta = msg.get("meta") or {}
+        prompt = db.last_user_message(msg["bot"], before=mid) if not meta.get("proactive") else None
+        db.set_feedback(mid, vote, reason if vote < 0 else "", (prompt or {}).get("text", ""), msg["text"],
+                        meta.get("model"), meta.get("tier"))
+        db.update_message(mid, meta={"vote": vote or None, "vote_reason": (reason if vote < 0 and reason else None)})
+        return respond_json(start, {"ok": True, "message_id": mid, "vote": vote, "lessons": _lesson_list()})
+    if p == "/api/feedback/summary":
+        if m == "DELETE":
+            key = req.query.get("id") or ""
+            les = next((x for x in persona.lessons() if x["id"] == key), None)
+            if les is None:
+                raise HTTPError(404, "no such lesson")
+            db.dismiss_feedback(les["rows"])
+            return respond_json(start, {"ok": True, "lessons": _lesson_list()})
+        if m != "GET":
+            raise HTTPError(405, "method not allowed")
+        rows = db.feedback(limit=5000, include_dismissed=True)
+        return respond_json(start, {"lessons": _lesson_list(),
+                                    "likes": sum(1 for r in rows if r["vote"] > 0),
+                                    "dislikes": sum(1 for r in rows if r["vote"] < 0)})
+    if p == "/api/feedback/export" and m == "GET":
+        # liked replies as golden-conversation seeds: save as evals/feedback.jsonl
+        lines = [json.dumps({"prompt": r["prompt"], "reply": r["reply"], "tier": r["tier"], "model": r["model"]},
+                            ensure_ascii=False) for r in reversed(db.feedback(limit=5000, include_dismissed=True, vote=1))]
+        data = ("\n".join(lines) + ("\n" if lines else "")).encode()
+        start("200 OK", _headers("application/x-ndjson; charset=utf-8",
+                                 [("Content-Length", str(len(data))), ("Cache-Control", "no-store"),
+                                  ("Content-Disposition", 'attachment; filename="feedback.jsonl"')]))
+        return [data]
+    raise HTTPError(405 if p in ("/api/feedback", "/api/feedback/export") else 404, "not found")
 
 
 # ---- push + settings (push.py is optional)
@@ -933,6 +1125,10 @@ def api(req, start):
         return respond_json(start, {"messages": msgs})
     if p == "/api/chat" and m == "POST":
         return chat(req, start)
+    if p == "/api/messages/edit" and m == "POST":
+        return edit_message(req, start)
+    if p == "/api/feedback" or p.startswith("/api/feedback/"):
+        return feedback_route(req, start)
     if p == "/api/inbox" and m == "GET":
         return respond_json(start, {"messages": db.since(req.int_arg("since", 0, 0), bot=req.query.get("bot") or None,
                                                          limit=200)})
@@ -970,7 +1166,7 @@ def api(req, start):
             out["result"] = _jsonable(res)
         return respond_json(start, out)
     known = {"/api/bots", "/api/messages", "/api/chat", "/api/inbox", "/api/connections", "/api/tick", "/api/turns",
-             "/api/approve", "/api/plan", "/api/jobs"}
+             "/api/approve", "/api/plan", "/api/jobs", "/api/messages/edit"}
     raise HTTPError(405 if p in known else 404, "method not allowed" if p in known else "not found")
 
 

@@ -19,6 +19,7 @@ Note on time: agent.py gives every tool TOOL_SECONDS (20 s) before abandoning it
 "timeout" key (this tool sets one), the angles get min(SECONDS, agent.TOOL_SECONDS - 3) so the merge still
 lands in time.
 """
+import re
 import threading
 import time
 
@@ -180,19 +181,22 @@ def research(question, angles, ctx=None, now=None):
     for t in threads:
         t.join(max(0.0, budget + 1 - (time.monotonic() - t0)))
     total_usage, cost, lines, sources = {}, 0.0, [f"Research on: {question}"], []
+    for r in results:
+        if r is not None:
+            models.add_usage(total_usage, r["usage"])
+            cost += r["cost"]
+            seen = {s.get("url") for s in sources}
+            sources.extend(s for s in r["sources"] if s.get("url") not in seen)
+    nums = _numbers(sources, ctx)  # each helper's [n] is rewritten to these numbers
     for i, (a, r) in enumerate(zip(angles, results), 1):
         if r is None:
             lines.append(f"\n## {i}. {a}\n(timed out after {int(budget)} s; nothing usable)")
             continue
-        models.add_usage(total_usage, r["usage"])
-        cost += r["cost"]
         body = r["text"][:ANGLE_CHARS] if r["text"] else f"(nothing usable{': ' + r['error'] if r['error'] else ''})"
-        lines.append(f"\n## {i}. {a}\n{body}")
-        seen = {s.get("url") for s in sources}
-        sources.extend(s for s in r["sources"] if s.get("url") not in seen)
+        lines.append(f"\n## {i}. {a}\n" + _renumber(body, r["sources"], nums))
     if sources:
-        lines.append("\nSources:\n" + "\n".join(f"[{n}] {s.get('title') or s.get('url')}: {s.get('url')}"
-                                                 for n, s in enumerate(sources[:12], 1)))
+        lines.append("\nSources: (cite these numbers as [n])\n" + "\n".join(
+            f"[{nums.get(s.get('url'))}] {s.get('title') or s.get('url')}: {s.get('url')}" for s in sources[:12]))
     day_total = _spend(cost, now)
     record = {"angles": len(angles), "done": sum(1 for r in results if r and r["ok"]), "model": model,
               "provider": provider, "usage": total_usage, "cost_usd": round(cost, 6),
@@ -206,6 +210,24 @@ def research(question, angles, ctx=None, now=None):
         have = {s.get("url") for s in ctx.setdefault("sources", [])}
         ctx["sources"].extend(s for s in sources if s.get("url") not in have)
     return "\n".join(lines), record
+
+
+def _numbers(merged, ctx):
+    """url -> its number in the turn's sources once `merged` is added to ctx["sources"] (that list is meta.sources)."""
+    urls = [x.get("url") for x in ((ctx or {}).get("sources") or [])] if ctx is not None else []
+    for x in merged:
+        if x.get("url") not in urls:
+            urls.append(x.get("url"))
+    return {u: n for n, u in enumerate(urls, 1)}
+
+
+def _renumber(text, own, nums):
+    """A helper cites its own sources as [n]; rewrite those to the numbering the main model sees."""
+    def sub(m):
+        k = int(m.group(1))
+        n = nums.get(own[k - 1].get("url")) if 1 <= k <= len(own) else None
+        return f"[{n}]" if n else m.group(0)
+    return re.sub(r"\[(\d{1,2})\]", sub, text or "")
 
 
 def _t_research(args, ctx):

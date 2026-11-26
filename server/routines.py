@@ -555,6 +555,11 @@ def run(routine, now=None, why="on schedule", event=None):
             meta["actions"] = acts[:4]
         if info.get("sources"):
             meta["sources"] = info["sources"]
+        u = info.get("usage") or {}
+        if u.get("tokens_in") or u.get("tokens_out"):  # the token line under the message (app.js)
+            meta["usage"] = {"in": int(u.get("tokens_in") or 0), "out": int(u.get("tokens_out") or 0),
+                             "cached": int(u.get("cache_read") or 0), "model": info.get("model"),
+                             "cost_usd": round(models.cost(info.get("model"), u, info.get("provider")), 6)}
         if info.get("error"):
             meta.update(partial=True, error="the model stopped mid-reply")
         msg = db.add_message(bot, "assistant", out, meta)

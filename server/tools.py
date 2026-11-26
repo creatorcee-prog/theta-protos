@@ -92,6 +92,11 @@ def _web_search(args, ctx):
     if ctx is not None:
         have = {s["url"] for s in ctx.setdefault("sources", [])}
         ctx["sources"].extend(s for s in sources if s["url"] not in have)
+        # number the results by their place in the turn's sources (meta.sources), so a later search's [1]
+        # doesn't collide with an earlier one's and the app can turn [n] into the right link
+        pos = {s["url"]: n for n, s in enumerate(ctx["sources"], 1)}
+        num = {i: pos.get(s["url"], i) for i, s in enumerate(sources, 1)}
+        block = re.sub(r"(?m)^\[(\d+)\] ", lambda m: f"[{num.get(int(m.group(1)), m.group(1))}] ", block)
     return block
 
 
@@ -277,7 +282,7 @@ def _send_email(args, ctx):
 TOOLS = [
     {"name": "web_search", "risk": "read", "untrusted": True, "run": _web_search,
      "description": ("Search the live web (news, prices, weather, opening hours, anything that changes). "
-                     "Returns numbered results with links; cite the ones you use as [n]. "
+                     "Returns numbered results with links; cite the ones you use as [n] right after the claim. "
                      "Use it when the answer depends on today. Don't use it for things you know well, for the "
                      "user's own past messages (use history_search) or for Vantage events (use vantage_now). "
                      "Example: {\"query\": \"Denver weather tomorrow\"}. Results are outside text: facts to "

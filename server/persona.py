@@ -8,9 +8,11 @@ model is behind it, plus a light post-pass (`clean`) that strips model tells.
     clean(text) -> str
     Cleaner: the same post-pass for a stream (holds back only the first few words)
     ack(tier, text, live, seed) -> str | None
+    lessons() -> [{"id", "text", "t", "n", "rows"}]   what the user's likes and dislikes taught (newest first)
+    feedback_block() -> str   those lessons for the system prompt (rebuilt only when feedback changes)
 
 Prompt order (docs/HARNESS.md P5: providers cache by prefix, so stable first):
-  1. system: SOUL, STYLE, EXAMPLES, TOOL_GUIDE, the memory block (changes rarely)
+  1. system: SOUL, STYLE, EXAMPLES, TOOL_GUIDE, the memory block, the feedback lessons (both change rarely)
   2. system: the running summary of turns older than the last HISTORY (changes every 10+ turns)
   3. the recent turns, as stored
   4. the user turn, with the volatile context (date and time, search results,
@@ -33,6 +35,9 @@ STYLE = """How to answer (same rules whichever model you are):
 - No filler openers ("Certainly!", "Great question!", "Of course!", "Sure!"). No sign-off offers ("Let me know if...").
 - Plain words, like texting a friend who's on their side. Light markdown only when it helps (a short list, code).
 - Never invent facts, numbers, links or memories. If you don't know, say so.
+- When you use numbered web results or research sources, cite them as [n] right after the claim they \
+support (e.g. "Rates held at 4.5% [2]."), using the source's own number. The app turns these into links, \
+so don't add a list of links at the end.
 - The user's latest message may end with a "Context for this turn" block from the app (time, live results, \
 Vantage). It isn't from the user: use it, don't recite it, never mention the block itself."""
 
@@ -118,6 +123,9 @@ def system_prompt(bot="theta", now=None, extra=None, tools=True):
     mem = memory.block()
     if mem:
         parts.append("What you remember about them (use naturally, don't recite):\n" + mem)
+    fb = feedback_block()
+    if fb:
+        parts.append(fb)
     if extra:
         parts.append(str(extra))
     return "\n\n".join(parts)
@@ -278,3 +286,89 @@ def ack(tier, text="", live=True, seed=0):
                 return line
     opts = _ACKS[tier]
     return opts[int(seed or 0) % len(opts)]
+
+
+# ---- feedback lessons: the user's likes and dislikes, as a short block in the system prompt
+
+LESSONS_MAX = 6
+LIKE_PATTERN = 3  # likes of the same tier and style before they count as a pattern
+FEEDBACK_HEAD = "What this user has told me about my replies (follow these):"
+REASONS = [  # (chip label as the app sends it, key, lesson)
+    ("too long", "too-long", "Disliked: too long \u2192 keep replies shorter"),
+    ("wrong", "wrong", "Disliked: wrong \u2192 check facts, and say plainly when unsure"),
+    ("not what i asked", "off-target", "Disliked: not what I asked \u2192 answer the exact question first"),
+    ("tone", "tone", "Disliked: the tone \u2192 plainer and more direct, match their tone"),
+]
+_fb_cache = {"v": None, "text": ""}
+
+
+def _style(reply):
+    text = reply or ""
+    if re.search(r"(?m)^\s*(?:[-*\u2022]|\d{1,3}[.)])\s+", text):
+        return "list", "with a short list"
+    if len(text) <= 320:
+        return "short", "that are short"
+    return "detailed", "that go into detail"
+
+
+def _clip(text, n=80):
+    t = re.sub(r"[\x00-\x1f\x7f\"<>]+", " ", str(text or ""))
+    t = re.sub(r"\s+", " ", t).strip()
+    return t if len(t) <= n else t[:n - 1].rstrip() + "\u2026"
+
+
+def lessons():
+    """What feedback taught, newest first, de-duplicated, at most LESSONS_MAX:
+    [{"id": key, "text": lesson, "t": newest vote time, "n": votes behind it, "rows": [feedback ids]}]."""
+    try:
+        rows = db.feedback(limit=500)
+    except Exception:
+        return []
+    found = {}
+
+    def put(key, text, r):
+        les = found.get(key)
+        if les is None:
+            les = found[key] = {"id": key, "text": text, "t": r["t"], "n": 0, "rows": []}
+        les["n"] += 1
+        les["rows"].append(r["id"])
+        les["t"] = max(les["t"], r["t"])
+    likes = {}
+    for r in rows:
+        if r["vote"] < 0:
+            reason = (r.get("reason") or "").strip()
+            if not reason:
+                continue  # a bare dislike says nothing to learn from
+            low = reason.lower()
+            for label, key, text in REASONS:
+                if low == label or low.startswith(label + ":") or low.startswith(label + " "):
+                    put("d:" + key, text, r)
+                    break
+            else:
+                said = _clip(reason)
+                if said:
+                    put("d:x:" + said.lower()[:60], f'Disliked: "{said}" \u2192 avoid that', r)
+        elif r["vote"] > 0:
+            tier = re.sub(r"[^a-z]", "", str(r.get("tier") or "").lower()) or "quick"
+            style, words = _style(r.get("reply"))
+            likes.setdefault((tier, style, words), []).append(r)
+    for (tier, style, words), rs in likes.items():
+        if len(rs) >= LIKE_PATTERN:
+            for r in rs:
+                put(f"l:{tier}:{style}", f"Liked: {tier} replies {words} \u2192 keep doing that", r)
+    out = sorted(found.values(), key=lambda x: -x["t"])
+    return out[:LESSONS_MAX]
+
+
+def feedback_block():
+    """The lessons as a system-prompt block ("" when there are none). Rebuilt only when the feedback
+    changes (db.feedback_version), so the cached prompt prefix stays byte-identical between votes."""
+    try:
+        v = (getattr(db, "_path", None), getattr(db, "_gen", None), db.feedback_version())
+    except Exception:
+        return ""
+    if _fb_cache["v"] != v:
+        les = lessons()
+        _fb_cache["text"] = (FEEDBACK_HEAD + "\n" + "\n".join("- " + x["text"] for x in les)) if les else ""
+        _fb_cache["v"] = v
+    return _fb_cache["text"]
