@@ -1,4 +1,3 @@
-# The server is Python 3.11+ standard library only; nothing here is required.
-# Optional, for Web Push (server/push.py):
-# pywebpush
-# http_ece
+# The server is Python 3.11+ standard library only. This one package adds phone notifications (Web Push:
+# payload encryption and VAPID signing). Without it everything else still works and Settings says why.
+pywebpush

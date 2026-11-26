@@ -119,7 +119,10 @@ _ADDED = [("turns", "tokens_in", "INTEGER"), ("turns", "tokens_out", "INTEGER"),
 
 
 def _default_path():
-    data = os.environ.get("PROTOS_DATA") or os.path.join(os.getcwd(), "data")
+    # Railway mounts the service's volume at RAILWAY_VOLUME_MOUNT_PATH; keeping the database there is what makes
+    # it survive redeploys
+    data = (os.environ.get("PROTOS_DATA") or os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+            or os.path.join(os.getcwd(), "data"))
     return os.path.join(data, "protos.db")
 
 

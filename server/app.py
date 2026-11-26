@@ -163,12 +163,40 @@ def respond_json(start, obj, status=200, extra=None):
     return [body]
 
 
+# Wrong-key lockout. The server can sit on a public address (Railway), so guessing is capped for everyone at once:
+# after LOCK_FAILS wrong keys within LOCK_WINDOW seconds, every key is refused until the window passes. Counting
+# all callers together (not per address) can't be dodged by changing addresses; the cost is that a guesser can
+# also lock you out for a few minutes, which beats being guessed.
+LOCK_FAILS, LOCK_WINDOW = 20, 600
+_fails = []
+_fails_lock = threading.Lock()
+
+
+def _locked(now=None):
+    now = time.time() if now is None else now
+    with _fails_lock:
+        _fails[:] = [t for t in _fails if now - t < LOCK_WINDOW]
+        return len(_fails) >= LOCK_FAILS
+
+
+def _failed(now=None):
+    with _fails_lock:
+        _fails.append(time.time() if now is None else now)
+
+
 def authed(req):
     key = os.environ.get("PROTOS_KEY", "")
     if not key:
         return True
     got = req.header("x-protos-key") or req.cookie("protos_key") or ""
-    return hmac.compare_digest(got.encode(), key.encode())
+    if not got:
+        return False
+    if _locked():
+        return False
+    ok = hmac.compare_digest(got.encode(), key.encode())
+    if not ok:
+        _failed()
+    return ok
 
 
 # ---- optional modules
@@ -809,7 +837,10 @@ def login(req, start):
     got = body.get("key")
     if not isinstance(got, str):
         raise HTTPError(400, "key is required")
+    if key and _locked():
+        raise HTTPError(429, "Too many wrong keys. Try again in a few minutes.")
     if key and not hmac.compare_digest(got.encode(), key.encode()):
+        _failed()
         time.sleep(0.4)  # slow down guessing
         raise HTTPError(401, "wrong key")
     c = SimpleCookie()
@@ -997,6 +1028,10 @@ def serve():
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8780"))
     if not os.environ.get("PROTOS_KEY"):
+        if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PROTOS_PUBLIC"):
+            # on a public address, no key would mean anyone could read your chats and use your model keys
+            log("PROTOS_KEY is not set. Set it in the service's variables, then redeploy. Not starting.")
+            raise SystemExit(2)
         log("WARNING: PROTOS_KEY is not set, so the API has no auth. Local dev only.")
     avail = models.available()
     log(f"models available: {', '.join(avail) or 'none (set DEEPSEEK_API_KEY or another key)'}")
