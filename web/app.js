@@ -36,7 +36,10 @@
   async function api(path, init) {
     const r = await http(path, init);
     if (r.status === 401) { needLogin(); throw new AuthError("sign in"); }
-    if (!r.ok) { const e = new Error(`HTTP ${r.status}`); e.status = r.status; throw e; }
+    if (!r.ok) { // the server's reason when it gives one ({"error": "..."}), so a toast can say what to fix
+      let why = ""; try { const j = await r.clone().json(); why = (j && typeof j.error === "string" && j.error) || ""; } catch (err) {}
+      const e = new Error(why ? why[0].toUpperCase() + why.slice(1) + (/[.!?]$/.test(why) ? "" : ".") : `HTTP ${r.status}`); e.status = r.status; throw e;
+    }
     return r.json();
   }
   const post = (path, body) => api(path, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(body || {})});

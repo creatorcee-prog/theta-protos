@@ -50,7 +50,7 @@ def _with_guide(messages):
     return msgs
 
 
-_NEEDS = {"send_email_draft": "google", "calendar_invite": "google", "call_someone": "twilio"}
+_NEEDS = {"send_email_draft": "google", "calendar_invite": "google", "call_someone": "twilio", "send_text": "twilio"}
 
 
 def _service_ready(service):
@@ -90,9 +90,15 @@ def _approval(call, ctx, emit, info):
             cards.attach(ctx, cards.connect(needs))
         except Exception:  # noqa: BLE001
             pass
+        try:
+            from . import resume
+            resume.record(ctx, needs, aid)  # once it's connected, Theta texts them that it can go
+        except Exception:  # noqa: BLE001
+            pass
         return True, ("Not sent, and it can't be yet: " + needs.title() + " isn't connected. The user sees the "
-                      "approval card and a card to connect it. Tell them plainly it'll only go out once they connect "
-                      "it and tap Approve.")
+                      "approval card and a card to connect it. Tell them plainly it goes out only after it's connected "
+                      "AND they tap Approve, and that you'll text them the moment it's connected so they can "
+                      "approve it then. Never say it'll send by itself.")
     return True, ("Not sent. The user now sees an approval card with the exact content and Approve / Discard "
                   "buttons; it runs only if they tap Approve (it expires in 24 h). Tell them briefly that it's "
                   "waiting for their OK. Don't say it was sent.")

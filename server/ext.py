@@ -27,6 +27,7 @@ FEATURES += ("reactions", "uploads", "gifs")  # stage 5, builder A: tapbacks, ph
 # paused (stage 5 B, kept in commit 75eb145): FEATURES += ("live",)
 FEATURES += ("cards",)  # the card kit, connect cards, weather
 FEATURES += ("onboarding",)  # the first-run intro, in the chat
+FEATURES += ("contacts", "texts", "resume")  # saved contacts, texting, picking requests back up once connected
 
 _lock = threading.Lock()
 _mods = None

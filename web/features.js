@@ -5,6 +5,7 @@
   // paused (stage 5 B, kept in commit 75eb145): FEATURES.push("activity", "live");
   FEATURES.push("cards"); // the card kit
   FEATURES.push("onboarding"); // the first-run intro, in the chat
+  FEATURES.push("contacts"); // Settings > General > Contacts
   for (const f of FEATURES) {
     const s = document.createElement("script");
     s.src = "/static/features/" + f + ".js"; s.async = false;

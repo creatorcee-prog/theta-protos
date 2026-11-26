@@ -25,7 +25,7 @@ later).
   - **Check what's deployed:** `/api/health` shows `version` and `build`. The app shows both under "Theta" on
     the sign-in page and at the bottom of Settings.
 - **The phone:** the user installed the app from Safari (Add to Home Screen). It updates itself on the next
-  open; the service-worker cache is v11.
+  open; the service-worker cache is v12.
 - **The Linux box** (the long-term home, `deploy/README.md`) is down: its motherboard is broken. Railway stands
   in until it's fixed.
 - **Not used:** the free Oracle Cloud route (`deploy/ORACLE.md`, `deploy/oracle-cloud-init.sh`). The user

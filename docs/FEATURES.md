@@ -75,3 +75,8 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   (the intro takes typed answers this way) and returns the assistant messages it sent, or None.
 - `/api/chat` takes an optional `show`: the label the chat stores in place of `text` (a tapped option's prompt
   still reaches the model; `meta.prompt` keeps it).
+- Contacts (`server/contacts.py`, Settings > General): people Theta can text, call or email by name; tools
+  `find_contact` and `save_contact`. Texting (`server/texts.py`): `send_text`, a send tool through Twilio SMS.
+- Picking a request back up (`server/resume.py`): when a request fails because an app isn't connected, or a
+  draft waits on one, it's saved; once the app connects, Theta texts first and carries on (a waiting draft
+  gets Approve / Discard again; anything else runs again as a tool turn).

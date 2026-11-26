@@ -814,13 +814,14 @@ _PATTERNS = (
     ("google", r"google (isn't|is not) connected|google signed theta out|google isn't connected any more|"
                r"gmail isn't connected|google is connected but without|sign-in expired|google calendar isn't connected|"
                r"tap connect on gmail"),
-    ("twilio", r"phone calls aren't set up|\btwilio_account_sid\b|no twilio"),
+    ("twilio", r"phone calls aren't set up|texting isn't set up|\btwilio_account_sid\b|no twilio"),
     ("gemini", r"image generation isn't set up|no gemini_api_key|\bgemini_api_key\b"),
     ("tavily", r"live search isn't set up|no search key|\btavily_api_key\b"),
     ("giphy", r"\bgiphy\b.*(isn't|not|no) (set up|key|configured)|\bgiphy_api_key\b|gifs? (aren't|isn't) set up"),
     ("browser", r"web browsing isn't set up|playwright isn't installed|browsing is (off|turned off|disabled)"),
 )
-_TOOL_SERVICE = {"generate_image": "gemini", "web_search": "tavily", "call_me": "twilio", "call_someone": "twilio"}
+_TOOL_SERVICE = {"generate_image": "gemini", "web_search": "tavily", "call_me": "twilio", "call_someone": "twilio",
+                 "send_text": "twilio"}
 
 
 def from_tool_error(name, text):
@@ -846,6 +847,11 @@ def note_result(ctx, name, ok, text):
     card = from_tool_error(name, text)
     if card:
         attach(ctx, card)
+        try:
+            from . import resume
+            resume.record(ctx, card.get("service"))  # picked back up by itself once it's connected
+        except Exception:  # noqa: BLE001
+            pass
     return card
 
 
