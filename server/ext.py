@@ -20,7 +20,7 @@ import re
 import sys
 import threading
 
-FEATURES = ("google", "gcal", "routines", "workflows", "subagents", "media", "browser", "calls")
+FEATURES = ("google", "gcal", "routines", "workflows", "subagents", "media", "browser", "calls", "passkeys")
 
 _lock = threading.Lock()
 _mods = None
