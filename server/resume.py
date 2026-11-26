@@ -21,7 +21,7 @@ SETTING = "pending_connect"
 MAX_AGE = 3 * 86400
 MAX_ITEMS = 10
 NAMES = {"google": "Gmail", "twilio": "Twilio", "tavily": "Web search", "gemini": "Image generation",
-         "giphy": "GIFs", "gdrive": "Google Drive"}
+         "giphy": "GIFs", "gdrive": "Google Drive", "gsettings": "Gmail filters"}
 _lock = threading.Lock()
 
 
@@ -31,7 +31,7 @@ def _items():
 
 
 def _ready(service):
-    if service in ("google", "twilio", "gdrive"):
+    if service in ("google", "twilio", "gdrive", "gsettings"):
         from . import agent
         return agent._service_ready(service)
     env = {"tavily": "TAVILY_API_KEY", "gemini": "GEMINI_API_KEY", "giphy": "GIPHY_API_KEY"}.get(service)
@@ -75,11 +75,10 @@ def _take_ready(now):
         return ready
 
 
-def _actions(ids):
-    acts = []
-    for aid in ids:
-        acts += [{"label": "Approve", "value": f"approve:{aid}"}, {"label": "Discard", "value": f"deny:{aid}"}]
-    return acts[:4]
+def _cards(waiting):
+    from .app import approval_cards
+    return approval_cards([{"id": a["id"], "tool": (a.get("action") or {}).get("tool"),
+                            "preview": (a.get("action") or {}).get("preview")} for a in waiting])
 
 
 def _waiting(p):
@@ -128,8 +127,9 @@ def _rerun(p, now):
     if info.get("tools"):
         meta["tools"] = info["tools"]
     if info.get("approvals"):
+        from .app import approval_cards
         meta["approvals"] = [a["id"] for a in info["approvals"]]
-        meta["actions"] = _actions(meta["approvals"])
+        meta["cards"] = approval_cards(info["approvals"])
     if info.get("sources"):
         meta["sources"] = info["sources"]
     msg = _post(bot, out, meta, now, svc + " is connected")
@@ -151,7 +151,7 @@ def run_ready(now=None):
                                  f"{svc} is connected, so the one I drafted can go now. Nothing goes out until you "
                                  f"tap Approve, and {what} expire{'s' if what == 'it' else ''} in a day.",
                                  {"reply_to": p.get("user_id"), "approvals": [a["id"] for a in waiting],
-                                  "actions": _actions([a["id"] for a in waiting])}, now, svc + " is connected"))
+                                  "cards": _cards(waiting)}, now, svc + " is connected"))
             elif not p.get("approvals"):
                 out.append(_rerun(p, now))
         except Exception:  # noqa: BLE001

@@ -85,7 +85,7 @@ os.environ.update(TWILIO_ACCOUNT_SID="AC1", TWILIO_AUTH_TOKEN="t", TWILIO_FROM="
 msgs = resume.run_ready()
 check("once Twilio is set up, Theta texts first that the draft can go, with Approve", len(msgs) == 1
       and msgs[0]["meta"]["proactive"] and "can go now" in msgs[0]["text"]
-      and msgs[0]["meta"]["actions"][0] == {"label": "Approve", "value": f"approve:{aid}"}, msgs)
+      and msgs[0]["meta"]["cards"][0]["type"] == "approval" and msgs[0]["meta"]["cards"][0]["id"] == aid, msgs)
 check("and nothing was sent by itself", len(sent) == 1 and not resume._items())
 
 u2 = db.add_message("theta", "user", "clean up my inbox", {})
@@ -134,7 +134,8 @@ check("the reviewer is a different provider from the writer", seen[-1][0] == "an
 check("the reviewer sees the request, the contact and how they've texted", "running 15 late" in seen[-1][1][1]["content"]
       and "Them: Are you still coming tonight?" in seen[-1][1][1]["content"], seen[-1][1][1]["content"][:300])
 check("the sent text is logged for next time", texts.log_of("+13035551234")[-1]["dir"] == "out")
-check("and the chat gets a card of what was sent", any(cd.get("title") == "Texted Mom" for cd in c3.get("cards", [])), c3.get("cards"))
+check("and the chat gets a card of what was sent", any(cd.get("type") == "approval" and cd.get("state") == "auto"
+      and "Text to Mom" in cd.get("preview", "") for cd in c3.get("cards", [])), c3.get("cards"))
 
 verdict["v"] = '{"verdict": "ask", "reason": "This sounds like news they should hear from you."}'
 c4 = {"bot": "theta", "user_id": u3["id"]}

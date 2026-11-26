@@ -131,7 +131,8 @@ One Google sign-in covers all of them. It takes about 15 minutes in a browser, o
    - **Audience:** user type **External**, publishing status **Testing**. Under **Test users**, add your own
      Google address.
    - **Data access:** add the Gmail (modify, send), Calendar (events, readonly), Drive (full `drive`, plus file and
-     readonly), Docs, Slides and Contacts (`contacts.readonly`) scopes, plus openid and email.
+     readonly), Docs, Slides, Contacts (`contacts.readonly`) and Gmail filters (`gmail.settings.basic`) scopes, plus
+     openid and email.
 4. **Clients → Create client → Web application.** Under authorized redirect URIs add exactly
    `https://<your app>.up.railway.app/api/google/callback` (https, no slash at the end). Copy the client ID and
    the secret.

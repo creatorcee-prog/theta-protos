@@ -536,9 +536,6 @@ def run(routine, now=None, why="on schedule", event=None):
             return None
         out = (final or "").strip()
         approvals = info.get("approvals") or []
-        if approvals:
-            card = "\n\n".join(f"Waiting for your OK (expires in 24 h):\n{a['preview']}" for a in approvals)
-            out += ("\n\n" if out else "") + card
         if not out:
             out = "Done." if info.get("tools") and not info.get("error") else "That routine didn't produce anything."
         meta = {"proactive": True, "source": "routine", "routine": rid, "routine_name": routine["name"],
@@ -547,12 +544,9 @@ def run(routine, now=None, why="on schedule", event=None):
         if info.get("tools"):
             meta["tools"] = info["tools"]
         if approvals:
+            from .app import approval_cards
             meta["approvals"] = [a["id"] for a in approvals]
-            acts = []
-            for a in approvals:
-                acts += [{"label": "Approve", "value": f"approve:{a['id']}"},
-                         {"label": "Discard", "value": f"deny:{a['id']}"}]
-            meta["actions"] = acts[:4]
+            meta["cards"] = approval_cards(approvals)
         if info.get("sources"):
             meta["sources"] = info["sources"]
         u = info.get("usage") or {}

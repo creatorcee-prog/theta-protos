@@ -22,12 +22,12 @@ import time
 
 from . import db, models, persona, tools
 
-MAX_STEPS = 6
+MAX_STEPS = 10
 TOOL_SECONDS = 20
 TOOL_TIMEOUT_AWARE = True  # a tool with its own "timeout" gets that long (see _run_tools)
 TURN_SECONDS = 90
 MAX_TOKENS = 1200
-MAX_SENDS = 2          # approval cards per turn (each is two buttons; the phone shows four)
+MAX_SENDS = 10         # approval cards per turn (each card carries its own Approve / Discard)
 APPROVAL_TTL = 24 * 3600
 
 FINAL_NOTE = ("[harness] The tool budget for this message is used up. Don't call tools. Answer now with what "
@@ -63,6 +63,9 @@ def _service_ready(service):
         if service == "gdrive":
             from . import google
             return bool(google.connected("drive_full"))
+        if service == "gsettings":
+            from . import google
+            return bool(google.connected("gmail_settings"))
         if service == "twilio":
             import os
             return bool(os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN"))
@@ -109,6 +112,42 @@ def _approval(call, ctx, emit, info):
                   "waiting for their OK. Don't say it was sent.")
 
 
+def _auto_run(call, ctx, emit, info):
+    """Run a send action without a tap when the user's approval setting allows it here (server/approvals.py).
+    Returns (ok, text) when it ran, None for the usual approval card (with why in ctx["auto_note"])."""
+    try:
+        from . import approvals
+        ok_here, why = approvals.allowed(call["name"], ctx, info)
+    except Exception:  # noqa: BLE001
+        return None
+    if not ok_here:
+        if why and isinstance(ctx, dict):
+            ctx["auto_note"] = why
+        return None
+    needs = _NEEDS.get(call["name"])
+    if needs and not _service_ready(needs):
+        return None  # not connected: the approval card and connect card, picked up later
+    try:
+        preview = tools.preview(call["name"], call.get("args") or {})
+    except tools.ToolError as e:
+        return False, f"Error: {e}"
+    emit("tool", {"id": call["id"], "name": call["name"], "state": "running"})
+    ok, text = tools.run_approved({"tool": call["name"], "args": call.get("args") or {},
+                                   "bot": (ctx or {}).get("bot") or "theta"})
+    emit("tool", {"id": call["id"], "name": call["name"], "state": "done", "ok": ok})
+    info["side_effects"] = info["side_effects"] or ok
+    try:
+        from . import cards
+        cards.attach(ctx, {"type": "approval", "id": None, "tool": call["name"], "preview": preview,
+                           "state": "auto" if ok else "failed", "result": str(text)[:300]})
+    except Exception:  # noqa: BLE001
+        pass
+    if not ok:
+        return False, f"Error: {text}"
+    return True, (f"Done without asking (the user allows this one): {text} A card shows exactly what was done. "
+                  "Tell them in one line.")
+
+
 def _run_tools(calls, ctx, emit, info, deadline):
     """Run one step's calls; returns [(call, ok, text)] in call order."""
     results = [None] * len(calls)
@@ -117,9 +156,14 @@ def _run_tools(calls, ctx, emit, info, deadline):
         name = c["name"]
         info["tools"].append(name)
         tool = tools.BY_NAME.get(name)
+        if tool is not None and tool["risk"] == "send" and not callable(tool.get("auto")):
+            done = _auto_run(c, ctx, emit, info)  # the user set this action to run without a tap
+            if done is not None:
+                results[i] = (c, done[0], done[1])
+                continue
         if tool is not None and tool["risk"] == "send" and callable(tool.get("auto")):
-            # a send the user may let through without a tap (reviewed texts to saved contacts): the tool's own
-            # check decides; anything it doesn't clear falls back to the approval card below
+            # a send with its own check (reviewed texts to saved contacts): the tool decides; anything it doesn't
+            # clear falls back to the approval card below
             emit("tool", {"id": c["id"], "name": name, "state": "running"})
             try:
                 done = tool["auto"](c.get("args") or {}, ctx, info)
@@ -160,6 +204,7 @@ def _run_tools(calls, ctx, emit, info, deadline):
 
 
 NOTE_MAX = 160  # longest opening line held back as a possible note before tool calls
+MAX_NOTES = 2   # progress texts per turn: "On it, I'll..." and at most one update
 
 
 def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_steps=MAX_STEPS,
@@ -180,7 +225,7 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
     cands = [c for c in cands if models.supports_tools(c[0])] or cands
     ci = 0
     cleaner = persona.Cleaner()
-    state = {"sep": False, "hold": "", "held": on_note is not None}
+    state = {"sep": False, "hold": "", "held": on_note is not None, "notes": 0}
 
     def on_text(chunk):
         if not chunk:
@@ -235,7 +280,8 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
         held, state["hold"] = state["hold"], ""
         if held.strip() and calls and not final:
             note = persona.clean(held).strip()
-            if note:
+            if note and state["notes"] < MAX_NOTES:  # the opening line, and one update; more is just chatter
+                state["notes"] += 1
                 on_note(note)
         elif held:
             state["held"] = False

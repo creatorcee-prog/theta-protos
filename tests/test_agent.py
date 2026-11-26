@@ -245,6 +245,12 @@ def test_loop():
     check("notes: the reply holds only the final text", out == deltas == "Done. I'll remind you about rent in 5 minutes.", (out, deltas))
     check("notes: the ack hook still fires on the first tool step", len(acks) == 1)
 
+    # more than two progress lines in a turn: only the first two show
+    ev.clear(); notes.clear()
+    SCRIPT[:] = [{"text": f"Step {k}.", "tool_calls": [tc("remind_me", {"text": f"n{k}", "in_minutes": 1}, f"m{k}")]} for k in range(4)] + [{"text": "All done."}]
+    agent.run(route_for(), base_msgs("do four things"), emit, info={}, ctx={"bot": "theta"}, on_note=notes.append)
+    check("notes: at most two progress texts per turn", notes == ["Step 0.", "Step 1."], notes)
+
     # no tool call: the held opening still streams as the reply
     ev.clear(); notes.clear()
     SCRIPT[:] = [{"text": "Short answer."}]
@@ -338,10 +344,10 @@ def test_loop():
     # more than MAX_SENDS in one turn refused
     CALLS.clear()
     SCRIPT[:] = [{"tool_calls": [tc("send_email_draft", {"to": f"a{i}@b.co", "subject": "s", "body": "b"}, f"x{i}")
-                                 for i in range(3)]}, {"text": "ok"}]
+                                 for i in range(agent.MAX_SENDS + 1)]}, {"text": "ok"}]
     info = {}
     agent.run(route_for(), base_msgs("email three people"), lambda e, d: None, info=info, ctx={"bot": "theta"})
-    check("send gate: at most 2 approvals per turn", len(info["approvals"]) == agent.MAX_SENDS and sent == [])
+    check("send gate: at most MAX_SENDS approvals per turn", len(info["approvals"]) == agent.MAX_SENDS and sent == [])
     tools.BY_NAME["send_email_draft"]["run"] = real_run
     tools.BY_NAME["web_search"]["run"] = real_ws
 
@@ -470,10 +476,12 @@ def test_app():
         evs = sse(port, "email sam@example.com asking about dinner at 7")
         done = evs[-1][1]
         aid = done["meta"]["approvals"][0]
-        check("app: reply carries Approve/Discard actions", done["meta"]["actions"] ==
-              [{"label": "Approve", "value": f"approve:{aid}"}, {"label": "Discard", "value": f"deny:{aid}"}], done)
-        check("app: reply shows the exact email (code-written)", "sam@example.com" in done["text"]
-              and "Subject: Dinner" in done["text"] and "> 7pm?" in done["text"], done["text"])
+        card = (done["meta"].get("cards") or [{}])[0]
+        check("app: the reply carries an approval card with its own buttons, not chips", card.get("type") == "approval"
+              and card.get("id") == aid and card.get("state") == "pending" and not done["meta"].get("actions"), done)
+        check("app: the card shows the exact email (code-written), and the reply text doesn't repeat it",
+              "sam@example.com" in card["preview"] and "Subject: Dinner" in card["preview"] and "> 7pm?" in card["preview"]
+              and "Waiting for your OK" not in done["text"], (card, done["text"]))
         deltas = "".join(d["text"] for e, d in evs if e == "delta")
         check("app: streamed text == stored text", deltas == done["text"])
         check("app: nothing sent before the tap", ran == [])
@@ -482,6 +490,8 @@ def test_app():
         check("approve: runs the stored action exactly", s == 200 and j["state"] == "done" and ran ==
               [{"to": "sam@example.com", "subject": "Dinner", "body": "7pm?"}] and "Sent to" in j["message"]["text"], j)
         check("approve: no model call to approve", len(CALLS) == calls_before, CALLS[calls_before:])
+        card_after = db.get_message(done["id"])["meta"]["cards"][0]
+        check("approve: the card itself now says Done (after a reload too)", card_after["state"] == "done", card_after)
         s, j = req(port, "POST", "/api/approve", {"id": aid, "decision": "approve"})
         check("approve: double tap doesn't run twice", s == 409 and len(ran) == 1, (s, j))
         aid2 = db.add_approval({"tool": "send_email_draft", "args": {"to": "a@b.co", "subject": "s", "body": "b"},

@@ -779,8 +779,8 @@ def cardify(user_text, reply_text, kind, now_iso=""):
         if not cands:
             return None
         prov, model = cands[0]
-        prompt = (f"Make one '{kind}' card for a chat app from this exchange. Use only facts in the reply and "
-                  f"the message; don't add new ones, and use the real names from the exchange, never placeholders. Write the title in sentence case (\"This week's errands\", not \"This Week's Errands\"). "
+        prompt = (f"Make one '{kind}' card from this exchange. Use only facts in the reply and "
+                  f"the message; don't add new ones, and use the real names from the exchange, never placeholders. Write the title in sentence case (\"This week's errands\", not \"This Week's Errands\") and name the subject, never the card or the app. "
                   f"Answer with JSON only, shaped like: {_FILL[kind]}\n"
                   f"Now: {now_iso}\n\nUser: {user_text[:1200]}\n\nAssistant: {reply_text[:2400]}")
         raw = models.complete(prov, model, [{"role": "user", "content": prompt}], max_tokens=600)
@@ -788,6 +788,10 @@ def cardify(user_text, reply_text, kind, now_iso=""):
         if not m:
             return None
         data = json.loads(m.group(0))
+        if kind == "checklist" and isinstance(data.get("items"), list):  # a new list: nothing on it is done yet
+            data["items"] = [dict(it, done=False) if isinstance(it, dict) else it for it in data["items"]]
+            if re.search(r"(?i)\b(card|chat app|checklist)\b", str(data.get("title") or "")):
+                data["title"] = ""
         if kind == "table":
             cols = data.get("columns") if isinstance(data.get("columns"), list) else []
             # a comparison needs at least two named options, and no template names

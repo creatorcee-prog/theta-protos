@@ -20,6 +20,7 @@ from . import tools
 from .tools import ToolError
 
 MAX_IDS = 25
+MAX_QUERY = 2000  # messages one search-based archive or trash may touch
 
 
 def _g():
@@ -45,7 +46,58 @@ def _ids(args):
 def _modify(ids, add=(), remove=()):
     g = _g()
     g._need("gmail")
-    g.api("POST", f"{g.GMAIL}/messages/batchModify", {"ids": ids, "addLabelIds": list(add), "removeLabelIds": list(remove)})
+    for i in range(0, len(ids), 1000):  # Gmail takes up to 1,000 ids per call
+        g.api("POST", f"{g.GMAIL}/messages/batchModify",
+              {"ids": ids[i:i + 1000], "addLabelIds": list(add), "removeLabelIds": list(remove)})
+
+
+def _query(args, inbox=True):
+    """The Gmail search from args, limited to the inbox unless it names another place."""
+    q = re.sub(r"\s+", " ", str(args.get("query") or "")).strip()
+    if not q:
+        return ""
+    if inbox and not re.search(r"\b(in|label|is):", q):
+        q += " in:inbox"
+    return q[:500]
+
+
+def _matching(q):
+    """Every message id matching a Gmail search (up to MAX_QUERY), across pages."""
+    g = _g()
+    g._need("gmail")
+    ids, token = [], None
+    while len(ids) < MAX_QUERY:
+        params = {"q": q, "maxResults": 500}
+        if token:
+            params["pageToken"] = token
+        got = g.api("GET", f"{g.GMAIL}/messages", params=params)
+        ids += [m["id"] for m in got.get("messages") or []]
+        token = got.get("nextPageToken")
+        if not token:
+            break
+    return ids[:MAX_QUERY]
+
+
+def _targets(args, inbox=True):
+    """(ids, description) from message_ids or a query. A query is re-run when the action runs, so what's
+    approved is the search itself ("everything from AliExpress in the inbox"), not a stale list."""
+    if args.get("query"):
+        q = _query(args, inbox)
+        ids = _matching(q)
+        return ids, f"your inbox mail matching {q.replace(' in:inbox', '')!r}"
+    ids = _ids(args)
+    return ids, f"{len(ids)} message{'s' if len(ids) != 1 else ''}"
+
+
+def _senders(ids, n=4):
+    """The most common senders among the first 60 ids, for a card: ['AliExpress (23)', ...]."""
+    g = _g()
+    count = {}
+    for mid in ids[:60]:
+        who = re.sub(r"\s*<[^>]+>", "", g._hdr(g._meta(mid), "From")).strip(' "') or "?"
+        count[who] = count.get(who, 0) + 1
+    top = sorted(count.items(), key=lambda kv: -kv[1])[:n]
+    return [f"{w} ({c}{'+' if len(ids) > 60 else ''})" for w, c in top]
 
 
 def _list(ids):
@@ -60,13 +112,16 @@ def _list(ids):
 # ---------------------------------------------------------------- Gmail
 
 def _archive(args, ctx):
-    ids = _ids(args)
+    ids, what = _targets(args)
+    if not ids:
+        return f"Nothing to archive: no inbox mail matches {_query(args)!r}."
     _modify(ids, remove=["INBOX"])
-    return f"Archived {len(ids)} message(s): out of the inbox, still in All Mail. Undo: move them back with gmail_restore."
+    return (f"Archived {len(ids)} message(s) ({what}): out of the inbox, still in All Mail. That's all of them."
+            f" Undo: gmail_restore with the same ids, or the search without in:inbox.")
 
 
 def _mark_read(args, ctx):
-    ids = _ids(args)
+    ids, _what = _targets(args)
     _modify(ids, remove=["UNREAD"])
     return f"Marked {len(ids)} message(s) read."
 
@@ -82,16 +137,95 @@ def _restore(args, ctx):
 
 
 def _trash_preview(args):
-    ids = _ids(args)
     _g()._need("gmail")
+    if args.get("query"):
+        ids, what = _targets(args)
+        if not ids:
+            raise ToolError(f"no inbox mail matches {_query(args)!r}, so there's nothing to trash")
+        return "\n".join([f"**Move {len(ids)} email{'s' if len(ids) != 1 else ''} to Trash**", f"Everything in {what}, from:"] +
+                          [f"- {s}" for s in _senders(ids)] +
+                          ["Gmail deletes Trash for good after 30 days. Until then I can put them back."])
+    ids = _ids(args)
     return "\n".join([f"**Move {len(ids)} email{'s' if len(ids) != 1 else ''} to Trash**"] + _list(ids) +
                      ["Gmail deletes Trash for good after 30 days. Until then I can put them back."])
 
 
 def _trash(args, ctx):
-    ids = _ids(args)
+    ids, what = _targets(args)
+    if not ids:
+        return "Nothing to trash: nothing matches any more."
     _modify(ids, add=["TRASH"], remove=["INBOX"])
-    return f"Moved {len(ids)} message(s) to Trash. They can come back for 30 days (gmail_restore)."
+    return f"Moved {len(ids)} message(s) to Trash ({what}). They can come back for 30 days (gmail_restore)."
+
+
+# ---------------------------------------------------------------- Gmail filters
+
+def _label_id(name):
+    g = _g()
+    labels = g.api("GET", f"{g.GMAIL}/labels").get("labels") or []
+    hit = next((l for l in labels if (l.get("name") or "").lower() == name.lower()), None)
+    if hit:
+        return hit["id"]
+    return g.api("POST", f"{g.GMAIL}/labels", {"name": name, "labelListVisibility": "labelShow",
+                                                 "messageListVisibility": "show"})["id"]
+
+
+def _filter_need(ctx=None):
+    g = _g()
+    g._need("gmail")
+    if not g.connected("gmail_settings"):
+        try:
+            from . import cards, resume
+            cards.attach(ctx, dict(cards.connect("google"), title="Allow Gmail filters",
+                                   why="One tap to reconnect Google and allow filters, and I'll set it up right after."))
+            resume.record(ctx, "gsettings")
+        except Exception:  # noqa: BLE001
+            pass
+        raise ToolError("Gmail filters need one more Google permission. The user sees a one-tap card to allow it, and "
+                        "you'll make the filter by yourself once they do: say that. Meanwhile you can archive what's "
+                        "already there.")
+
+
+def _filter(args, ctx):
+    g = _g()
+    _filter_need(ctx)
+    sender = str(args.get("from") or "").strip()
+    if not sender or len(sender) > 200 or not re.fullmatch(r"[^\s\"<>]+", sender):
+        raise ToolError("from must be an address or a domain, like deals@shop.com or aliexpress.com")
+    action, extra = {}, []
+    act = str(args.get("action") or "archive")
+    if act not in ("archive", "label", "trash", "read"):
+        raise ToolError("action must be archive, label, trash or read")
+    if act in ("archive", "label"):
+        action["removeLabelIds"] = ["INBOX"]
+    if act == "label" or args.get("label"):
+        name = str(args.get("label") or sender.split("@")[-1].split(".")[0].title()).strip()[:60]
+        action["addLabelIds"] = [_label_id(name)]
+        extra.append(f"labeled {name!r}")
+    if act == "trash":
+        action["addLabelIds"] = ["TRASH"]
+    if act == "read":
+        action["removeLabelIds"] = ["UNREAD"]
+    f = g.api("POST", f"{g.GMAIL}/settings/filters", {"criteria": {"from": sender}, "action": action})
+    done = {"archive": "skip the inbox", "label": "skip the inbox", "trash": "go to Trash", "read": "arrive read"}[act]
+    msg = f"Filter made (id={f.get('id')}): new mail from {sender} will {done}" + (f", {extra[0]}" if extra else "") + "."
+    if args.get("apply_to_existing", True) and act != "read":
+        q = f"from:{sender} in:inbox"
+        ids = _matching(q)
+        if ids:
+            _modify(ids, add=action.get("addLabelIds", []), remove=action.get("removeLabelIds", []))
+            msg += f" Also moved the {len(ids)} already in your inbox."
+    return msg + " Undo: gmail_filter_delete with that id."
+
+
+def _filter_delete(args, ctx):
+    g = _g()
+    _filter_need(ctx)
+    fid = str(args.get("filter_id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{4,100}", fid):
+        raise ToolError("filter_id must be the id from gmail_filter")
+    g.api("DELETE", f"{g.GMAIL}/settings/filters/{fid}", raw=True)
+    return "Filter removed; new mail from them lands in the inbox again."
 
 
 def _unsub_headers(mid):
@@ -237,25 +371,29 @@ def _move(args, ctx):
 
 
 _IDS = {"message_ids": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_IDS,
-                        "description": "Message ids from gmail_search."}}
+                        "description": "Message ids from gmail_search."},
+        "query": {"type": "string", "description": "Instead of ids: a Gmail search covering ALL matching mail in "
+                                                   "the inbox, e.g. 'from:aliexpress.com'. Use it for clean-ups."}}
 _NOT = " If Google isn't connected the tool says so."
 
 TOOLS = [
     {"name": "gmail_archive", "risk": "write", "run": _archive,
-     "description": ("Archive emails: take them out of the inbox (they stay in All Mail, undoable). Use it for "
-                     "inbox clean-ups once you've shown the user what goes. Example: {\"message_ids\": [\"18c2f0a1b2c3d4e5\"]}." + _NOT),
-     "params": {"type": "object", "properties": _IDS, "required": ["message_ids"]}},
+     "description": ("Archive emails: take them out of the inbox (they stay in All Mail, undoable). For a sender or "
+                     "a kind of mail, pass query and it archives every match in one go (up to 2,000), so never "
+                     "page through results. Example: {\"query\": \"from:aliexpress.com\"}." + _NOT),
+     "params": {"type": "object", "properties": _IDS}},
     {"name": "gmail_mark_read", "risk": "write", "run": _mark_read,
-     "description": "Mark emails as read. Example: {\"message_ids\": [\"18c2f0a1b2c3d4e5\"]}." + _NOT,
-     "params": {"type": "object", "properties": _IDS, "required": ["message_ids"]}},
+     "description": "Mark emails as read, by ids or every match of a query. Example: {\"query\": \"is:unread from:shop.com\"}." + _NOT,
+     "params": {"type": "object", "properties": _IDS}},
     {"name": "gmail_restore", "risk": "write", "run": _restore,
      "description": "Bring emails back from Trash or the archive into the inbox (the undo for trash and archive)." + _NOT,
      "params": {"type": "object", "properties": _IDS, "required": ["message_ids"]}},
     {"name": "gmail_trash", "risk": "send", "run": _trash, "preview": _trash_preview,
-     "description": ("Propose moving emails to Trash. It does NOT delete yet: the user sees each sender and subject "
-                     "with Approve / Discard. Up to 25 at a time; Gmail empties Trash after 30 days. Prefer "
-                     "gmail_archive when they just want a clean inbox. Example: {\"message_ids\": [\"18c2f0a1b2c3d4e5\"]}." + _NOT),
-     "params": {"type": "object", "properties": _IDS, "required": ["message_ids"]}},
+     "description": ("Move emails to Trash, by ids or every inbox match of a query (one call covers them all). "
+                     "Unless the user allows it without asking, they approve first and see how many and from whom. "
+                     "Gmail empties Trash after 30 days. Prefer gmail_archive for a clean inbox. Example: "
+                     "{\"query\": \"from:aliexpress.com\"}." + _NOT),
+     "params": {"type": "object", "properties": _IDS}},
     {"name": "gmail_unsubscribe", "risk": "send", "run": _unsubscribe, "preview": _unsub_preview,
      "description": ("Propose unsubscribing from a sender's mailing list, using one email from them. It does NOT "
                      "unsubscribe yet: the user sees the sender and how (one-click link or an unsubscribe email) "
@@ -263,6 +401,20 @@ TOOLS = [
                      "link for the user. Example: {\"message_id\": \"18c2f0a1b2c3d4e5\"}." + _NOT),
      "params": {"type": "object", "properties": {"message_id": {"type": "string", "description": "One email from that sender."}},
                 "required": ["message_id"]}},
+    {"name": "gmail_filter", "risk": "write", "run": _filter,
+     "description": ("Make a Gmail filter for a sender or domain, so their future mail skips the inbox (archive), "
+                     "gets a label, goes to Trash, or arrives read. By default it also moves what's already in "
+                     "the inbox. Use it whenever the user wants a sender out of their way, including senders with "
+                     "no unsubscribe. Example: {\"from\": \"aliexpress.com\", \"action\": \"label\", \"label\": \"Deals\"}." + _NOT),
+     "params": {"type": "object", "properties": {
+         "from": {"type": "string", "description": "An address or a domain."},
+         "action": {"type": "string", "enum": ["archive", "label", "trash", "read"]},
+         "label": {"type": "string", "description": "Label name (made if it doesn't exist)."},
+         "apply_to_existing": {"type": "boolean", "description": "Also move mail already in the inbox (default true)."}},
+         "required": ["from"]}},
+    {"name": "gmail_filter_delete", "risk": "write", "run": _filter_delete,
+     "description": "Remove a Gmail filter Theta made (the undo for gmail_filter)." + _NOT,
+     "params": {"type": "object", "properties": {"filter_id": {"type": "string"}}, "required": ["filter_id"]}},
     {"name": "calendar_delete", "risk": "send", "run": _delete, "preview": _del_preview,
      "description": ("Propose deleting an event from the user's Google Calendar (the id from calendar_list). The "
                      "user approves first; guests, if any, get Google's cancellation email. Example: "
@@ -279,5 +431,5 @@ TOOLS = [
          "required": ["event_id", "start"]}},
 ]
 
-RELEVANT = (r"\b(delete|trash|remove|archive|unsubscribe|clean ?up|declutter|mark (as )?read|cancel|move|reschedule|"
+RELEVANT = (r"\b(delete|trash|remove|archive|unsubscribe|filter|clean ?up|declutter|mark (as )?read|cancel|move|reschedule|"
             r"push (back|out)|restore|undelete)\b")

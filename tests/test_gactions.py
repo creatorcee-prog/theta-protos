@@ -110,4 +110,44 @@ body = CALLS[-1][2]
 check("a move keeps the event's length", ok and body["start"]["dateTime"].startswith("2026-12-01T15:00")
       and body["end"]["dateTime"].startswith("2026-12-01T16:00") and CALLS[-1][3] == {"sendUpdates": "none"}, CALLS[-1])
 
+# ---------------------------------------------------------------- bulk by search, and filters
+PAGES = {None: (["%016x" % (0x18c2f0a1b2c30000 + i) for i in range(500)], "p2"), "p2": (["%016x" % (0x28c2f0a1b2c30000 + i) for i in range(120)], None)}
+real_api = google.api
+
+
+def bulk_api(method, url, body=None, params=None, raw=False, headers=None, _retry=True):
+    if url.endswith("/messages") and method == "GET":
+        ids, nxt = PAGES[(params or {}).get("pageToken")]
+        CALLS.append((method, url, body, params))
+        return {"messages": [{"id": i} for i in ids], **({"nextPageToken": nxt} if nxt else {})}
+    if url.endswith("/labels") and method == "GET":
+        return {"labels": [{"id": "Label_1", "name": "Deals"}]}
+    if url.endswith("/settings/filters"):
+        CALLS.append((method, url, body, params))
+        return {"id": "ANe1Bmj"}
+    return real_api(method, url, body, params, raw, headers, _retry)
+
+
+google.api = bulk_api
+CALLS.clear()
+ok, out = tools.execute("gmail_archive", {"query": "from:aliexpress.com"}, {})
+mods = [c for c in CALLS if c[1].endswith("/batchModify")]
+check("archive by search takes every match across pages, in one tool call", ok and "Archived 620" in out
+      and CALLS[0][3]["q"] == "from:aliexpress.com in:inbox" and sum(len(c[2]["ids"]) for c in mods) == 620, out)
+pv = tools.preview("gmail_trash", {"query": "from:aliexpress.com"})
+check("a trash-by-search card says how many and from whom", "Move 620 emails to Trash" in pv and "Deals" in pv, pv)
+
+google.connected = lambda service=None: service != "gmail_settings"
+ctx = {"bot": "theta", "user_id": db.add_message("theta", "user", "filter aliexpress", {})["id"]}
+ok, out = tools.execute("gmail_filter", {"from": "aliexpress.com"}, ctx)
+check("without the filter permission: a one-tap card, and it's picked up after", not ok and "one more Google permission" in out
+      and any(c.get("title") == "Allow Gmail filters" for c in ctx.get("cards", [])))
+google.connected = lambda service=None: True
+CALLS.clear()
+ok, out = tools.execute("gmail_filter", {"from": "aliexpress.com", "action": "label", "label": "Deals"}, {})
+f = [c for c in CALLS if c[1].endswith("/settings/filters")][0]
+check("a filter: future mail skips the inbox with the label", ok and f[2] == {"criteria": {"from": "aliexpress.com"},
+      "action": {"removeLabelIds": ["INBOX"], "addLabelIds": ["Label_1"]}}, f)
+check("and what's already in the inbox moves too, with an undo", "Also moved the 620" in out and "gmail_filter_delete" in out, out)
+
 print("all gactions checks passed")

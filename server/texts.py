@@ -186,8 +186,8 @@ def _auto(args, ctx, info):
         return False, f"Error: {e}"
     try:
         from . import cards
-        card = cards.validate("checklist", {"title": f"Texted {name}", "items": [{"text": body[:160], "done": True}]})
-        cards.attach(ctx, dict(card, type="checklist"))
+        cards.attach(ctx, {"type": "approval", "id": None, "tool": "send_text", "preview": _preview(args),
+                           "state": "auto", "result": f"Reviewed: {r.get('reason') or 'looked fine'}"})
     except Exception:  # noqa: BLE001
         pass
     return True, (f"Sent to {name} ({number}) without asking, after a review ({r.get('reason') or 'looked fine'}). "

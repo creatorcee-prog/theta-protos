@@ -220,19 +220,21 @@ def tick(now):
     """Once: a Google sign-in from before full Drive and Contacts gets a text with a one-tap reconnect card."""
     g = _g()
     try:
-        if not g.connected() or db.get_setting(ASKED):
+        if not g.connected():
             return []
+        asked = db.get_setting(ASKED)
+        asked = asked if isinstance(asked, list) else (list(g.NEWER[:2]) if asked else [])  # v1 stored a time
         missing = [s for s in g.NEWER if not g.connected(s)]
-        if not missing:
-            return []
-        db.set_setting(ASKED, now)
+        if not missing or set(missing) <= set(asked):
+            return []  # nothing new to ask for since the last time
+        db.set_setting(ASKED, sorted(set(asked) | set(missing)))
         from . import cards
-        card = dict(cards.connect("google"), title="Allow Drive and Contacts",
+        card = dict(cards.connect("google"), title="Allow the new Google access",
                     why="One tap, then Google asks you to allow it. Nothing else changes.")
         msg = db.add_message("theta", "assistant",
-                             "I can do more with Google now: organize, share and clean up your Drive, and know your "
-                             "Google Contacts by name so texting and emailing people just works. Google needs you to "
-                             "allow it once.", {"proactive": True, "source": "upgrade", "cards": [card]})
+                             "I can do more with Google now: organize, share and clean up your Drive, know your "
+                             "Google Contacts by name, and set up Gmail filters for you. Google needs you to allow "
+                             "it once.", {"proactive": True, "source": "upgrade", "cards": [card]})
         return [msg]
     except Exception:  # noqa: BLE001
         return []

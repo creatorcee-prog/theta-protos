@@ -90,3 +90,10 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   need Approve. Needs the full `drive` scope; an older sign-in gets one text with a one-tap reconnect card.
 - Contacts also come from Google Contacts (synced every 12 h, `contacts.readonly`, People API) and from a .vcf
   import (iPhone, iCloud). The user's own entries win over synced ones.
+- Approvals (`server/approvals.py`, Settings > Security > Approvals): each send tool asks first or runs without a tap.
+  Outward ones (email, text, calls, invites, sharing, websites) only run alone in a turn the user typed that read no
+  outside text. Waiting actions are `approval` cards with their own buttons (`web/features/approvals.js`);
+  `decide_approval` writes the outcome back onto the card. A send tool's `auto` hook still runs first.
+- Gmail archive / trash / mark read take a `query` (every inbox match, up to 2,000, one call). `gmail_filter` and
+  `gmail_filter_delete` need `gmail.settings.basic`.
+- The agent shows at most two progress texts per turn, and runs up to 10 steps.

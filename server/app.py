@@ -346,11 +346,25 @@ def _use_tools(text, images, route):
     return any(models.supports_tools(p) for p, _m in (route.candidates or [(route.provider, route.model)]))
 
 
-def _approval_actions(approvals):
-    out = []
-    for a in approvals:
-        out += [{"label": "Approve", "value": f"approve:{a['id']}"}, {"label": "Discard", "value": f"deny:{a['id']}"}]
-    return out[:4]
+def approval_cards(approvals):
+    """One card per action waiting for a tap: the exact action (code-written preview) with its own Approve and
+    Discard. decide_approval() updates the card's state, so it reads Sent / Discarded after a reload too."""
+    return [{"type": "approval", "id": a["id"], "tool": a.get("tool") or "", "preview": a.get("preview") or "",
+             "state": "pending"} for a in approvals]
+
+
+def _mark_approval_card(aid, state, result=None):
+    """Set the state on the card for approval `aid` in the message that carries it (recent messages only)."""
+    try:
+        for m in reversed(db.messages("theta", limit=300)):
+            cards = (m.get("meta") or {}).get("cards") or []
+            if any(isinstance(c, dict) and c.get("type") == "approval" and c.get("id") == aid for c in cards):
+                new = [dict(c, state=state, result=str(result or "")[:300]) if isinstance(c, dict) and
+                       c.get("type") == "approval" and c.get("id") == aid else c for c in cards]
+                db.update_message(m["id"], meta={"cards": new})
+                return
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=None):
@@ -398,12 +412,10 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
             add = ("\n\n" if out else "") + f"[image:{image_id}]"
             emit("delta", {"text": add})
             out += add
-    approvals = info.get("approvals") or []
-    if approvals:  # the exact action, written by code (never the model's description of it)
-        card = "\n\n".join(f"Waiting for your OK (expires in 24 h):\n{a['preview']}" for a in approvals)
-        add = ("\n\n" if out else "") + card
-        emit("delta", {"text": add})
-        out += add
+    approvals = info.get("approvals") or []  # shown as approval cards (the exact action, written by code)
+    if not out and approvals:
+        out = "Ready for your OK." if len(approvals) == 1 else f"{len(approvals)} things are ready for your OK."
+        emit("delta", {"text": out})
     if not out:
         out = "Done." if info.get("tools") and not info.get("error") else "Sorry, that didn't work. Try again?"
         emit("delta", {"text": out})
@@ -413,13 +425,14 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
         rmeta["tools"] = info["tools"]
     if approvals:
         rmeta["approvals"] = [a["id"] for a in approvals]
-        rmeta["actions"] = _approval_actions(approvals)
     if info.get("sources"):
         rmeta["sources"] = info["sources"]
-    out, cards = _cards_from_text(out, cards)
-    cards = _card_if_fits(text, out, cards)
+    out, cards = _cards_from_text(out, cards, tools_ran=bool(info.get("tools")))
+    if not info.get("tools"):  # a tool turn's reply reports what was done; it isn't a list to fill in
+        cards = _card_if_fits(text, out, cards)
     cards = _connect_from_text(out, cards)
-    if cards:  # rich cards tools asked for (ctx["cards"]): weather, link, connect...
+    cards = approval_cards(approvals) + list(cards or [])
+    if cards:  # approvals first, then rich cards tools asked for (ctx["cards"]): weather, link, connect...
         rmeta["cards"] = cards
     usage = _usage_meta(info.get("usage"), log_row["provider"], log_row["model"], tctx.get("research_usage") or ())
     if usage:
@@ -673,6 +686,7 @@ def decide_approval(aid, decision, bot=None):
             state = "done" if ok else "failed"
             db.set_approval(aid, state)
             text = f"Done. {result}" if ok else f"That didn't go through: {result}"
+    _mark_approval_card(aid, state, result)
     msg = db.add_message(bot, "assistant", text, {"approval": aid, "state": state, "source": "approval"})
     return {"ok": state in ("done", "denied"), "id": aid, "state": state, "result": result, "message": msg,
             "status": status}
@@ -712,11 +726,13 @@ def _deliver_reminder(job, now):
     return msg
 
 
-def _cards_from_text(text, cards):
-    """Lists and tables in the reply become cards (code-made, every time): the block moves into the card."""
+def _cards_from_text(text, cards, tools_ran=False):
+    """Lists and tables in the reply become cards (code-made, every time): the block moves into the card. After a
+    tool turn a bulleted list is a report of what happened, so it stays text (no to-do checklist)."""
     try:
         from . import cards as C
-        made, rest = C.from_text(text, have={c.get("type") for c in cards})
+        have = {c.get("type") for c in cards} | ({"checklist"} if tools_ran else set())
+        made, rest = C.from_text(text, have=have)
     except Exception:  # noqa: BLE001
         return text, cards
     if made and rest.strip():
