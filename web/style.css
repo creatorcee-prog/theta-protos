@@ -348,3 +348,6 @@ svg { width: 22px; height: 22px; display: block; flex: none; }
 /* keyboard up (set by app.js): the home bar is hidden behind the keyboard, so its padding would only leave a gap */
 html.kb { --sab: 0px; }
 #app { will-change: transform; }
+
+/* pin the document so iOS can't scroll it when the keyboard opens (app.js follows the visible area instead) */
+html, body { position: fixed; inset: 0; width: 100%; }

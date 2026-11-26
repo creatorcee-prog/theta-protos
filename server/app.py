@@ -903,10 +903,15 @@ def login(req, start):
                         extra=[("Set-Cookie", c["protos_key"].OutputString())])
 
 
+# which code is running: Railway sets the commit it deployed (shown in the app's Settings, so it's easy to tell
+# whether a phone is on the latest version)
+BUILD = (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("PROTOS_BUILD") or "")[:7]
+
+
 def api(req, start):
     p, m = req.path, req.method
     if p == "/api/health":
-        return respond_json(start, {"ok": True, "version": __version__})
+        return respond_json(start, {"ok": True, "version": __version__, "build": BUILD})
     if p == "/api/login":
         if m != "POST":
             raise HTTPError(405, "method not allowed")

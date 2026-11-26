@@ -39,7 +39,7 @@
       const r = await timeout(realFetch("/api/health", {cache: "no-store", credentials: "same-origin"}), 3500);
       const j = await r.json();
       if (!r.ok || !j || !j.ok) throw new Error("no api");
-      S.version = j.version || "";
+      S.version = (j.version || "") + (j.build ? " (" + j.build + ")" : "");
     } catch (e) { S.demo = true; S.demoAuto = true; }
   }
 
@@ -778,8 +778,17 @@
 
   // ---------------------------------------------------------------- service worker
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js", {scope: "/"}).catch(() =>
-      navigator.serviceWorker.register("/static/sw.js").catch(() => {}));
+    navigator.serviceWorker.register("/sw.js", {scope: "/", updateViaCache: "none"}).then(reg => {
+      reg.update().catch(() => {});  // look for a new version every time the app opens
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+    }).catch(() => navigator.serviceWorker.register("/static/sw.js").catch(() => {}));
+    // when a new version takes over, reload once so you're on it right away (not on the open after next)
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController || reloaded || S.streaming) return;
+      reloaded = true; location.reload();
+    });
     navigator.serviceWorker.addEventListener("message", e => {
       const d = e.data || {};
       if (d.type === "push") poll();
@@ -792,21 +801,28 @@
   // leaves the page full height, so a full-screen app slides up and leaves a blank gap. So the app sizes itself to
   // what's visible, follows that scroll, and drops the home-bar padding while the keyboard is up.
   if (window.visualViewport) {
+    // iOS, keyboard open: the page isn't shrunk; Safari scrolls the document (window.scrollY) and/or the visible
+    // part (visualViewport.offsetTop), and while the keyboard is up it moves "fixed" elements with that scroll,
+    // which slid the whole app up and left a blank gap. So: never let the document scroll (it's pinned in CSS and
+    // put back here), size the app to the visible part, and follow any visible-part offset that remains.
     const root = document.documentElement, appEl = document.getElementById("app");
     let raf = 0;
     const fit = () => {
       raf = 0;
+      if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
       const v = window.visualViewport, top = Math.max(0, Math.round(v.offsetTop));
       root.style.setProperty("--vh", Math.round(v.height) + "px");
       if (appEl) appEl.style.transform = top ? `translateY(${top}px)` : "";
-      root.classList.toggle("kb", window.innerHeight - v.height > 120);
+      root.classList.toggle("kb", window.innerHeight - v.height > 120 || screen.height - v.height > 200);
     };
     const later = () => { if (!raf) raf = requestAnimationFrame(fit); };
     visualViewport.addEventListener("resize", later);
     visualViewport.addEventListener("scroll", later);
-    // after the keyboard closes, put the page back where it started
-    addEventListener("focusout", () => setTimeout(() => { if (window.scrollY) window.scrollTo(0, 0); fit(); }, 60));
-    addEventListener("focusin", () => setTimeout(fit, 60));
+    addEventListener("scroll", later, {passive: true});
+    // the keyboard slides in over ~300 ms: check a few times while it moves
+    const settle = () => { for (const ms of [0, 60, 160, 320, 600]) setTimeout(later, ms); };
+    addEventListener("focusin", settle);
+    addEventListener("focusout", settle);
     fit();
   }
 
