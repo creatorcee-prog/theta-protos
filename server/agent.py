@@ -68,7 +68,8 @@ def _service_ready(service):
             return bool(google.connected("gmail_settings"))
         if service == "twilio":
             import os
-            return bool(os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN"))
+            from . import telco
+            return telco.configured()
     except Exception:  # noqa: BLE001
         return True  # unsure: don't claim it's missing
     return True

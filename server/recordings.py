@@ -7,7 +7,7 @@ Consent, in code the model can't change:
 - Calls to the user are recorded only because the user turned recording on.
 - Off entirely with the "record_calls" setting (Settings > Apps > Phone calls).
 
-How: the call is placed with Twilio's Record=true (both sides, two channels). When Twilio's recording is ready it
+How: the call is placed with Record=true (Telnyx TeXML or Twilio, server/telco.py) (both sides, two channels). When Twilio's recording is ready it
 POSTs to /api/calls/recorded/<call id> (signed, like every Twilio webhook). Theta downloads the MP3 into its own
 storage (the data folder, recordings/<call id>.mp3) and deletes Twilio's copy, so the audio lives in one place.
 Recordings older than KEEP_DAYS are deleted.
@@ -79,48 +79,19 @@ def objects(heard):
 
 
 def stop(call):
-    """They objected: stop recording now and remember to delete the audio. Returns what Theta says."""
-    from . import calls
+    """They objected: stop recording now and remember to delete the audio. Returns what Theta says (only claiming
+    it stopped when the provider confirmed it; the audio is deleted on arrival either way)."""
+    from . import telco
     with _lock:
         d = _declined()
         d[call["id"]] = time.time()
         db.set_setting("recording_declined", d)
-    if call.get("sid"):
-        try:
-            calls._twilio(f"Calls/{call['sid']}/Recordings/Twilio.CURRENT.json", {"Status": "stopped"})
-        except Exception:  # noqa: BLE001  the audio is deleted on arrival either way
-            pass
-    return "Of course. I've stopped recording, and none of it will be kept."
+    if telco.stop_recording(call.get("sid")):
+        return "Of course. I've stopped recording, and none of it will be kept."
+    return "Of course. None of this call's recording will be kept."
 
 
 # ---------------------------------------------------------------- Twilio hands the recording over
-
-def _auth():
-    from . import calls
-    sid, tok = calls._env("TWILIO_ACCOUNT_SID"), calls._env("TWILIO_AUTH_TOKEN")
-    return "Basic " + base64.b64encode(f"{sid}:{tok}".encode()).decode()
-
-
-def _twilio_media(url):
-    """Twilio's recording URLs only; returns the MP3 bytes."""
-    if not re.match(r"^https://api\.twilio\.com/2010-04-01/Accounts/AC[0-9a-f]{32}/Recordings/RE[0-9a-f]{32}$", url or ""):
-        raise ValueError("not a Twilio recording URL")
-    req = urllib.request.Request(url + ".mp3", headers={"Authorization": _auth()})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read(60 * 1024 * 1024)
-
-
-def _delete_at_twilio(rec_sid):
-    from . import calls
-    if not re.fullmatch(r"RE[0-9a-f]{32}", rec_sid or ""):
-        return
-    req = urllib.request.Request(f"{calls.API}/Accounts/{calls._env('TWILIO_ACCOUNT_SID')}/Recordings/{rec_sid}.json",
-                                 method="DELETE", headers={"Authorization": _auth()})
-    try:
-        urllib.request.urlopen(req, timeout=20).close()
-    except Exception:  # noqa: BLE001  Twilio keeps it then; nothing else to do
-        pass
-
 
 def recorded_route(req, start_response):
     from . import calls
@@ -129,7 +100,8 @@ def recorded_route(req, start_response):
         rec_sid, url = params.get("RecordingSid") or "", params.get("RecordingUrl") or ""
         if not declined(call["id"]):
             try:
-                blob = _twilio_media(url)
+                from . import telco
+                blob = telco.fetch_recording(url)
                 p = path_for(call["id"])
                 with open(p + ".part", "wb") as f:
                     f.write(blob)
@@ -137,7 +109,8 @@ def recorded_route(req, start_response):
             except Exception as e:  # noqa: BLE001  keep Twilio's copy so it isn't lost
                 print(f"[protos] recording download failed for {call['id'][:6]}: {e!r}", flush=True)
                 return calls._xml(start_response, "<Response></Response>")
-        _delete_at_twilio(rec_sid)
+        from . import telco
+        telco.delete_recording(rec_sid)
     return calls._xml(start_response, "<Response></Response>")
 
 

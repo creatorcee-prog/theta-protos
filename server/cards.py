@@ -488,14 +488,17 @@ SERVICES = {
         "name": "Google", "letter": "G", "title": "Connect Google",
         "why": "Gmail, Calendar and Drive need your Google sign-in. One sign-in covers all three."},
     "twilio": {
-        "name": "Phone calls", "letter": "T", "title": "Set up phone calls",
-        "why": "Calls go through Twilio, and this server has no Twilio account yet.",
-        "steps": ["Make a Twilio account at twilio.com and buy a number with Voice (Phone Numbers > Manage > Buy a number).",
-                  "On a trial account, add your own phone under Phone Numbers > Manage > Verified Caller IDs.",
-                  f"{RAILWAY}, and add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN (Twilio Console home, Account Info) "
-                  "and TWILIO_FROM (the number you bought, like +15551234567).",
-                  "Also add PROTOS_PUBLIC_URL=https://<your app>.up.railway.app if it isn't there.",
-                  DEPLOY, "Then in Theta: Settings > Phone calls, add your number and tap Test call."]},
+        "name": "Phone and texts", "letter": "T", "title": "Set up calls and texts",
+        "why": "Calls and texts go through Telnyx, and this server has no Telnyx account yet.",
+        "steps": ["Make a Telnyx account at telnyx.com and buy a number with voice and SMS (Numbers > Buy Numbers).",
+                  "Voice > Programmable Voice > TeXML Applications > Add: any name, and set the voice URL to "
+                  "https://<your app>.up.railway.app/api/calls/inbound (method POST). Then assign your number to it.",
+                  "Messaging > Messaging Profiles > Add: webhook URL https://<your app>.up.railway.app/api/texts/inbound, "
+                  "API version 2. Assign your number to it too.",
+                  f"{RAILWAY}, and add TELNYX_API_KEY (Account > API Keys), TELNYX_FROM (your number, like +15551234567), "
+                  "TELNYX_TEXML_APP_ID (the TeXML application's id) and TELNYX_PUBLIC_KEY (Account > Public Key).",
+                  "For US texting, register your number for A2P 10DLC in Messaging > 10DLC (a sole proprietor brand works).",
+                  DEPLOY, "Then in Theta: Settings > Apps > Phone calls, add your number and tap Test call."]},
     "gemini": {
         "name": "Image making", "letter": "I", "title": "Set up image making",
         "why": "Pictures are made with Google's Gemini, and this server has no Gemini key.",
@@ -818,7 +821,7 @@ _PATTERNS = (
     ("google", r"google (isn't|is not) connected|google signed theta out|google isn't connected any more|"
                r"gmail isn't connected|google is connected but without|sign-in expired|google calendar isn't connected|"
                r"tap connect on gmail"),
-    ("twilio", r"phone calls aren't set up|texting isn't set up|\btwilio_account_sid\b|no twilio"),
+    ("twilio", r"phone calls aren't set up|texting isn't set up|\btwilio_account_sid\b|\btelnyx_api_key\b|no twilio"),
     ("gemini", r"image generation isn't set up|no gemini_api_key|\bgemini_api_key\b"),
     ("tavily", r"live search isn't set up|no search key|\btavily_api_key\b"),
     ("giphy", r"\bgiphy\b.*(isn't|not|no) (set up|key|configured)|\bgiphy_api_key\b|gifs? (aren't|isn't) set up"),

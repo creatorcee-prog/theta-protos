@@ -101,3 +101,7 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   recorded."; an objection on the call stops it and the audio is discarded. Twilio's recording is downloaded to
   `<data>/recordings/<call id>.mp3`, deleted at Twilio, served at /api/calls/audio/<id> (byte ranges), and kept 90 days.
   Call history (`/api/calls/history`, the "..." menu) shows it with the transcript.
+- Phone provider (`server/telco.py`): Telnyx when TELNYX_API_KEY is set (TeXML calls, /v2/messages texts, Ed25519
+  webhook signatures, TeXML recordings), else Twilio. calls.py, texts.py and recordings.py go through it.
+- Call voice: the "call_voice" setting: a preset (Polly neural voices, Telnyx Kokoro) or {"kind": "elevenlabs",
+  "voice_id", "model", "key_ref"} (a Telnyx integration secret holding the ElevenLabs key).

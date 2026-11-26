@@ -1,4 +1,4 @@
-/* calls: phone calls through Twilio (server/calls.py). A "Phone calls" section in Settings (your number, the name
+/* calls: phone calls through Telnyx (server/calls.py, server/telco.py). A "Phone calls" section in Settings (your number, the name
    Theta gives when it calls someone for you, "Call me on Red alerts", a test call) and a compact card for call
    messages (meta.source == "call"): who, how long, the outcome, and the transcript behind a tap.
    Builds DOM nodes only. In demo mode nothing is sent: the section shows sample values and a sample card. */
@@ -104,16 +104,35 @@
   rsw.append(rec, el("i"));
   const recr = row("Record calls", "Calls to others start with “This call is recorded.” If they say they'd rather not, Theta stops and keeps none of it. Recordings stay 90 days, in Call history.");
   recr.r.append(rsw);
-  g.append(pr.r, nr.r, rr.r, recr.r, tr.r, note);
+  // the voice people hear: a natural preset, or your own ElevenLabs voice (cloned or from their library)
+  const vsel = el("select"); vsel.setAttribute("aria-label", "Call voice");
+  const vr = row("Voice", "What people hear when Theta calls. Natural voices sound like a person, not a robot.");
+  vr.r.append(vsel);
+  const elWrap = el("div", "calls-el"); elWrap.hidden = true;
+  const elId = el("input", "calls-phone"); elId.placeholder = "ElevenLabs voice ID"; elId.autocomplete = "off"; elId.setAttribute("aria-label", "ElevenLabs voice ID");
+  const elRef = el("input", "calls-phone"); elRef.placeholder = "Telnyx secret name for your key"; elRef.autocomplete = "off"; elRef.setAttribute("aria-label", "Telnyx secret name");
+  const elSave = el("button", "btn-dark", "Use this voice"); elSave.type = "button";
+  elWrap.append(el("p", "calls-note", "Use any ElevenLabs voice, including one cloned from your own. Copy its voice ID from ElevenLabs > Voices. In Telnyx, add your ElevenLabs API key under Integration Secrets and put that secret's name here. ElevenLabs needs a paid plan for this."), elId, elRef, elSave);
+  g.append(pr.r, nr.r, rr.r, recr.r, vr.r, elWrap, tr.r, note);
 
   let state = {};
   const status = () => {
     if (T.state.demo) { note.textContent = "Demo: sample values. On Theta these save to the server."; return; }
-    if (!state.configured) note.textContent = "Calling isn't set up on the server yet (Twilio keys). See deploy/RAILWAY.md.";
-    else if (!state.public_url) note.textContent = "Set PROTOS_PUBLIC_URL on the server so Twilio can reach Theta.";
+    if (!state.configured) note.textContent = "Calling isn't set up on the server yet (Telnyx keys). See deploy/RAILWAY.md.";
+    else if (!state.public_url) note.textContent = "Set PROTOS_PUBLIC_URL on the server so the phone service can reach Theta.";
     else note.textContent = `Calls to others: ${state.today || 0} of ${state.cap ?? 5} today, ${(state.hours || [8, 21])[0]}:00–${(state.hours || [8, 21])[1]}:00 your time, each one only after you approve it.`;
   };
-  const fill = () => { phone.value = state.phone || ""; name.value = state.name || ""; red.checked = !!state.call_on_red; rec.checked = state.record !== false; status(); };
+  const fill = () => {
+    phone.value = state.phone || ""; name.value = state.name || ""; red.checked = !!state.call_on_red; rec.checked = state.record !== false;
+    vsel.replaceChildren();
+    for (const v of state.voices || []) { const o = el("option", null, v.label); o.value = v.id; vsel.append(o); }
+    const own = el("option", null, "My own ElevenLabs voice…"); own.value = "elevenlabs"; vsel.append(own);
+    const cur = state.voice || {};
+    vsel.value = cur.kind === "elevenlabs" ? "elevenlabs" : (cur.id || ((state.voices || [])[0] || {}).id || "");
+    elWrap.hidden = vsel.value !== "elevenlabs";
+    if (cur.kind === "elevenlabs") { elId.value = cur.voice_id || ""; elRef.value = cur.key_ref || ""; }
+    status();
+  };
 
   let sample = null;
   function demoSample() {
@@ -148,13 +167,21 @@
   name.addEventListener("change", () => save({name: name.value.trim()}));
   red.addEventListener("change", () => save({call_on_red: red.checked}));
   rec.addEventListener("change", () => save({record: rec.checked}));
+  vsel.addEventListener("change", () => {
+    elWrap.hidden = vsel.value !== "elevenlabs";
+    if (vsel.value !== "elevenlabs") save({voice: {id: vsel.value}}).then(() => T.toast("Voice changed. Tap Test call to hear it.", 3200));
+  });
+  elSave.addEventListener("click", async () => {
+    try { await T.post("/api/calls/settings", {voice: {kind: "elevenlabs", voice_id: elId.value.trim(), key_ref: elRef.value.trim()}}); T.toast("Using your ElevenLabs voice. Tap Test call to hear it.", 3600); }
+    catch (e) { T.toast((e && e.message) || "That voice didn't save.", 4000); }
+  });
   test.addEventListener("click", async () => {
     if (T.state.demo) { T.toast("In demo mode a test is just this toast. On Theta your phone rings."); return; }
     test.disabled = true;
     try {
       const r = await T.post("/api/calls/test", {});
       T.toast(r && r.ok ? "Calling you now." : ((r && r.error) || "The test call didn't start."), 4200);
-    } catch (e) { T.toast("The test call didn't start. Check the number and the server's Twilio keys.", 4200); }
+    } catch (e) { T.toast("The test call didn't start. Check the number and the server's phone keys.", 4200); }
     finally { test.disabled = false; }
   });
 
@@ -174,6 +201,7 @@
 .ch-say.them { background: #0a84ff; color: #fff; align-self: flex-end; }
 .ch-who { font-size: 11.5px; color: var(--muted); margin: 0 4px -3px; }
 .ch-who.r { align-self: flex-end; }
+.calls-el { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
 .ch-audio { width: 100%; height: 40px; margin-bottom: 6px; }
 .ch-rec { font-size: 12px; color: #ff8a80; margin-left: 6px; }
 `;

@@ -87,39 +87,48 @@ Dockerfile"). It starts from the official Playwright image, so Chromium and ever
   your Approve tap, with the exact fields shown (passwords and card numbers masked). It never types passwords:
   there's no password vault yet.
 
-## Phone calls (Twilio)
-Theta can call you (a reminder, a Red alert) and, with your OK each time, call someone else for you (a restaurant,
-a shop). Every call to someone else starts with "Hi, this is Theta, an AI assistant calling on behalf of ...".
+## Phone calls and texts (Telnyx)
+Calls, texts and call recordings go through Telnyx. (Twilio still works if its variables are set and Telnyx's
+aren't, but Telnyx is the one to use.) About 15 minutes in a browser, once.
 
-1. **Make a Twilio account** at twilio.com. A trial account comes with some free credit.
-2. **Get a phone number:** in the Twilio Console go to **Phone Numbers > Manage > Buy a number**, pick one with
-   **Voice**, and buy it (trial credit covers the first one; after that a US number costs about a dollar a month,
-   and US calls a cent or two a minute; Twilio's pricing page has the current numbers).
-3. **Trial accounts can only call verified numbers.** Add your own phone under **Phone Numbers > Manage >
-   Verified Caller IDs**, and any number you want Theta to call during the trial. Trial calls also start with a
-   short Twilio message before Theta speaks. Upgrading the account (adding a card) removes both limits.
-4. **Add the variables** in the service's **Variables** tab:
-
+1. **Make a Telnyx account** at telnyx.com and add a payment method.
+2. **Buy a number** with voice and SMS: **Numbers > Buy Numbers**.
+3. **Calls:** **Voice > Programmable Voice > TeXML Applications > Add**. Any name. Voice URL:
+   `https://<your app>.up.railway.app/api/calls/inbound`, method POST (that only answers people who call the number;
+   Theta tells Telnyx where each call it makes should go). Save, then assign your number to this application.
+   Copy the application's **ID**.
+4. **Texts:** **Messaging > Messaging Profiles > Add**. Webhook URL:
+   `https://<your app>.up.railway.app/api/texts/inbound`, webhook API version **2**. Assign your number to it.
+   For US texting, register it for **A2P 10DLC** under **Messaging > 10DLC** (a sole proprietor brand is the one for
+   a personal project); carriers block unregistered app texts.
+5. **Keys:** **Account > API Keys > Create** (copy it), and **Account > Public Key** (copy it; Theta uses it to
+   check that requests really come from Telnyx).
+6. On Railway, add:
    ```
-   TWILIO_ACCOUNT_SID=AC...            (Console home page, "Account Info")
-   TWILIO_AUTH_TOKEN=...               (same place; it also signs Twilio's requests to Theta)
-   TWILIO_FROM=+1...                   (the number you bought, in +1... form)
+   TELNYX_API_KEY=KEY...
+   TELNYX_FROM=+1...                   (the number you bought)
+   TELNYX_TEXML_APP_ID=...             (step 3)
+   TELNYX_PUBLIC_KEY=...               (step 5)
    PROTOS_PUBLIC_URL=https://<something>.up.railway.app
    ```
+   Optional: `TELNYX_MESSAGING_PROFILE_ID`, `THETA_USER_PHONE=+1...`, `THETA_USER_NAME=Sam` (or set both in the app).
+7. **In the app:** Settings > Apps > Phone calls. Enter your number and name, pick a **Voice**, and tap
+   **Test call**.
 
-   Optional: `THETA_USER_PHONE=+1...` (your number; or set it in the app), `THETA_USER_NAME=Sam` (the name in the
-   disclosure; or set it in the app), `THETA_CALL_VOICE` (default `Polly.Joanna-Neural`).
-   You don't need to set anything in Twilio's console for the number: Theta tells Twilio where to send each call.
-5. **In the app:** Settings > Phone calls. Enter your number, your name, and tap **Test call**. Turn on **Call me
-   on Red alerts** if you want Red alerts near you to ring your phone as well as notify you.
+**The voice:** the presets are natural voices (Amazon Polly neural, through Telnyx). For a voice of your own, use
+ElevenLabs (a paid plan): in Telnyx, **Integration Secrets > Add**, paste your ElevenLabs API key and give the secret
+a name; then in Theta pick **My own ElevenLabs voice**, paste the voice ID from ElevenLabs > Voices, and the secret's
+name.
+
+**Recording:** on by default (Settings > Apps > Phone calls > Record calls). Calls to others open with "This call is
+recorded."; if they object, Theta stops and keeps none of it. Audio is kept 90 days.
 
 **Limits Theta keeps on its own:** never emergency or premium numbers; calls to others only from 8:00 to 21:00 your
 time, at most 5 a day (the `calls_daily_cap` setting); never the same number twice within 10 minutes; each call to
-someone else hangs up after 10 turns or 5 minutes. The transcript and how it went land in the chat afterwards.
+someone else hangs up after 10 turns or 5 minutes; at most 20 texts a day.
 
-**If calls don't work:** "Twilio refused the call" with "unverified" means step 3 (trial account). If the phone
-rings but goes silent or says "an application error", check `PROTOS_PUBLIC_URL` is exactly the app's address
-(Twilio's signature check uses it).
+**If calls don't work:** "Telnyx refused it" says why. If the phone rings but goes silent, check
+`PROTOS_PUBLIC_URL` is exactly the app's address and the TeXML application's ID is right.
 
 ## Google: Gmail, Calendar, Drive, Docs and Slides
 One Google sign-in covers all of them. It takes about 15 minutes in a browser, once.

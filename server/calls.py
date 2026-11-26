@@ -1,4 +1,4 @@
-"""Phone calls through Twilio (docs/FEATURES.md, Builder C).
+"""Phone calls through Telnyx or Twilio (server/telco.py picks; docs/FEATURES.md, Builder C).
 
     call_me (write)         Theta calls the user's own number (setting "phone", or THETA_USER_PHONE) and says
                             something; with conversation=true it then talks with them
@@ -71,7 +71,8 @@ def _env(name):
 
 
 def configured():
-    return bool(_env("TWILIO_ACCOUNT_SID") and _env("TWILIO_AUTH_TOKEN") and _env("TWILIO_FROM"))
+    from . import telco
+    return telco.configured()  # Telnyx when TELNYX_API_KEY is set, else Twilio (server/telco.py)
 
 
 def user_phone():
@@ -99,7 +100,8 @@ def disclosure():
 
 
 def voice():
-    return _env("THETA_CALL_VOICE") or DEFAULT_VOICE
+    from . import telco
+    return telco.voice_attrs()[0] or DEFAULT_VOICE
 
 
 def public_base():
@@ -187,7 +189,8 @@ def check_other(to, now):
     why = blocked(to)
     if why:
         raise ToolError(why + ". Nothing was dialed.")
-    if normalize(to) == normalize(_env("TWILIO_FROM")):
+    from . import telco
+    if normalize(to) == normalize(telco.from_number()):
         raise ToolError("that's Theta's own number")
     h = local_time(now).hour
     if not (HOURS[0] <= h < HOURS[1]):
@@ -237,33 +240,25 @@ def _dial(kind, to, *, name="", purpose="", script="", message="", conversation=
     """Start one call. Returns the call row."""
     if not configured():
         _connect_card()
-        raise ToolError("phone calls aren't set up (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM are "
-                        "needed on the server). Nothing was dialed.")
+        from . import telco
+        raise ToolError(f"phone calls aren't set up ({telco.missing()}). Nothing was dialed.")
     base = public_base()
     if not base:
-        raise ToolError("the server doesn't know its public address, so Twilio couldn't reach it; set "
+        raise ToolError("the server doesn't know its public address, so the phone service couldn't reach it; set "
                         "PROTOS_PUBLIC_URL. Nothing was dialed.")
     now = now or _now()
     cid = secrets.token_urlsafe(18)
     _c().execute("INSERT INTO calls (id, kind, to_number, name, purpose, script, message, conversation, state, t, bot) "
                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'dialing', ?, ?)",
                  (cid, kind, normalize(to), name, purpose, script, message, int(bool(conversation)), now, bot))
-    params = {"To": normalize(to), "From": _env("TWILIO_FROM"),
-              "Url": f"{base}/api/calls/twiml/{cid}", "Method": "POST",
-              "StatusCallback": f"{base}/api/calls/status/{cid}", "StatusCallbackMethod": "POST",
-              "StatusCallbackEvent": ["answered", "completed"],
-              "MachineDetection": "DetectMessageEnd", "TimeLimit": str(MAX_SECONDS + 30), "Timeout": "30"}
     try:
-        from . import recordings
-        params.update(recordings.dial_params(cid, base))
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        res = _twilio("Calls.json", params)
+        from . import recordings, telco
+        rec = recordings.dial_params(cid, base)
+        sid = telco.place_call(normalize(to), cid, base, rec)
     except ToolError:
         _update(cid, state="failed", t_end=time.time())
         raise
-    _update(cid, sid=str(res.get("sid") or ""), state="ringing")
+    _update(cid, sid=sid, state="ringing")
     return get_call(cid)
 
 
@@ -300,7 +295,7 @@ def _someone_check(args, now=None):
         raise ToolError("keep script under 600 characters")
     if not configured():
         _connect_card()
-        raise ToolError("phone calls aren't set up on this server (Twilio), so this can't be offered")
+        raise ToolError("phone calls aren't set up on this server, so this can't be offered")
     check_other(to, now)
     return to, purpose
 
@@ -410,7 +405,10 @@ def _reply(call, heard):
 # ---------------------------------------------------------------- TwiML + webhooks
 
 def _say(text):
-    return f'<Say voice="{escape(voice())}">{escape(text)}</Say>'
+    from . import telco
+    v, extra = telco.voice_attrs()
+    attrs = "".join(f' {k}="{escape(str(val))}"' for k, val in extra.items())
+    return f'<Say voice="{escape(v or DEFAULT_VOICE)}"{attrs}>{escape(text)}</Say>'
 
 
 def _twiml(*parts):
@@ -418,10 +416,9 @@ def _twiml(*parts):
 
 
 def _gather(cid, turn, prompt=""):
+    from . import telco
     action = f"{public_base() or ''}/api/calls/twiml/{cid}?turn={turn}"
-    inner = _say(prompt) if prompt else ""
-    return (f'<Gather input="speech" speechTimeout="auto" timeout="6" actionOnEmptyResult="true" '
-            f'action="{escape(action)}" method="POST" language="en-US">{inner}</Gather>')
+    return telco.gather(action, _say(prompt) if prompt else "")
 
 
 def _add_turn(call, who, text):
@@ -547,18 +544,19 @@ def _xml(start, body, status="200 OK"):
 
 
 def _webhook(req, prefix):
+    from . import telco
     from .app import HTTPError
-    if req.method != "POST":
-        raise HTTPError(405, "method not allowed")
-    pairs = _form(req)
-    if not verify(req, pairs):
-        raise HTTPError(403, "bad or missing Twilio signature")
+    if req.method != "POST" and not (req.method == "GET" and telco.provider() == "telnyx"):
+        raise HTTPError(405, "method not allowed")  # Telnyx may fetch TeXML with GET; Twilio always POSTs
+    if not telco.verify(req, "call"):
+        raise HTTPError(403, "bad or missing signature")
     cid = req.path[len(prefix):].strip("/")
     call = get_call(cid) if re.fullmatch(r"[A-Za-z0-9_-]{16,64}", cid or "") else None
     if call is None:
         raise HTTPError(404, "unknown call")
-    params = dict(pairs)
+    params = telco.read(req)
     params.update({k: v for k, v in req.query.items() if k == "turn"})
+    telco.learn(params)
     return call, params
 
 
@@ -666,6 +664,40 @@ def tick(now):
 
 # ---------------------------------------------------------------- settings routes (signed in)
 
+def _voices():
+    from . import telco
+    return [{"id": i, "label": label} for i, label, _v in telco.VOICES]
+
+
+def _provider_name():
+    from . import telco
+    return telco.name()
+
+
+def _clean_voice(v):
+    """{"id": a preset} | {"kind": "elevenlabs", "voice_id", "model"?, "key_ref"?} | {"kind": "custom", "value"}."""
+    from . import telco
+    from .app import HTTPError
+    v = v if isinstance(v, dict) else {}
+    if v.get("kind") == "elevenlabs":
+        vid, model, ref = (str(v.get(k) or "").strip() for k in ("voice_id", "model", "key_ref"))
+        if not re.fullmatch(r"[A-Za-z0-9]{8,40}", vid):
+            raise HTTPError(400, "that ElevenLabs voice id doesn't look right (copy it from ElevenLabs > Voices)")
+        if model and not re.fullmatch(r"[a-z0-9_.-]{3,40}", model):
+            raise HTTPError(400, "that ElevenLabs model id doesn't look right")
+        if ref and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", ref):
+            raise HTTPError(400, "that secret name doesn't look right")
+        return {"kind": "elevenlabs", "voice_id": vid, "model": model or "eleven_turbo_v2_5", "key_ref": ref}
+    if v.get("kind") == "custom":
+        val = str(v.get("value") or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{2,120}", val):
+            raise HTTPError(400, "a voice looks like Polly.Joanna-Neural or Telnyx.KokoroTTS.af_heart")
+        return {"kind": "custom", "value": val}
+    if v.get("id") not in {i for i, _l, _v in telco.VOICES}:
+        raise HTTPError(400, "pick one of the listed voices")
+    return {"id": v["id"]}
+
+
 def settings_route(req, start):
     from .app import HTTPError, respond_json
     if req.method == "POST":
@@ -679,6 +711,8 @@ def settings_route(req, start):
             db.set_setting("call_on_red", bool(body["call_on_red"]))
         if "record" in body:
             db.set_setting("record_calls", bool(body["record"]))
+        if "voice" in body:
+            db.set_setting("call_voice", _clean_voice(body["voice"]))
         if "name" in body:
             db.set_setting("call_name", re.sub(r"[^\w .'-]", "", str(body.get("name") or "")).strip()[:40])
     elif req.method != "GET":
@@ -687,7 +721,9 @@ def settings_route(req, start):
     return respond_json(start, {"phone": user_phone(), "call_on_red": bool(db.get_setting("call_on_red", False)),
                                 "name": user_name(), "configured": configured(), "public_url": bool(public_base()),
                                 "cap": _cap(), "today": calls_today(now), "hours": list(HOURS),
-                                "record": db.get_setting("record_calls") is not False})
+                                "record": db.get_setting("record_calls") is not False,
+                                "provider": _provider_name(), "voice": db.get_setting("call_voice") or {},
+                                "voices": _voices()})
 
 
 def test_route(req, start):
@@ -767,7 +803,15 @@ def history_route(req, start_response):
 
 
 ROUTES = {"/api/calls/settings": settings_route, "/api/calls/test": test_route, "/api/calls/history": history_route}
-PUBLIC_ROUTES = {"/api/calls/twiml/": twiml_route, "/api/calls/status/": status_route}
+def inbound_route(req, start):
+    """Someone called Theta's number (the TeXML application's voice URL): a short line, then hang up. Nothing is
+    read from the request, so it needs no signature."""
+    who = user_name() or "its owner"
+    return _xml(start, _twiml(_say(f"Hi, you've reached Theta, the assistant for {who}. This line doesn't take calls. "
+                                   "Please text this number instead. Goodbye."), "<Hangup/>"))
+
+
+PUBLIC_ROUTES = {"/api/calls/twiml/": twiml_route, "/api/calls/status/": status_route, "/api/calls/inbound": inbound_route}
 
 
 def connections():
@@ -775,7 +819,7 @@ def connections():
     c = {"id": "phone", "name": "Phone calls", "connected": ok,
          "what": "Theta calls you, and calls others for you with your OK"}
     if not ok:
-        c["how"] = "Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM on the server (deploy/RAILWAY.md)."
+        c["how"] = "Set TELNYX_API_KEY, TELNYX_FROM and TELNYX_TEXML_APP_ID on the server (deploy/RAILWAY.md)."
     return [c]
 
 

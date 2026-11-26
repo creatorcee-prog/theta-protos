@@ -1,5 +1,5 @@
-"""Text messages: Theta texts a saved contact (or a number) for the user from the Twilio number (TWILIO_ACCOUNT_SID,
-TWILIO_AUTH_TOKEN, TWILIO_FROM, the same account as phone calls).
+"""Text messages: Theta texts a saved contact (or a number) for the user from Theta's number, through the same phone
+provider as calls (server/telco.py: Telnyx with TELNYX_API_KEY and TELNYX_FROM, else Twilio).
 
 Sending, two ways:
 - Reviewed and sent without asking (the "texts_auto" setting, on by default), only when ALL hold: the recipient
@@ -30,8 +30,8 @@ SETTING_AUTO = "texts_auto"
 
 
 def configured():
-    from . import calls
-    return calls.configured()
+    from . import telco
+    return telco.can_text()
 
 
 def _target(args):
@@ -88,16 +88,16 @@ def _count(now):
 
 
 def _deliver(number, name, body, now):
-    from . import calls
     if not configured():
-        raise ToolError("texting isn't set up yet (it uses the Twilio account: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN "
-                        "and TWILIO_FROM). Nothing was sent.")
+        raise ToolError("texting isn't set up yet (it needs the phone provider: TELNYX_API_KEY and TELNYX_FROM on "
+                        "the server). Nothing was sent.")
     if _sent_today(now) >= DAILY_CAP:
         raise ToolError(f"that's the {DAILY_CAP}-a-day text limit. Nothing was sent.")
-    res = calls._twilio("Messages.json", {"To": number, "From": calls._env("TWILIO_FROM"), "Body": body})
+    from . import telco
+    mid = telco.send_sms(number, body)
     _count(now)
     _log(number, "out", body, now)
-    return res
+    return {"sid": mid}
 
 
 def _send(args, ctx):
@@ -218,7 +218,7 @@ def connections():
     c = {"id": "sms", "name": "Text messages", "cat": "Messaging", "connected": on,
          "what": "Text your saved contacts; reviewed texts go without asking"}
     if not on:
-        c["note"] = "Texting uses the Twilio account that phone calls use. Once Twilio is set up, this turns on."
+        c["note"] = "Texting uses the same phone provider as calls (Telnyx). Once it's set up, this turns on."
     return [c]
 
 
@@ -227,12 +227,16 @@ def connections():
 def inbound(req, start_response):
     from . import calls, contacts
     from .app import HTTPError
-    pairs = calls._form(req)
-    if not calls.verify(req, pairs):
+    from . import telco
+    if not telco.verify(req, "sms"):
         raise HTTPError(403, "bad signature")
-    f = dict(pairs)
-    number = contacts.phone(f.get("From")) or str(f.get("From") or "")[:20]
-    body = str(f.get("Body") or "").strip()[:MAX_CHARS]
+    f = telco.read(req)
+    if f.get("event_type") and f.get("event_type") != "message.received":
+        return calls._xml(start_response, "<Response></Response>")  # Telnyx delivery receipts: nothing to show
+    sender = f.get("from")
+    sender = sender.get("phone_number") if isinstance(sender, dict) else (sender or f.get("From"))
+    number = contacts.phone(sender) or str(sender or "")[:20]
+    body = str(f.get("text") or f.get("Body") or "").strip()[:MAX_CHARS]
     if body:
         now = time.time()
         _log(number, "in", body, now)

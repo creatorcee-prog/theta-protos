@@ -130,7 +130,7 @@
   function human(text) {
     const t = String(text || "").replace(/^Error:\s*/, "");
     if (/isn't connected|not connected|isn't set up|aren't set up/i.test(t)) {
-      const what = (t.match(/^(Google|Gmail|Twilio|Texting|Phone calls|Google Drive)/i) || [])[1] || "That app";
+      const what = (t.match(/^(Google|Gmail|Telnyx|Twilio|Texting|Phone calls|Google Drive)/i) || [])[1] || "That app";
       return `${what} isn't connected yet. Connect it in Settings > Apps, then try again.`;
     }
     const first = t.split(/(?<=[.!?])\s+/)[0] || "It didn't go through.";
