@@ -542,7 +542,11 @@
     return li;
   }
   R.connect = c => {
-    const head = el("div", "cards-row"), tile = el("div", "cards-tile", (c.letter || (c.name || "?")[0] || "?").slice(0, 1)), t = el("div", "cards-grow");
+    const LOGO_ID = {google: "gmail", gmail: "gmail", calendar: "calendar", drive: "drive", twilio: "phone", phone: "phone", giphy: "giphy"};
+    const lid = LOGO_ID[c.service] || c.service, logo = lid && (window.ThetaLogos || {})[lid];
+    const tile = logo ? T.logo({id: lid, name: c.name}) : el("div", "cards-tile", (c.letter || (c.name || "?")[0] || "?").slice(0, 1));
+    if (logo) tile.classList.add("cards-tile");
+    const head = el("div", "cards-row"), t = el("div", "cards-grow");
     t.append(el("div", "cards-title", c.title || "Connect " + (c.name || c.service)), el("div", "cards-sub", c.why || ""));
     head.append(tile, t);
     const btns = el("div", "cards-btns"), steps = Array.isArray(c.steps) ? c.steps : [];
@@ -553,9 +557,14 @@
       b.addEventListener("click", () => { if (T.state.demo) { T.toast("Demo mode: on Theta this opens " + (c.name || "the service") + "'s sign-in."); return; } location.href = url; });
       btns.append(b);
     }
+    if (!url && c.action === "settings") {
+      const b = btn("Open Connections", {primary: true});
+      b.addEventListener("click", () => T.open("settings", "connections"));
+      btns.append(b);
+    }
     if (steps.length) {
       ol = el("ol"); ol.hidden = true; for (const st of steps) ol.append(stepText(st));
-      const b = btn(url ? "Setup steps" : "How to set it up", {primary: !url});
+      const b = btn(url || c.action === "settings" ? "Setup steps" : "How to set it up", {primary: !url && c.action !== "settings"});
       b.setAttribute("aria-expanded", "false");
       b.addEventListener("click", () => { ol.hidden = !ol.hidden; b.setAttribute("aria-expanded", String(!ol.hidden)); b.textContent = ol.hidden ? (url ? "Setup steps" : "How to set it up") : "Hide the steps"; });
       btns.append(b);

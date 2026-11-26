@@ -141,7 +141,7 @@ One Google sign-in covers all of them. It takes about 15 minutes in a browser, o
    GOOGLE_CLIENT_SECRET=<...>
    PROTOS_PUBLIC_URL=https://<your app>.up.railway.app
    ```
-6. In Theta, open **Connect apps**, tap **Connect** on Gmail, Calendar or Drive, sign in, and allow every box.
+6. In Theta, open **Settings → Connections**, tap **Connect** on Gmail, Calendar or Drive, sign in, and allow every box.
    Google warns that the app isn't verified. It's your own app, so choose Continue.
 
 In Testing mode, Google ends the sign-in every 7 days

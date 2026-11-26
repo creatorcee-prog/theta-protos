@@ -1093,9 +1093,11 @@ def connections():
     ]
     try:
         from . import ext
-        return ext.connections(base)
+        built = ext.connections(base)
     except Exception:  # noqa: BLE001
-        return base
+        built = base
+    from . import catalog
+    return catalog.merge(built)
 
 
 def memory_route(req, start):

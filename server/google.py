@@ -182,7 +182,7 @@ def _signed_out(note):
     if was:
         try:
             db.add_message("theta", "assistant", "Google signed me out of your account, so I can't reach Gmail, "
-                           "Calendar or Drive right now. Open Connect apps and tap Connect on Gmail to sign in again.",
+                           "Calendar or Drive right now. Open Settings > Connections and tap Connect on Gmail to sign in again.",
                            {"proactive": True, "source": "google", "cards": _connect_card(attach=False)})
         except Exception:  # noqa: BLE001
             pass
@@ -206,7 +206,7 @@ def _refresh(rec):
         _signed_out(EXPIRED_NOTE)
         _connect_card()
         raise GoogleError("Google isn't connected any more (the sign-in expired). Ask the user to tap Connect on "
-                          "Gmail in Connect apps, then try again.")
+                          "Gmail in Settings > Connections, then try again.")
     status, j = _post_form(TOKEN_URL, {"client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
                                        "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET", ""),
                                        "refresh_token": rec["refresh_token"], "grant_type": "refresh_token"})
@@ -216,7 +216,7 @@ def _refresh(rec):
             _signed_out(EXPIRED_NOTE)
             _connect_card()
             raise GoogleError("Google signed Theta out (the sign-in expired or was removed). Ask the user to tap "
-                              "Connect on Gmail in Connect apps, then try again.")
+                              "Connect on Gmail in Settings > Connections, then try again.")
         log(f"refresh failed: HTTP {status} {j.get('error', '')}")
         raise GoogleError("Couldn't refresh the Google sign-in just now. Try again in a minute.")
     rec = dict(rec, access_token=j["access_token"], expires_at=time.time() + float(j.get("expires_in") or 3600),
@@ -237,7 +237,7 @@ def access_token(force=False):
         if not (rec.get("refresh_token") or rec.get("access_token")):
             _connect_card()
             raise GoogleError("Google isn't connected, so this can't be done. Ask the user to tap Connect on Gmail "
-                              "in Connect apps (the ... menu).")
+                              "in Settings > Connections.")
         if force or not rec.get("access_token") or float(rec.get("expires_at") or 0) < time.time() + 60:
             rec = _refresh(rec)
         return rec["access_token"]
@@ -386,7 +386,6 @@ def connections():
             c["account"] = account()
         if note and not c["connected"]:
             c["note"] = note
-            c["what"] = note
         out.append(c)
     return out
 
@@ -397,8 +396,8 @@ def context(bot, now):
         return f"Google: connected ({', '.join(have)})" + (f" as {account()}" if account() else "") + "."
     if _store().get("status") == "signed_out":
         return "Google: signed out (the sign-in expired). Gmail, Calendar and Drive tools won't work until the " \
-               "user taps Connect on Gmail, Calendar or Drive in Connect apps (one Google sign-in covers all three)."
-    return "Google: not connected. To use Gmail, Calendar or Drive the user taps Connect on Gmail, Calendar or Drive in Connect apps (one Google sign-in covers all three)."
+               "user taps Connect on Gmail, Calendar or Drive in Settings > Connections (one Google sign-in covers all three)."
+    return "Google: not connected. To use Gmail, Calendar or Drive the user taps Connect on Gmail, Calendar or Drive in Settings > Connections (one Google sign-in covers all three)."
 
 
 RELEVANT = (r"\b(g?mail|e-?mails?|inbox|unread|drafts?|repl(y|ies)|calendar|meetings?|events?|appointments?|"
@@ -959,7 +958,7 @@ def _slides_create(args, ctx):
 
 # ---- tools
 
-_NOT = " If Google isn't connected the tool says so; then tell the user to tap Connect on Gmail in Connect apps."
+_NOT = " If Google isn't connected the tool says so; then tell the user to tap Connect on Gmail in Settings > Connections."
 
 TOOLS = [
     {"name": "gmail_search", "risk": "read", "untrusted": True, "run": _gmail_search,

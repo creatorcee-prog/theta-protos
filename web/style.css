@@ -279,6 +279,21 @@ svg { width: 22px; height: 22px; display: block; flex: none; }
 .empty { color: var(--muted); text-align: center; padding: 40px 0; }
 
 .settings-body .group { background: #1b1b1b; border-radius: 20px; padding: 2px 16px; }
+/* Settings tabs: a segmented control under the header */
+.seg { display: flex; gap: 2px; margin: 4px calc(var(--sar) + 16px) 6px calc(var(--sal) + 16px); padding: 3px; border-radius: 14px; background: #222; flex: none; }
+.seg button { flex: 1 1 0; min-width: 0; padding: 8px 4px; border-radius: 11px; font-size: 14px; color: #bbb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg button[aria-selected="true"] { background: #3a3a3a; color: #fff; font-weight: 500; }
+.tab-panel > .sec:first-child { margin-top: 12px; }
+.tab-panel:empty::after { content: "Nothing here yet."; display: block; color: var(--muted); text-align: center; padding: 40px 0; }
+/* Connections tab */
+.conn-top { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.conn-top .search-pill { flex: 1; min-width: 0; height: 46px; padding: 0 16px; }
+.conn-top .count-pill { padding: 8px 12px; font-size: 14px; color: #ccc; }
+#tab-connections .chips { padding: 12px 0 2px; margin: 0 calc(-1 * (var(--sar) + 16px)) 0 0; padding-right: calc(var(--sar) + 16px); }
+.app-ic.logo { background: #fff; border-color: transparent; }
+.app-ic.logo svg { width: 30px; height: 30px; }
+.cards-tile.logo svg { width: 26px; height: 26px; }
+.app-row.soon .app-ic.logo { opacity: .82; }
 .row-set { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 0; border-top: 1px solid #262626; }
 .row-set:first-child { border-top: 0; }
 .row-set .txt { flex: 1 1 200px; min-width: 0; }

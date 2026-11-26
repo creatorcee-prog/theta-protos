@@ -187,15 +187,31 @@ async function waitUp(url) {
     check(after.cites === 0 && after.reply.startsWith("Hey.") && after.n === before, "the old reply is replaced by a new one: " + after.reply.slice(0, 40));
     await shot("10b-edited");
 
-    // Connect apps
+    // Connections: a tab in Settings, opened from the "..." menu
     await page.click("#chat-more");
     await page.click('#menu [data-act="connect"]');
-    await page.waitForSelector("#connect .app-row", {timeout: 4000});
+    await page.waitForSelector("#tab-connections:not([hidden]) .app-row", {timeout: 4000});
     await sleep(450);
-    await shot("08-connect-apps");
-    check(/\d+ connected/.test(await page.textContent("#connect-count")), "Connect apps shows the connected count");
-    await page.click("#connect [data-close]");
-    await page.waitForSelector("#connect", {state: "hidden"});
+    await shot("08-connections");
+    check(/\d+ connected/.test(await page.textContent("#connect-count")), "Connections shows the connected count");
+    check(await page.getAttribute("#tabbtn-connections", "aria-selected") === "true", "the Connections tab is selected");
+    const conn = await page.evaluate(() => ({
+      logos: document.querySelectorAll("#connect-list .app-ic.logo svg path").length,
+      soon: [...document.querySelectorAll("#connect-list .app-row.soon button")].map(b => b.textContent),
+      secs: [...document.querySelectorAll("#connect-list .sec")].map(h => h.textContent),
+      wide: document.documentElement.scrollWidth > innerWidth}));
+    check(conn.logos >= 5, "apps show brand logos: " + conn.logos);
+    check(conn.soon.length > 0 && conn.soon.every(t => t === "Soon"), "apps not built yet say Soon");
+    check(conn.secs.includes("Coming soon"), "a Coming soon section: " + conn.secs.join(" | "));
+    check(!conn.wide, "no sideways scroll on the Connections tab");
+    await page.evaluate(() => document.querySelector("#connect-list .app-row.soon").scrollIntoView({block: "center"}));
+    await sleep(200);
+    await shot("08b-connections-soon");
+    await page.click("#tabbtn-security");
+    check(!(await page.isHidden("#tab-security")) && await page.isHidden("#tab-connections"), "tabs switch panels");
+    await shot("08c-settings-security");
+    await page.click("#settings [data-close]");
+    await page.waitForSelector("#settings", {state: "hidden"});
 
     // Settings, from the avatar button on home
     await page.click("#chat-back");
@@ -204,6 +220,7 @@ async function waitUp(url) {
     await page.waitForSelector("#settings:not([hidden])");
     await sleep(500);
     await shot("09-settings");
+    check(await page.getAttribute("#tabbtn-general", "aria-selected") === "true", "Settings opens on General from the avatar button");
     check((await page.textContent("#set-loc-note")).includes("10 km"), "location note says rounded to about 10 km");
     check(await page.isChecked("#set-usage"), "Show token use is on by default");
     await page.waitForSelector("#set-lessons .lesson", {timeout: 3000}).catch(() => {});
@@ -218,6 +235,10 @@ async function waitUp(url) {
     await page.click("#set-lessons .lesson button");
     await sleep(400);
     check(!(await page.$$eval("#set-lessons .lesson b", e => e.map(x => x.textContent))).some(t => /too long/.test(t)), "a lesson can be removed");
+    await page.click("#tabbtn-notifications");
+    await sleep(200);
+    await shot("09d-settings-alerts");
+    check(await page.isVisible("#set-push") || await page.isVisible("#set-proactive"), "the Alerts tab has the notification settings");
 
     // markdown is built safely
     const safe = await page.evaluate(() => {

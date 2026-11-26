@@ -86,7 +86,7 @@
     <div class="home-bottom">
       <div class="banner" id="home-banner" hidden></div>
       <div class="home-bar">
-        <button class="round lg" id="home-apps" aria-label="Connect apps"><svg><use href="#i-grid"/></svg></button>
+        <button class="round lg" id="home-apps" aria-label="Connections"><svg><use href="#i-grid"/></svg></button>
         <label class="search-pill">
           <svg><use href="#i-search"/></svg>
           <input id="home-search" type="search" placeholder="Search" enterkeyhint="search" aria-label="Search your chat with Theta" autocomplete="off">
@@ -127,21 +127,6 @@
     </footer>
   </section>
 
-  <!-- Connect apps (full-screen sheet) -->
-  <section id="connect" class="sheet full" hidden aria-labelledby="connect-title" role="dialog" aria-modal="true">
-    <header class="sheet-head">
-      <button class="round" data-close aria-label="Close"><svg><use href="#i-close"/></svg></button>
-      <h2 id="connect-title">Connect apps</h2>
-      <span class="count-pill" id="connect-count">0 connected</span>
-    </header>
-    <div class="chips" id="connect-chips" role="tablist" aria-label="Filter"></div>
-    <div class="sheet-body" id="connect-list"></div>
-    <div class="sheet-foot">
-      <label class="search-pill"><svg><use href="#i-search"/></svg>
-        <input id="connect-search" type="search" placeholder="Search apps" aria-label="Search apps" autocomplete="off"></label>
-    </div>
-  </section>
-
   <!-- Settings (full-screen sheet) -->
   <section id="settings" class="sheet full" hidden aria-labelledby="settings-title" role="dialog" aria-modal="true">
     <header class="sheet-head">
@@ -149,61 +134,81 @@
       <h2 id="settings-title">Settings</h2>
       <span class="count-pill" id="settings-mode"></span>
     </header>
+    <div class="seg" id="settings-tabs" role="tablist" aria-label="Settings sections">
+      <button type="button" role="tab" id="tabbtn-general" data-tab="general" aria-controls="tab-general" aria-selected="true">General</button>
+      <button type="button" role="tab" id="tabbtn-notifications" data-tab="notifications" aria-controls="tab-notifications" aria-selected="false">Alerts</button>
+      <button type="button" role="tab" id="tabbtn-connections" data-tab="connections" aria-controls="tab-connections" aria-selected="false">Apps</button>
+      <button type="button" role="tab" id="tabbtn-security" data-tab="security" aria-controls="tab-security" aria-selected="false">Security</button>
+    </div>
     <div class="sheet-body settings-body">
-      <h3 class="sec">Theta texting you</h3>
-      <div class="group">
-        <div class="row-set">
-          <div class="txt"><b>Notifications</b><span id="set-push-note">Get a push when Theta texts you first.</span></div>
-          <label class="switch"><input type="checkbox" switch id="set-push" aria-label="Notifications"><i></i></label>
-        </div>
-        <div class="row-set">
-          <div class="txt"><b>Proactive messages</b><span>Theta texts first when something matters: briefs, alerts near you.</span></div>
-          <label class="switch"><input type="checkbox" switch id="set-proactive" aria-label="Proactive messages"><i></i></label>
-        </div>
-        <div class="row-set">
-          <div class="txt"><b>Quiet hours</b><span>Orange alerts wait until morning. Red ones still wake you.</span></div>
-          <div class="quiet">
-            <select id="set-quiet-from" aria-label="Quiet hours start"></select><span>to</span><select id="set-quiet-to" aria-label="Quiet hours end"></select>
+      <div class="tab-panel" id="tab-general" role="tabpanel" aria-labelledby="tabbtn-general">
+        <h3 class="sec">Chat</h3>
+        <div class="group">
+          <div class="row-set">
+            <div class="txt"><b>Show token use</b><span>A quiet line under each reply: tokens in and out, and about what it cost.</span></div>
+            <label class="switch"><input type="checkbox" switch id="set-usage" aria-label="Show token use" checked><i></i></label>
           </div>
         </div>
-        <div class="row-set">
-          <div class="txt"><b>Send a test</b><span>Checks that a push reaches this phone.</span></div>
-          <button class="btn-dark" id="set-push-test">Test</button>
+        <h3 class="sec">What Theta learned from your feedback</h3>
+        <div class="group" id="set-lessons" aria-live="polite"></div>
+        <p class="fine set-fine">Your likes and dislikes become short notes in Theta's instructions. Remove any you don't agree with.
+          <a id="set-export" href="/api/feedback/export" download="feedback.jsonl" hidden>Export liked replies</a></p>
+        <h3 class="sec">Theta's look</h3>
+        <div class="group">
+          <div class="row-set">
+            <div class="txt"><b>Dots</b><span>The shape of every dot in Theta's globe.</span></div>
+            <select id="set-dot" aria-label="Dot shape"></select>
+          </div>
+          <div class="row-set">
+            <div class="txt"><b>Opening</b><span>How Theta appears when the app opens: dots converge from the stars, or a broadcast comes home.</span></div>
+            <select id="set-opening" aria-label="Opening">
+              <option value="converge">Converge</option>
+              <option value="signal">Signal</option>
+            </select>
+          </div>
+          <div class="dot-preview"><canvas id="set-orb" aria-hidden="true"></canvas></div>
         </div>
       </div>
-      <h3 class="sec">Vantage</h3>
-      <div class="group">
-        <div class="row-set">
-          <div class="txt"><b>Share my location</b><span id="set-loc-note">Rounded to about 10 km. Used only for alerts near you.</span></div>
-          <label class="switch"><input type="checkbox" switch id="set-loc" aria-label="Share my location"><i></i></label>
+      <div class="tab-panel" id="tab-notifications" role="tabpanel" aria-labelledby="tabbtn-notifications" hidden>
+        <h3 class="sec">Theta texting you</h3>
+        <div class="group">
+          <div class="row-set">
+            <div class="txt"><b>Notifications</b><span id="set-push-note">Get a push when Theta texts you first.</span></div>
+            <label class="switch"><input type="checkbox" switch id="set-push" aria-label="Notifications"><i></i></label>
+          </div>
+          <div class="row-set">
+            <div class="txt"><b>Proactive messages</b><span>Theta texts first when something matters: briefs, alerts near you.</span></div>
+            <label class="switch"><input type="checkbox" switch id="set-proactive" aria-label="Proactive messages"><i></i></label>
+          </div>
+          <div class="row-set">
+            <div class="txt"><b>Quiet hours</b><span>Orange alerts wait until morning. Red ones still wake you.</span></div>
+            <div class="quiet">
+              <select id="set-quiet-from" aria-label="Quiet hours start"></select><span>to</span><select id="set-quiet-to" aria-label="Quiet hours end"></select>
+            </div>
+          </div>
+          <div class="row-set">
+            <div class="txt"><b>Send a test</b><span>Checks that a push reaches this phone.</span></div>
+            <button class="btn-dark" id="set-push-test">Test</button>
+          </div>
+        </div>
+        <h3 class="sec">Vantage</h3>
+        <div class="group">
+          <div class="row-set">
+            <div class="txt"><b>Share my location</b><span id="set-loc-note">Rounded to about 10 km. Used only for alerts near you.</span></div>
+            <label class="switch"><input type="checkbox" switch id="set-loc" aria-label="Share my location"><i></i></label>
+          </div>
         </div>
       </div>
-      <h3 class="sec">Chat</h3>
-      <div class="group">
-        <div class="row-set">
-          <div class="txt"><b>Show token use</b><span>A quiet line under each reply: tokens in and out, and about what it cost.</span></div>
-          <label class="switch"><input type="checkbox" switch id="set-usage" aria-label="Show token use" checked><i></i></label>
+      <div class="tab-panel" id="tab-connections" role="tabpanel" aria-labelledby="tabbtn-connections" hidden>
+        <div class="conn-top">
+          <label class="search-pill"><svg><use href="#i-search"/></svg>
+            <input id="connect-search" type="search" placeholder="Search apps" aria-label="Search apps" autocomplete="off"></label>
+          <span class="count-pill" id="connect-count">0 connected</span>
         </div>
+        <div class="chips" id="connect-chips" role="tablist" aria-label="Filter apps"></div>
+        <div id="connect-list"></div>
       </div>
-      <h3 class="sec">What Theta learned from your feedback</h3>
-      <div class="group" id="set-lessons" aria-live="polite"></div>
-      <p class="fine set-fine">Your likes and dislikes become short notes in Theta's instructions. Remove any you don't agree with.
-        <a id="set-export" href="/api/feedback/export" download="feedback.jsonl" hidden>Export liked replies</a></p>
-      <h3 class="sec">Theta's look</h3>
-      <div class="group">
-        <div class="row-set">
-          <div class="txt"><b>Dots</b><span>The shape of every dot in Theta's globe.</span></div>
-          <select id="set-dot" aria-label="Dot shape"></select>
-        </div>
-        <div class="row-set">
-          <div class="txt"><b>Opening</b><span>How Theta appears when the app opens: dots converge from the stars, or a broadcast comes home.</span></div>
-          <select id="set-opening" aria-label="Opening">
-            <option value="converge">Converge</option>
-            <option value="signal">Signal</option>
-          </select>
-        </div>
-        <div class="dot-preview"><canvas id="set-orb" aria-hidden="true"></canvas></div>
-      </div>
+      <div class="tab-panel" id="tab-security" role="tabpanel" aria-labelledby="tabbtn-security" hidden></div>
       <p class="fine" id="set-about"></p>
     </div>
   </section>
@@ -249,7 +254,7 @@
 
   <!-- the "..." menu -->
   <div class="menu" id="menu" role="menu" hidden>
-    <button role="menuitem" data-act="connect"><svg><use href="#i-grid"/></svg>Connect apps</button>
+    <button role="menuitem" data-act="connect"><svg><use href="#i-grid"/></svg>Connections</button>
     <button role="menuitem" data-act="settings"><svg><use href="#i-person"/></svg>Settings</button>
     <button role="menuitem" data-act="refresh"><svg><use href="#i-down"/></svg>Check for messages</button>
   </div>
@@ -268,6 +273,7 @@
 <script src="/static/orb.js"></script>
 <script src="/static/haptics.js"></script>
 <script src="/static/demo.js"></script>
+<script src="/static/logos.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/features.js"></script>
 </body>

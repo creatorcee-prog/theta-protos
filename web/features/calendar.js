@@ -159,7 +159,7 @@
       for (const e of list) agenda.append(row(e));
       const notes = [];
       if (info.google_note) notes.push(info.google_note);
-      else if (info.google === false && !demo()) notes.push("Connect Google (Connect apps) to see your Google Calendar here too.");
+      else if (info.google === false && !demo()) notes.push("Connect Google (Settings > Connections) to see your Google Calendar here too.");
       for (const p of info.problems || []) notes.push(p + ".");
       note.textContent = notes.join(" ");
     }

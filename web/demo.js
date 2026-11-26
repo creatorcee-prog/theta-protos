@@ -25,17 +25,20 @@
     || {proactive: true, quiet: [22, 7], tz: "America/Denver", loc: null};
   const saveSettings = () => { try { localStorage.setItem("protos:demo-settings", JSON.stringify(settings)); } catch (e) {} };
   const connections = [
-    {id: "gmail", name: "Gmail", connected: true, what: "Search, read, draft and sort your email."},
-    {id: "gcal", name: "Google Calendar", connected: true, what: "See your day, add and move events."},
-    {id: "gdrive", name: "Google Drive", connected: false, what: "Find, read and create files."},
-    {id: "vantage", name: "Vantage", connected: true, what: "Alerts near you and big world events."},
-    {id: "obsidian", name: "Obsidian vault", connected: true, what: "Theta's notes and your memory file."},
-    {id: "plex", name: "Plex", connected: false, what: "What you're watching and what's next."},
-    {id: "homeassistant", name: "Home Assistant", connected: false, what: "Lights, locks and the thermostat."},
-    {id: "github", name: "GitHub", connected: false, what: "Issues, pull requests and builds."},
-    {id: "notion", name: "Notion", connected: false, what: "Pages, databases and to-dos."},
-    {id: "spotify", name: "Spotify", connected: false, what: "Play, queue and find music."},
+    {id: "gmail", name: "Gmail", cat: "Google", connected: true, what: "Search, read, draft and send mail"},
+    {id: "calendar", name: "Google Calendar", cat: "Google", connected: true, what: "See and add events, invites with your OK"},
+    {id: "drive", name: "Google Drive", cat: "Google", connected: false, what: "Find and read files, make Docs and Slides"},
+    {id: "vantage", name: "Vantage", cat: "Theta", connected: true, what: "Events near you and in the world"},
+    {id: "search", name: "Web search", cat: "Web", connected: true, what: "Live facts, news and prices, with sources"},
+    {id: "phone", name: "Phone calls", cat: "Messaging", connected: false, what: "Theta calls you, and calls others for you with your OK"},
+    {id: "slack", name: "Slack", cat: "Messaging", connected: false, soon: true, what: "Read channels, catch you up and draft replies"},
+    {id: "notion", name: "Notion", cat: "Productivity", connected: false, soon: true, what: "Search, read and add to your pages"},
+    {id: "obsidian", name: "Obsidian", cat: "Productivity", connected: false, soon: true, what: "Read and add to your vault"},
+    {id: "homeassistant", name: "Home Assistant", cat: "Home", connected: false, soon: true, what: "Lights, locks and the thermostat"},
+    {id: "spotify", name: "Spotify", cat: "Media", connected: false, soon: true, what: "Play, queue and find music"},
+    {id: "github", name: "GitHub", cat: "Developer", connected: false, soon: true, what: "Issues, pull requests and builds"},
   ];
+
 
   // canned replies, picked with the same kind of rules the router uses
   function reply(text) {

@@ -1,5 +1,5 @@
 /* Theta: the phone app. Talks to the HTTP API in docs/SPEC.md; in demo mode (?demo=1, or no API) to demo.js.
- * Views: splash -> home <-> chat, plus full-screen sheets (Connect apps, Settings), the attach sheet, the "..." menu,
+ * Views: splash -> home <-> chat, plus full-screen sheets (Settings, with its tabs; Connections is one), the attach sheet, the "..." menu,
  * voice mode, and a login screen when the server answers 401.
  * Theta's status is its globe's motion (orb.js): idle, ack, working, speaking, waiting on you, done. No typing dots.
  * Texting (0.4): bubbles group like a text thread (tails on the last of a group, time separators, Delivered/Read,
@@ -177,12 +177,15 @@
     if (name === "chat") { markRead(); requestAnimationFrame(() => { toBottom(false); }); }
     if (name === "home") renderHome();
   }
-  const SHEETS = ["connect", "settings"];
+  const SHEETS = ["settings"];
   function render(st) {
     st = st || {v: "home"};
     if (!S.authed) return;
     show(st.v === "chat" ? "chat" : "home");
-    for (const s of SHEETS) { const open = st.sheet === s, e = $(s); if (open && e.hidden) openSheet(s); else if (!open && !e.hidden) closeSheetEl(e); }
+    // "connect" was its own sheet; it's now the Connections tab of Settings, and old links still land there
+    const sheet = st.sheet === "connect" ? "settings" : st.sheet, tab = st.sheet === "connect" ? "connections" : st.tab;
+    for (const s of SHEETS) { const open = sheet === s, e = $(s); if (open && e.hidden) openSheet(s); else if (!open && !e.hidden) closeSheetEl(e); }
+    if (sheet === "settings") setTab(tab || "general");
   }
   const go = st => { history.pushState(st, "", location.href); render(st); };
   const cur = () => history.state || {v: view === "chat" ? "chat" : "home"};
@@ -1209,7 +1212,7 @@
   $("home-bot").addEventListener("click", () => openChat());
   $("home-new").addEventListener("click", () => { openChat(); setTimeout(() => ta.focus(), 50); });
   $("home-me").addEventListener("click", () => go(Object.assign({}, cur(), {sheet: "settings"})));
-  $("home-apps").addEventListener("click", () => go(Object.assign({}, cur(), {sheet: "connect"})));
+  $("home-apps").addEventListener("click", () => go(Object.assign({}, cur(), {sheet: "settings", tab: "connections"})));
 
   // search what's loaded of the chat
   let searchT = 0;
@@ -1251,7 +1254,6 @@
   const sheetOpeners = {};
   function openSheet(name) {
     const e = $(name); e.classList.remove("closing"); e.hidden = false;
-    if (name === "connect") loadConnections();
     if (name === "settings") loadSettings();
     if (sheetOpeners[name]) { try { sheetOpeners[name](e); } catch (err) { console.error(err); } }
   }
@@ -1277,10 +1279,31 @@
     chip.append(x); chip.hidden = false; e.target.value = "";
   });
 
-  // ---------------------------------------------------------------- Connect apps
-  const CAT = {gmail: "Google", gcal: "Google", calendar: "Google", gdrive: "Google", drive: "Google", google: "Google",
-    vantage: "Theta", obsidian: "Notes", notion: "Notes", plex: "Media", spotify: "Media", youtube: "Media",
-    homeassistant: "Home", hue: "Home", github: "Developer", vercel: "Developer"};
+  // ---------------------------------------------------------------- Settings tabs
+  const TABS = ["general", "notifications", "connections", "security"];
+  let settingsTab = "general";
+  function setTab(tab) {
+    if (!TABS.includes(tab)) tab = "general";
+    const changed = tab !== settingsTab || !$("tab-" + tab).dataset.shown;
+    settingsTab = tab;
+    for (const t of TABS) { const on = t === tab; $("tab-" + t).hidden = !on; $("tabbtn-" + t).setAttribute("aria-selected", String(on)); $("tabbtn-" + t).tabIndex = on ? 0 : -1; }
+    $("tab-" + tab).dataset.shown = "1";
+    if (tab === "connections" && changed) loadConnections();
+    if (changed) $("settings").querySelector(".settings-body").scrollTop = 0;
+  }
+  $("settings-tabs").addEventListener("click", e => {
+    const b = e.target.closest("[data-tab]"); if (!b) return;
+    history.replaceState(Object.assign({}, cur(), {sheet: "settings", tab: b.dataset.tab}), "", location.href);
+    setTab(b.dataset.tab);
+  });
+  $("settings-tabs").addEventListener("keydown", e => {
+    const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0; if (!d) return;
+    const t = TABS[(TABS.indexOf(settingsTab) + d + TABS.length) % TABS.length];
+    history.replaceState(Object.assign({}, cur(), {sheet: "settings", tab: t}), "", location.href);
+    setTab(t); $("tabbtn-" + t).focus();
+  });
+
+  // ---------------------------------------------------------------- Connections (a Settings tab)
   let connFilter = "All";
   async function loadConnections() {
     const list = $("connect-list");
@@ -1297,37 +1320,53 @@
   function renderConnections() {
     const all = S.connections || [], q = $("connect-search").value.trim().toLowerCase();
     $("connect-count").textContent = all.filter(c => c.connected).length + " connected";
-    const cats = ["All", "Connected", ...new Set(all.map(c => CAT[c.id] || "Other"))];
+    const cats = ["All", "Connected", ...new Set(all.map(c => c.cat || "Other"))];
+    if (!cats.includes(connFilter)) connFilter = "All";
     const chips = $("connect-chips"); chips.replaceChildren();
     for (const c of cats) { const b = el("button", "chip", c); b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(c === connFilter));
       b.addEventListener("click", () => { connFilter = c; renderConnections(); }); chips.append(b); }
-    const pass = c => (connFilter === "All" || (connFilter === "Connected" ? c.connected : (CAT[c.id] || "Other") === connFilter))
-      && (!q || (c.name + " " + (c.what || "")).toLowerCase().includes(q));
+    const pass = c => (connFilter === "All" || (connFilter === "Connected" ? c.connected : (c.cat || "Other") === connFilter))
+      && (!q || (c.name + " " + (c.what || "") + " " + (c.cat || "")).toLowerCase().includes(q));
     const shown = all.filter(pass), list = $("connect-list"); list.replaceChildren();
     const section = (title, items) => {
       if (!items.length) return;
-      const h = el("h3", "sec", title); h.append(svg("i-chev")); list.append(h);
+      list.append(el("h3", "sec", title));
       for (const c of items) list.append(appRow(c));
     };
     section("Connected", shown.filter(c => c.connected));
-    section("Suggested for you", shown.filter(c => !c.connected));
+    section("Ready to connect", shown.filter(c => !c.connected && !c.soon));
+    section("Coming soon", shown.filter(c => c.soon));
     if (!shown.length) list.append(el("p", "empty", q ? "No apps match that." : "Nothing here yet."));
     if (S.connMock) list.append(el("p", "fine center", "Sample list: the server doesn't list connections yet."));
+    // features add their own groups (web browsing, calendar feeds, phone calls) below the list
   }
-  function appRow(c) {
-    const row = el("div", "app-row"), ic = el("div", "app-ic", (c.name || "?").trim()[0].toUpperCase());
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function appIcon(c) {
+    const logo = (window.ThetaLogos || {})[c.id];
+    if (logo) {
+      const ic = el("div", "app-ic logo"), s = document.createElementNS(SVGNS, "svg"), p = document.createElementNS(SVGNS, "path");
+      s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true"); p.setAttribute("d", logo[1]); p.setAttribute("fill", "#" + logo[0]);
+      s.append(p); ic.append(s); return ic;
+    }
+    const ic = el("div", "app-ic", (c.name || "?").trim()[0].toUpperCase());
     let h = 0; for (const ch of c.id || c.name) h = (h * 31 + ch.charCodeAt(0)) % 360;
     ic.style.background = `linear-gradient(145deg, hsl(${h} 45% 34%), hsl(${(h + 30) % 360} 50% 22%))`;
-    const t = el("div", "app-txt"); t.append(el("b", null, c.name), el("span", null, c.what || ""));
-    const b = el("button", "btn-dark" + (c.connected ? " on" : ""), c.connected ? "Connected" : "Connect"); b.type = "button";
-    b.setAttribute("aria-label", (c.connected ? "Connected: " : "Connect ") + c.name);
+    return ic;
+  }
+  function appRow(c) {
+    const row = el("div", "app-row" + (c.soon ? " soon" : ""));
+    const t = el("div", "app-txt"); t.append(el("b", null, c.name), el("span", null, c.account ? c.account : (c.what || "")));
+    const label = c.connected ? "Connected" : c.soon ? "Soon" : "Connect";
+    const b = el("button", "btn-dark" + (c.connected || c.soon ? " on" : ""), label); b.type = "button";
+    b.setAttribute("aria-label", `${label}: ${c.name}`);
     b.addEventListener("click", async () => {
+      if (c.soon) { toast(`${c.name} isn't built yet. It's on the list.`, 3200); return; }
       if (S.demo) { try { await post("/api/connections/" + encodeURIComponent(c.id), {}); c.connected = !c.connected; renderConnections(); } catch (e) {} return; }
       if (c.connect_url && !c.connected && /^\/api\//.test(c.connect_url)) { location.href = c.connect_url; return; }
       if (c.note && !c.connected) { toast(c.note, 5000); return; }
-      toast(c.connected ? `${c.name} is connected on Theta.` : `Connecting ${c.name} from the phone comes later. Set it up on Theta for now.`, 3600);
+      toast(c.connected ? `${c.name} is connected.` : `${c.name} needs setting up on the server first.`, 3600);
     });
-    row.append(ic, t, b);
+    row.append(appIcon(c), t, b);
     return row;
   }
   $("connect-search").addEventListener("input", renderConnections);
@@ -1549,9 +1588,11 @@
 
   // ---- for feature screens (web/features/*.js; the list is in web/features.js). They build their own sheets
   // with Theta.sheet(), add rows to Settings and items to the "..." menu, and call the API through Theta.api.
+  const SETTINGS_TAB = {"Web browsing": "connections", "Calendar": "connections", "Phone calls": "connections", "Sign-in": "security"};
   window.Theta = {
     api, post, http, toast, send, el, svg, store, md, state: S,
-    open(id) { go(Object.assign({}, cur(), {sheet: id})); },
+    open(id, tab) { go(Object.assign({}, cur(), {sheet: id}, tab ? {tab} : {})); },
+    logo: c => appIcon(c), // the app tile used in Connections: a brand logo when web/logos.js has one
     // fn(message, rowEl, bubbleEl) runs for every message shown; add to rowEl, build DOM nodes only (no innerHTML)
     decorate(fn) { decorators.push(fn); },
     // a renderer for one kind of card in meta.cards (weather, link, event, connect...): fn(card, msg) -> element
@@ -1583,9 +1624,10 @@
       $("menu").append(b); return b;
     },
     // a section in Settings, above the "about" line: returns the group element to fill with .row-set rows
-    settings(title) {
-      const body = $("settings").querySelector(".settings-body"), about = $("set-about");
-      const h = el("h3", "sec", title), g = el("div", "group"); body.insertBefore(h, about); body.insertBefore(g, about); return g;
+    // tab: "general" | "notifications" | "connections" | "security" (defaults by title, else general)
+    settings(title, tab) {
+      const panel = $("tab-" + (TABS.includes(tab) ? tab : (SETTINGS_TAB[title] || "general")));
+      const h = el("h3", "sec", title), g = el("div", "group"); panel.append(h, g); return g;
     },
   };
   window.dispatchEvent(new Event("theta:ready"));

@@ -297,7 +297,7 @@ def _send_email(args, ctx):
         pass
     if google is None or not google.connected("gmail"):
         _connect(ctx, "google")
-        raise ToolError("Gmail isn't connected yet, so nothing was sent. Connect it in Connect apps, then ask again.")
+        raise ToolError("Gmail isn't connected yet, so nothing was sent. Connect it in Settings > Connections, then ask again.")
     return google.send(to=", ".join(to), subject=args["subject"], body=args["body"])
 
 
