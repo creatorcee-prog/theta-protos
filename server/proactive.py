@@ -16,6 +16,7 @@ Rules:
   - at most "proactive_cap" (default 6) a day, your day; Red is exempt and isn't counted. Over the cap an event
     is dropped (marked), so tomorrow doesn't start with yesterday's backlog;
   - settings "proactive": false turns it all off except Red (what it skips is dropped the same way)."""
+import threading
 import time
 
 db = push = vantage = None   # server modules, loaded on first use; tests put fakes here
@@ -221,6 +222,18 @@ def candidates(now):
     return out
 
 
+def _call_about(text):
+    """Ring the user about a Red alert near them (server/calls.py checks the setting and Twilio). In the
+    background, so the alert itself never waits on a phone call."""
+    def go():
+        try:
+            from . import calls
+            calls.call_user_alert(text)
+        except Exception:  # noqa: BLE001
+            pass
+    threading.Thread(target=go, name="red-call", daemon=True).start()
+
+
 def run(now=None):
     """One round: returns the messages sent (each a Message dict)."""
     _mods()
@@ -255,6 +268,8 @@ def run(now=None):
             pushed += push.notify("Theta", short(text), f"/?m={msg['id']}", urgent=red)
         except Exception:  # noqa: BLE001  the message is in the inbox either way
             pass
+        if red and c["source"] == "vantage" and (c.get("event") or {}).get("group") == "near":
+            _call_about(text)                               # a phone call too, if "Call me on Red alerts" is on
         if not red:
             _bump(now)
         sent.append(msg)

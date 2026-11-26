@@ -355,7 +355,8 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0):
     msgs = _build(history, text, bot, context=tools.context_block(bot))
     info = {}
     try:
-        final = agent.run(route, msgs, emit, info=info, ctx={"bot": bot, "user_id": user["id"]},
+        tctx = {"bot": bot, "user_id": user["id"]}
+        final = agent.run(route, msgs, emit, info=info, ctx=tctx,
                           on_tool_start=on_tool_start, max_tokens=MAX_TOKENS)
     finally:
         log_row["tried"] = info.get("tried") or [f"{provider}/{model}"]
@@ -365,6 +366,12 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0):
         if info.get("ttft"):
             log_row["ttft_ms"] = int((info["ttft"] - t0) * 1000)
     out = (final or "").strip()
+    # images a tool made (generate_image, a browser screenshot) always show, even if the model left out the marker
+    for image_id in tctx.get("images") or []:
+        if f"[image:{image_id}]" not in out:
+            add = ("\n\n" if out else "") + f"[image:{image_id}]"
+            emit("delta", {"text": add})
+            out += add
     approvals = info.get("approvals") or []
     if approvals:  # the exact action, written by code (never the model's description of it)
         card = "\n\n".join(f"Waiting for your OK (expires in 24 h):\n{a['preview']}" for a in approvals)
@@ -383,6 +390,15 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0):
         rmeta["actions"] = _approval_actions(approvals)
     if info.get("sources"):
         rmeta["sources"] = info["sources"]
+    if not approvals and not info.get("error"):  # a multi-step job that worked: offer to save it as a workflow
+        try:
+            from . import workflows
+            chips = workflows.maybe_offer({"text": text, "tools": info.get("tools") or [], "bot": bot,
+                                           "error": info.get("error"), "approvals": approvals})
+            if chips:
+                rmeta["actions"] = (rmeta.get("actions") or []) + chips
+        except Exception:  # noqa: BLE001
+            pass
     if info.get("error"):
         rmeta.update(partial=True, error="the model stopped mid-reply")
         log_row["error"] = info["error"]

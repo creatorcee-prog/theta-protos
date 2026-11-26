@@ -69,3 +69,86 @@ Wait for the deploy to show as active. The **Deployments** tab has its log, whic
 
 ## Moving to the box later
 Download `protos.db` from the volume, put it in `/var/lib/theta-protos/` on the box, and follow `deploy/README.md`.
+
+## Web browsing: Theta's own browser (the Dockerfile)
+Theta can open websites itself, read them and fill in forms, using a headless Chromium. The repo has a `Dockerfile`
+for this, and Railway builds a Dockerfile at the repo's root automatically (the deploy log says "Using detected
+Dockerfile"). It starts from the official Playwright image, so Chromium and everything it needs are already inside.
+`railway.json` still supplies the start check (`/api/health`) and the restart policy.
+
+- **Memory costs money.** Chromium uses a few hundred MB of RAM while a page is open (often 200 to 500 MB, more on
+  heavy sites), and Railway bills RAM by the minute. Theta keeps one browser tab set per conversation and closes it
+  after 5 idle minutes; when nothing is open, it closes Chromium completely, so the idle cost is the server alone
+  (about 50 MB).
+- **The image is big** (about 2 GB), so the first build takes a few minutes. Later builds reuse it.
+- **To turn browsing off** without changing the build, add the variable `THETA_BROWSER=0`.
+- **Safety:** Theta only opens public `http`/`https` sites, never addresses on private networks (including
+  Railway's internal network). Anything that submits, buys, books, posts, signs up, deletes or sends waits for
+  your Approve tap, with the exact fields shown (passwords and card numbers masked). It never types passwords:
+  there's no password vault yet.
+
+## Phone calls (Twilio)
+Theta can call you (a reminder, a Red alert) and, with your OK each time, call someone else for you (a restaurant,
+a shop). Every call to someone else starts with "Hi, this is Theta, an AI assistant calling on behalf of ...".
+
+1. **Make a Twilio account** at twilio.com. A trial account comes with some free credit.
+2. **Get a phone number:** in the Twilio Console go to **Phone Numbers > Manage > Buy a number**, pick one with
+   **Voice**, and buy it (trial credit covers the first one; after that a US number costs about a dollar a month,
+   and US calls a cent or two a minute; Twilio's pricing page has the current numbers).
+3. **Trial accounts can only call verified numbers.** Add your own phone under **Phone Numbers > Manage >
+   Verified Caller IDs**, and any number you want Theta to call during the trial. Trial calls also start with a
+   short Twilio message before Theta speaks. Upgrading the account (adding a card) removes both limits.
+4. **Add the variables** in the service's **Variables** tab:
+
+   ```
+   TWILIO_ACCOUNT_SID=AC...            (Console home page, "Account Info")
+   TWILIO_AUTH_TOKEN=...               (same place; it also signs Twilio's requests to Theta)
+   TWILIO_FROM=+1...                   (the number you bought, in +1... form)
+   PROTOS_PUBLIC_URL=https://<something>.up.railway.app
+   ```
+
+   Optional: `THETA_USER_PHONE=+1...` (your number; or set it in the app), `THETA_USER_NAME=Sam` (the name in the
+   disclosure; or set it in the app), `THETA_CALL_VOICE` (default `Polly.Joanna-Neural`).
+   You don't need to set anything in Twilio's console for the number: Theta tells Twilio where to send each call.
+5. **In the app:** Settings > Phone calls. Enter your number, your name, and tap **Test call**. Turn on **Call me
+   on Red alerts** if you want Red alerts near you to ring your phone as well as notify you.
+
+**Limits Theta keeps on its own:** never emergency or premium numbers; calls to others only from 8:00 to 21:00 your
+time, at most 5 a day (the `calls_daily_cap` setting); never the same number twice within 10 minutes; each call to
+someone else hangs up after 10 turns or 5 minutes. The transcript and how it went land in the chat afterwards.
+
+**If calls don't work:** "Twilio refused the call" with "unverified" means step 3 (trial account). If the phone
+rings but goes silent or says "an application error", check `PROTOS_PUBLIC_URL` is exactly the app's address
+(Twilio's signature check uses it).
+
+## Google: Gmail, Calendar, Drive, Docs and Slides
+One Google sign-in covers all of them. It takes about 15 minutes in a browser, once.
+1. Open console.cloud.google.com and create a project (any name, e.g. "Theta").
+2. **APIs & Services → Library**: enable **Gmail API**, **Google Calendar API**, **Google Drive API**,
+   **Google Docs API** and **Google Slides API**.
+3. **Google Auth Platform** (the OAuth consent screen):
+   - **Branding:** app name "Theta", with your email as both the support and the developer contact.
+   - **Audience:** user type **External**, publishing status **Testing**. Under **Test users**, add your own
+     Google address.
+   - **Data access:** add the Gmail (modify, send), Calendar (events, readonly), Drive (file, readonly), Docs and
+     Slides scopes, plus openid and email.
+4. **Clients → Create client → Web application.** Under authorized redirect URIs add exactly
+   `https://<your app>.up.railway.app/api/google/callback` (https, no slash at the end). Copy the client ID and
+   the secret.
+5. On Railway, add these variables:
+   ```
+   GOOGLE_CLIENT_ID=<...>.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=<...>
+   PROTOS_PUBLIC_URL=https://<your app>.up.railway.app
+   ```
+6. In Theta, open **Connect apps**, tap **Connect** on Gmail, Calendar or Drive, sign in, and allow every box.
+   Google warns that the app isn't verified. It's your own app, so choose Continue.
+
+In Testing mode, Google ends the sign-in every 7 days
+([Google's docs](https://developers.google.com/identity/protocols/oauth2#expiration)). Theta then says it was
+signed out and shows Connect again; one tap fixes it. Publishing the app avoids this, but Google then requires
+its verification process for Gmail access.
+
+## Images
+Images use your Gemini key (`GEMINI_API_KEY`). The model defaults to `gemini-2.5-flash-image`. If Google
+renames it, set `GEMINI_IMAGE_MODEL`. Theta makes at most 10 images a day; change that in Settings.

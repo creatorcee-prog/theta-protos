@@ -1,0 +1,16 @@
+# keep the image small and free of local state
+.git
+.gitignore
+data/
+**/__pycache__/
+**/*.pyc
+*.db
+*.db-wal
+*.db-shm
+.env
+node_modules/
+# screenshots from tests/shots.js (SHOTS_DIR) if they were written inside the repo
+shots/
+tests/shots/
+protos-shots/
+*.png.tmp

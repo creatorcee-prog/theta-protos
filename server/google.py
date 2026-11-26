@@ -385,8 +385,8 @@ def context(bot, now):
         return f"Google: connected ({', '.join(have)})" + (f" as {account()}" if account() else "") + "."
     if _store().get("status") == "signed_out":
         return "Google: signed out (the sign-in expired). Gmail, Calendar and Drive tools won't work until the " \
-               "user taps Connect on Gmail in Connect apps."
-    return "Google: not connected. To use Gmail, Calendar or Drive the user taps Connect on Gmail in Connect apps."
+               "user taps Connect on Gmail, Calendar or Drive in Connect apps (one Google sign-in covers all three)."
+    return "Google: not connected. To use Gmail, Calendar or Drive the user taps Connect on Gmail, Calendar or Drive in Connect apps (one Google sign-in covers all three)."
 
 
 RELEVANT = (r"\b(g?mail|e-?mails?|inbox|unread|drafts?|repl(y|ies)|calendar|meetings?|events?|appointments?|"

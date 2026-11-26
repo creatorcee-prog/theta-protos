@@ -1,1 +1,161 @@
-/* calls: its screen is coming (see server/calls and docs/FEATURES.md). Uses window.Theta from app.js. */
+/* calls: phone calls through Twilio (server/calls.py). A "Phone calls" section in Settings (your number, the name
+   Theta gives when it calls someone for you, "Call me on Red alerts", a test call) and a compact card for call
+   messages (meta.source == "call"): who, how long, the outcome, and the transcript behind a tap.
+   Builds DOM nodes only. In demo mode nothing is sent: the section shows sample values and a sample card. */
+(() => {
+  "use strict";
+  const T = window.Theta;
+  if (!T) return;
+  const {el} = T;
+
+  const css = document.createElement("style");
+  css.textContent = `
+.calls-card { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
+.calls-card .calls-top { display: flex; align-items: center; gap: 10px; }
+.calls-card .calls-ic { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: linear-gradient(145deg, #1f6f8b, #1b3f6b); font-size: 17px; }
+.calls-card .calls-who { font-weight: 600; display: block; }
+.calls-card .calls-sub { color: var(--muted); font-size: 14px; display: block; }
+.calls-card .calls-out { font-size: 16px; line-height: 1.38; }
+.calls-card details { font-size: 15px; }
+.calls-card summary { color: var(--accent); cursor: pointer; list-style: none; padding: 2px 0; }
+.calls-card summary::-webkit-details-marker { display: none; }
+.calls-card .calls-line { margin: 6px 0 0; line-height: 1.35; }
+.calls-card .calls-line b { color: var(--muted); font-weight: 500; margin-right: 6px; }
+.calls-phone { background: #2a2a2a; border: 0; border-radius: 12px; padding: 8px 12px; font-size: 16px; color: var(--text);
+  width: 100%; max-width: 230px; outline: none; }
+.calls-phone:focus { box-shadow: 0 0 0 2px #3a3a3a; }
+.calls-note { color: var(--muted); font-size: 14px; margin: 0; padding: 0 0 12px; line-height: 1.35; }
+.calls-sample { padding: 8px 0 14px; }
+.calls-sample .msg { max-width: 100%; }
+`;
+  document.head.append(css);
+
+  const dur = s => { s = Math.max(0, Math.round(Number(s) || 0)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+
+  // ---------------------------------------------------------------- the call card
+  function card(meta) {
+    const c = el("div", "calls-card");
+    const top = el("div", "calls-top"), ic = el("div", "calls-ic", "☎"), who = el("div");
+    ic.setAttribute("aria-hidden", "true");
+    const other = meta.kind === "other";
+    const name = other ? "Call to " + (meta.name || meta.to || "someone") : (meta.kind === "alert" ? "Alert call to you" : "Theta called you");
+    const bits = [];
+    if (meta.duration) bits.push(dur(meta.duration));
+    if (other && meta.name && meta.to) bits.push(String(meta.to));
+    who.append(el("span", "calls-who", name), el("span", "calls-sub", bits.join(" · ") || "Phone call"));
+    top.append(ic, who);
+    c.append(top);
+    if (meta.outcome) c.append(el("div", "calls-out", String(meta.outcome)));
+    const lines = Array.isArray(meta.transcript) ? meta.transcript : [];
+    if (lines.length) {
+      const d = el("details"), s = el("summary", null, `Transcript (${lines.length} line${lines.length === 1 ? "" : "s"})`);
+      d.append(s);
+      for (const t of lines) {
+        const p = el("p", "calls-line");
+        p.append(el("b", null, t.who === "theta" ? "Theta" : (other ? "Them" : "You")), document.createTextNode(String(t.text || "")));
+        d.append(p);
+      }
+      c.append(d);
+    }
+    return c;
+  }
+
+  T.decorate((m, row, bubble) => {
+    const meta = m && m.meta;
+    if (!meta || meta.source !== "call" || !bubble || !bubble.classList.contains("msg")) return;
+    bubble.replaceChildren(card(meta));
+    bubble.classList.add("calls-msg");
+  });
+
+  // ---------------------------------------------------------------- Settings > Phone calls
+  const g = T.settings("Phone calls");
+  const note = el("p", "calls-note", "");
+
+  const row = (title, sub) => {
+    const r = el("div", "row-set"), t = el("div", "txt"), s = el("span", null, sub);
+    t.append(el("b", null, title), s); r.append(t); return {r, s};
+  };
+
+  const phone = el("input", "calls-phone");
+  phone.type = "tel"; phone.inputMode = "tel"; phone.autocomplete = "tel"; phone.placeholder = "+13035551234";
+  phone.setAttribute("aria-label", "Your phone number");
+  const pr = row("Your number", "In international form. Theta only ever calls you on this number.");
+  pr.r.append(phone);
+
+  const name = el("input", "calls-phone");
+  name.type = "text"; name.autocomplete = "given-name"; name.placeholder = "Your first name"; name.maxLength = 40;
+  name.setAttribute("aria-label", "Your name for calls");
+  const nr = row("Your name", "Said at the start of calls to others: “Theta, an AI assistant calling on behalf of…”");
+  nr.r.append(name);
+
+  const sw = el("label", "switch"), red = el("input");
+  red.type = "checkbox"; red.setAttribute("aria-label", "Call me on Red alerts");
+  sw.append(red, el("i"));
+  const rr = row("Call me on Red alerts", "If a Red alert near you goes out, Theta also phones you and reads it.");
+  rr.r.append(sw);
+
+  const test = el("button", "btn-dark", "Test call"); test.type = "button";
+  const tr = row("Test call", "Theta calls your number and says a short line.");
+  tr.r.append(test);
+
+  g.append(pr.r, nr.r, rr.r, tr.r, note);
+
+  let state = {};
+  const status = () => {
+    if (T.state.demo) { note.textContent = "Demo: sample values. On Theta these save to the server."; return; }
+    if (!state.configured) note.textContent = "Calling isn't set up on the server yet (Twilio keys). See deploy/RAILWAY.md.";
+    else if (!state.public_url) note.textContent = "Set PROTOS_PUBLIC_URL on the server so Twilio can reach Theta.";
+    else note.textContent = `Calls to others: ${state.today || 0} of ${state.cap ?? 5} today, ${(state.hours || [8, 21])[0]}:00–${(state.hours || [8, 21])[1]}:00 your time, each one only after you approve it.`;
+  };
+  const fill = () => { phone.value = state.phone || ""; name.value = state.name || ""; red.checked = !!state.call_on_red; status(); };
+
+  let sample = null;
+  function demoSample() {
+    if (sample) return;
+    sample = el("div", "calls-sample");
+    const b = el("div", "msg a");
+    b.append(card({kind: "other", name: "Luigi's", to: "+13035550142", duration: 94,
+      outcome: "Booked: a table for 2 at 7pm Friday under Sam. They'll hold it 15 minutes.",
+      transcript: [
+        {who: "theta", text: "Hi, this is Theta, an AI assistant calling on behalf of Sam. I'm calling to book a table for 2 at 7pm this Friday."},
+        {who: "them", text: "Sure, let me check. Yes, 7 works. Name?"},
+        {who: "theta", text: "Sam, please."},
+        {who: "them", text: "Got it. We hold tables for 15 minutes."},
+        {who: "theta", text: "Perfect, thank you. Goodbye."}]}));
+    sample.append(el("p", "calls-note", "What a call looks like in the chat:"), b);
+    g.append(sample);
+  }
+
+  async function load() {
+    if (T.state.demo) {
+      state = {phone: "+13035551234", name: "Sam", call_on_red: true, configured: true, public_url: true, cap: 5, today: 1};
+      fill(); demoSample(); return;
+    }
+    try { state = await T.api("/api/calls/settings"); fill(); } catch (e) { note.textContent = "Couldn't load call settings."; }
+  }
+  async function save(patch) {
+    if (T.state.demo) { Object.assign(state, patch); fill(); T.toast("Saved (demo)."); return; }
+    try { state = await T.post("/api/calls/settings", patch); fill(); }
+    catch (e) { T.toast(e && e.status === 400 ? "That number doesn't look right. Use the +1… form." : "Couldn't save that. Try again."); fill(); }
+  }
+  phone.addEventListener("change", () => save({phone: phone.value.trim()}));
+  name.addEventListener("change", () => save({name: name.value.trim()}));
+  red.addEventListener("change", () => save({call_on_red: red.checked}));
+  test.addEventListener("click", async () => {
+    if (T.state.demo) { T.toast("In demo mode a test is just this toast. On Theta your phone rings."); return; }
+    test.disabled = true;
+    try {
+      const r = await T.post("/api/calls/test", {});
+      T.toast(r && r.ok ? "Calling you now." : ((r && r.error) || "The test call didn't start."), 4200);
+    } catch (e) { T.toast("The test call didn't start. Check the number and the server's Twilio keys.", 4200); }
+    finally { test.disabled = false; }
+  });
+
+  // load when Settings opens (and once now, if it's already open)
+  const sheet = document.getElementById("settings");
+  if (sheet) {
+    new MutationObserver(() => { if (!sheet.hidden) load(); }).observe(sheet, {attributes: true, attributeFilter: ["hidden"]});
+    if (!sheet.hidden) load();
+  }
+})();

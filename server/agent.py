@@ -24,6 +24,7 @@ from . import db, models, persona, tools
 
 MAX_STEPS = 6
 TOOL_SECONDS = 20
+TOOL_TIMEOUT_AWARE = True  # a tool with its own "timeout" gets that long (see _run_tools)
 TURN_SECONDS = 90
 MAX_TOKENS = 1200
 MAX_SENDS = 2          # approval cards per turn (each is two buttons; the phone shows four)
@@ -92,11 +93,12 @@ def _run_tools(calls, ctx, emit, info, deadline):
             results[i] = (c,) + tuple(tools.execute(c["name"], c.get("args") or {}, ctx))
         t = threading.Thread(target=work, name=f"tool-{name}", daemon=True)
         t.start()
-        threads.append((i, c, t))
-    for i, c, t in threads:
-        t.join(max(0.0, min(time.monotonic() + TOOL_SECONDS, deadline + 5) - time.monotonic()))
+        # a tool may ask for longer than the default (research runs several lookups; images take a while)
+        threads.append((i, c, t, (tool or {}).get("timeout") or TOOL_SECONDS))
+    for i, c, t, limit in threads:
+        t.join(max(0.0, min(time.monotonic() + limit, deadline + 5) - time.monotonic()))
         if results[i] is None:
-            results[i] = (c, False, f"Error: {c['name']} took longer than {TOOL_SECONDS} s and was abandoned "
+            results[i] = (c, False, f"Error: {c['name']} took longer than {limit} s and was abandoned "
                                     "(it may still finish). Answer without it or try once more.")
         emit("tool", {"id": c["id"], "name": c["name"], "state": "done", "ok": bool(results[i][1])})
     return results
