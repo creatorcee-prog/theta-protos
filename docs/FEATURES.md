@@ -71,3 +71,7 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 | A: Google | `server/google.py`, `server/gcal.py`, `web/features/calendar.js`, `tests/test_google.py`, `tests/test_gcal.py` | Google sign-in; Gmail (search, read, drafts, send through approval); Calendar tools; Drive (search, read, create Docs and Slides); the in-app calendar, mirroring Google Calendar plus any calendar links |
 | B: Automation | `server/routines.py`, `server/workflows.py`, `server/subagents.py`, `server/media.py`, `web/features/routines.js`, `web/features/media.js`, tests | Routines and triggers; saved workflows; read-only research sub-agents; image generation |
 | C: Acting | `server/browser.py`, `server/calls.py`, `web/features/calls.js`, `web/features/browser.js`, `Dockerfile`, tests | A headless browser Theta drives (submitting or buying needs approval; no password vault yet); phone calls to the user, and to others with disclosure and approval |
+- A server feature may define `intercept(bot, text, user_msg)`: it can claim a chat message before the model
+  (the intro takes typed answers this way) and returns the assistant messages it sent, or None.
+- `/api/chat` takes an optional `show`: the label the chat stores in place of `text` (a tapped option's prompt
+  still reaches the model; `meta.prompt` keeps it).

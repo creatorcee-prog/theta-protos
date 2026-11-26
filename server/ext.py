@@ -12,6 +12,8 @@
     def tick(now) -> list          runs every ~30 s with the jobs; returns messages it sent (may be [])
     def connections() -> list      [{id, name, connected, what, ...}] merged into /api/connections by id
     def context(bot, now) -> str   a short line or two for the per-turn context block ("" for nothing)
+    def intercept(bot, text, user_msg) -> list | None   claims a chat message before the model sees it
+                                   (the intro's typed answers); returns the assistant messages it sent
 
 A feature that is missing, or fails to import, is skipped with one log line; the rest of Theta is unaffected.
 """
@@ -23,7 +25,8 @@ import threading
 FEATURES = ("google", "gcal", "routines", "workflows", "subagents", "media", "browser", "calls", "passkeys")
 FEATURES += ("reactions", "uploads", "gifs")  # stage 5, builder A: tapbacks, photos, GIFs
 # paused (stage 5 B, kept in commit 75eb145): FEATURES += ("live",)
-FEATURES += ("cards",)  # the card kit, connect cards, weather (onboarding paused, kept in 75eb145)
+FEATURES += ("cards",)  # the card kit, connect cards, weather
+FEATURES += ("onboarding",)  # the first-run intro, in the chat
 
 _lock = threading.Lock()
 _mods = None
@@ -134,6 +137,22 @@ def connections(base):
         except Exception as e:  # noqa: BLE001
             print(f"[protos] {m.__name__}.connections failed: {e!r}", file=sys.stderr, flush=True)
     return [by_id[i] for i in order]
+
+
+def intercept(bot, text, user_msg):
+    """The first feature that claims this chat message: its messages, or None (the model handles it)."""
+    for m in modules():
+        fn = getattr(m, "intercept", None)
+        if not callable(fn):
+            continue
+        try:
+            out = fn(bot, text, user_msg)
+        except Exception as e:  # noqa: BLE001
+            print(f"[protos] {m.__name__}.intercept failed: {e!r}", file=sys.stderr, flush=True)
+            continue
+        if out:
+            return out
+    return None
 
 
 def context(bot, now):

@@ -25,7 +25,7 @@ later).
   - **Check what's deployed:** `/api/health` shows `version` and `build`. The app shows both under "Theta" on
     the sign-in page and at the bottom of Settings.
 - **The phone:** the user installed the app from Safari (Add to Home Screen). It updates itself on the next
-  open; the service-worker cache is v10.
+  open; the service-worker cache is v11.
 - **The Linux box** (the long-term home, `deploy/README.md`) is down: its motherboard is broken. Railway stands
   in until it's fixed.
 - **Not used:** the free Oracle Cloud route (`deploy/ORACLE.md`, `deploy/oracle-cloud-init.sh`). The user
@@ -111,20 +111,20 @@ later).
 - **Live checks:** `DEEPSEEK_API_KEY=sk-dummy` works in the Claude sandbox, because its proxy injects the key.
 
 ## In the middle of (paused, saved, not running)
-- **Stage 5 B (activity line and live view)** and **stage 5 C onboarding** are saved in commit `75eb145`.
-  Commit `01291a1` set them aside. The card kit from C has already been restored and is live.
+- **Stage 5 B (activity line and live view)** is saved in commit `75eb145`; commit `01291a1` set it aside.
   - **B:**
     - honest `activity` stream events ("Reading your inbox · 4s", "Waking 3 helpers")
     - `meta.timing` and "Took 6s · …" under replies
     - tapping that line opens a live view of Theta's browser that the user can control (`server/live.py`,
       `web/features/activity.js`, `web/features/live.js`, and changes to `app.py`, `agent.py` and `browser.py`)
     - it was stopped partway: check it against current `app.py`/`agent.py` before restoring
-  - **C onboarding:** Theta texts you through setup in the chat: name, time zone, notifications, Face ID,
-    location, Google, a first routine and a tour (`server/onboarding.py`, `web/features/onboarding.js`).
-    `onboarding.js` may be incomplete.
-  - **To resume:** `git checkout 75eb145 -- <those files>`, then add "live", "onboarding" (server) and
-    "activity", "live", "onboarding" (web) back to `ext.FEATURES` and `web/features.js` (they're commented out
-    there), then run the suite.
+  - **To resume:** `git checkout 75eb145 -- <those files>`, add "live" (server) and "activity", "live" (web) to
+    `ext.FEATURES` and `web/features.js`, then run the suite.
+- **Stage 5 C onboarding is done and live** (rebuilt, not restored from `75eb145`): an in-chat intro shaped like
+  Grok Bot's (`server/onboarding.py`, `web/features/onboarding.js`): hello and their name (typed), a name for
+  the assistant (lettered A/B/C card, or typed; the `bot_name` setting renames header, home, composer and the
+  persona), notifications, Gmail (only when Google sign-in is set up), then a first task that runs as a real
+  chat message. Settings > General has Name and "Run the intro again".
 - **Stage 5 A leftovers:** the app.js side of the activity line exists and waits for B's events. Pacing,
   effects and tapbacks need a real-phone check.
 
@@ -145,7 +145,7 @@ later).
    - Twilio: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`
 
    Then re-run the live walkthrough with screenshots.
-2. **Resume the paused work:** B (activity line and the live view of Theta's screen) and C (onboarding).
+2. **Resume the paused work:** B (activity line and the live view of Theta's screen).
 3. **From `docs/LATER.md`:**
    - **Slack connector**
    - **Password vault:** Bitwarden or 1Password through placeholders the model never sees.

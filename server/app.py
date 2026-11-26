@@ -46,7 +46,7 @@ BOTS = [{"id": "theta", "name": "Theta",
          "avatar": {"kind": "dot-globe", "theme": "theta", "color": "#7cc4ff"}}]
 BOT_IDS = {b["id"] for b in BOTS}
 
-SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None}
+SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None, "bot_name": "Theta"}
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
        "font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; media-src 'self' blob:; "
@@ -443,7 +443,15 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
     return reply
 
 
-def _chat_worker(bot, text, images, client_id, emit, edit=None):
+def _intercept(bot, text, user):
+    try:
+        from . import ext
+        return ext.intercept(bot, text, user)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
     """Runs one chat turn, calling emit(event, data) for
     user, route, [ack], [tool..., approval...], delta..., done | error.
     Think and search turns first get a short templated acknowledgement (its own
@@ -475,6 +483,9 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None):
                 meta["images"] = len(images)
             tap = _APPROVE_TEXT.match(text) if not images else None
             shown = text
+            if show and not tap:
+                shown = show
+                meta["prompt"] = text[:2000]
             if tap:  # the chat shows the button's word, not "approve:12"
                 meta["tap"] = text
                 shown = "Approve" if tap.group(1).lower() == "approve" else "Discard"
@@ -486,6 +497,20 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None):
                 tag["note"] = edit["note"]
         log_row["user_id"] = user["id"]
         emit("user", user)
+        if not edit and not tap and not images:
+            claimed = _intercept(bot, text, user)
+            if claimed:  # the intro took it (a typed answer): its texts, no model call
+                fresh = db.get_message(user["id"])
+                if fresh and fresh.get("meta") != user.get("meta"):
+                    emit("user", fresh)  # Theta's reaction on their answer
+                for m in claimed[:-1]:
+                    emit("ack", m)
+                emit("route", {"model": "none", "provider": "theta", "tier": "action", "why": "the intro"})
+                emit("delta", {"text": claimed[-1]["text"]})
+                log_row.update(tier="action", why="intro answer", reply_id=claimed[-1]["id"], ok=True, steps=0, tools=[],
+                               chars_out=len(claimed[-1]["text"]))
+                emit("done", claimed[-1])
+                return
         if tap:
             emit("route", {"model": "none", "provider": "theta", "tier": "action", "why": "your tap"})
             res = decide_approval(int(tap.group(2)), tap.group(1).lower(), bot=bot)
@@ -797,17 +822,19 @@ def chat(req, start):
     if len(text) > 20000:
         raise HTTPError(413, "message too long")
     client_id = body.get("client_id")
-    return _run_chat(req, start, bot, text, images, client_id)
+    # a tapped option sends its full prompt as text and its label as show: the chat keeps the label
+    show = body.get("show") if isinstance(body.get("show"), str) and body.get("show").strip() else None
+    return _run_chat(req, start, bot, text, images, client_id, show=show[:80].strip() if show else None)
 
 
-def _run_chat(req, start, bot, text, images, client_id, edit=None):
+def _run_chat(req, start, bot, text, images, client_id, edit=None, show=None):
     """Run _chat_worker and answer with its SSE stream (or one JSON object with ?stream=0)."""
     if req.query.get("stream") == "0":
         got = {}
 
         def keep(ev, data):
             got[ev] = data
-        _chat_worker(bot, text, images, client_id, keep, edit=edit)
+        _chat_worker(bot, text, images, client_id, keep, edit=edit, show=show)
         if "done" in got:
             out = {"user": got["user"], "reply": got["done"]}
             if "ack" in got:
@@ -1049,6 +1076,11 @@ def _clean_settings(body):
         except Exception:
             raise HTTPError(400, "unknown time zone") from None
         out["tz"] = str(tz)
+    if "bot_name" in body:
+        n = re.sub(r"\s+", " ", str(body["bot_name"] or "")).strip()
+        if not re.fullmatch(r"[\w .'-]{1,24}", n):
+            raise HTTPError(400, "bot_name must be 1-24 letters, spaces, dots, apostrophes or hyphens")
+        out["bot_name"] = n
     if "loc" in body:
         loc = body["loc"]
         if loc is not None:

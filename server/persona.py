@@ -160,6 +160,10 @@ def system_prompt(bot="theta", now=None, extra=None, tools=True):
     user turn (turn_context), never here, so the prefix stays cacheable.
     `extra` is appended last; pass only text that is stable across turns."""
     parts = [soul(), STYLE, EXAMPLES]
+    name = _setting("bot_name")
+    if isinstance(name, str) and name.strip() and name.strip() != "Theta":
+        parts.insert(1, f"The user named you {name.strip()}. That's your name now: use it for yourself "
+                        "wherever these instructions say Theta.")
     if tools:
         parts.append(TOOL_GUIDE)
     mem = memory.block()

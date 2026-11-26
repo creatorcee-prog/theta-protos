@@ -739,7 +739,7 @@
     };
     try {
       if (imgs.length) await prepImages(imgs);
-      const body = editId != null ? {bot: BOT, id: editId, text} : {bot: BOT, text, client_id: cid};
+      const body = editId != null ? {bot: BOT, id: editId, text} : Object.assign({bot: BOT, text, client_id: cid}, opts.show ? {show: opts.show} : {});
       // the vision model gets each picture as a data: URL (what the server's chat reads)
       if (imgs.length) body.images = imgs.map(i => i.data).filter(Boolean);
       const r = await http(editId != null ? "/api/messages/edit" : "/api/chat", {method: "POST", headers: {"content-type": "application/json", accept: "text/event-stream"},
