@@ -97,3 +97,7 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 - Gmail archive / trash / mark read take a `query` (every inbox match, up to 2,000, one call). `gmail_filter` and
   `gmail_filter_delete` need `gmail.settings.basic`.
 - The agent shows at most two progress texts per turn, and runs up to 10 steps.
+- Call recordings (`server/recordings.py`): on unless "record_calls" is off. Calls to others open with "This call is
+  recorded."; an objection on the call stops it and the audio is discarded. Twilio's recording is downloaded to
+  `<data>/recordings/<call id>.mp3`, deleted at Twilio, served at /api/calls/audio/<id> (byte ranges), and kept 90 days.
+  Call history (`/api/calls/history`, the "..." menu) shows it with the transcript.

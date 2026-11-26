@@ -99,7 +99,12 @@
   const tr = row("Test call", "Theta calls your number and says a short line.");
   tr.r.append(test);
 
-  g.append(pr.r, nr.r, rr.r, tr.r, note);
+  const rsw = el("label", "switch"), rec = el("input");
+  rec.type = "checkbox"; rec.setAttribute("switch", ""); rec.setAttribute("aria-label", "Record calls");
+  rsw.append(rec, el("i"));
+  const recr = row("Record calls", "Calls to others start with “This call is recorded.” If they say they'd rather not, Theta stops and keeps none of it. Recordings stay 90 days, in Call history.");
+  recr.r.append(rsw);
+  g.append(pr.r, nr.r, rr.r, recr.r, tr.r, note);
 
   let state = {};
   const status = () => {
@@ -108,7 +113,7 @@
     else if (!state.public_url) note.textContent = "Set PROTOS_PUBLIC_URL on the server so Twilio can reach Theta.";
     else note.textContent = `Calls to others: ${state.today || 0} of ${state.cap ?? 5} today, ${(state.hours || [8, 21])[0]}:00–${(state.hours || [8, 21])[1]}:00 your time, each one only after you approve it.`;
   };
-  const fill = () => { phone.value = state.phone || ""; name.value = state.name || ""; red.checked = !!state.call_on_red; status(); };
+  const fill = () => { phone.value = state.phone || ""; name.value = state.name || ""; red.checked = !!state.call_on_red; rec.checked = state.record !== false; status(); };
 
   let sample = null;
   function demoSample() {
@@ -142,6 +147,7 @@
   phone.addEventListener("change", () => save({phone: phone.value.trim()}));
   name.addEventListener("change", () => save({name: name.value.trim()}));
   red.addEventListener("change", () => save({call_on_red: red.checked}));
+  rec.addEventListener("change", () => save({record: rec.checked}));
   test.addEventListener("click", async () => {
     if (T.state.demo) { T.toast("In demo mode a test is just this toast. On Theta your phone rings."); return; }
     test.disabled = true;
@@ -168,6 +174,8 @@
 .ch-say.them { background: #0a84ff; color: #fff; align-self: flex-end; }
 .ch-who { font-size: 11.5px; color: var(--muted); margin: 0 4px -3px; }
 .ch-who.r { align-self: flex-end; }
+.ch-audio { width: 100%; height: 40px; margin-bottom: 6px; }
+.ch-rec { font-size: 12px; color: #ff8a80; margin-left: 6px; }
 `;
   document.head.append(hstyle);
   const fmtNum = n => (/^\+1\d{10}$/.test(String(n || "")) ? `+1 ${n.slice(2, 5)}-${n.slice(5, 8)}-${n.slice(8)}` : String(n || ""));
@@ -186,9 +194,11 @@
       const tx = el("div", "ch-txt");
       tx.append(el("b", null, other ? c.who : (c.kind === "alert" ? "Alert call to you" : "Theta called you")),
         el("small", null, [when(c.t), c.duration ? dur(c.duration) : (c.state === "done" ? "" : c.state), other ? fmtNum(c.to) : ""].filter(Boolean).join(" · ")));
+      if (c.audio) tx.querySelector("b").append(el("span", "ch-rec", "● Recorded"));
       if (c.outcome || c.purpose) tx.append(el("span", "ch-out", c.outcome || c.purpose));
       row.append(el("span", "ch-ic", other ? "☎" : "↘"), tx);
       const tr = el("div", "ch-tr"); tr.hidden = true;
+      if (c.audio) { const a = el("audio", "ch-audio"); a.controls = true; a.preload = "none"; a.src = c.audio; a.setAttribute("aria-label", "Recording of this call"); tr.append(a); }
       if (c.turns.length) {
         for (const t of c.turns) {
           const them = t.who !== "theta";

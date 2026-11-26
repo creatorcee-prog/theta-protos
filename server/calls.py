@@ -88,7 +88,14 @@ def user_name():
 
 def disclosure():
     """The fixed opening of every call to someone else. Written in code; the model never touches it."""
-    return f"Hi, this is Theta, an AI assistant calling on behalf of {user_name() or 'my user'}."
+    line = f"Hi, this is Theta, an AI assistant calling on behalf of {user_name() or 'my user'}."
+    try:
+        from . import recordings
+        if recordings.on():
+            line += " " + recordings.NOTICE  # said before anything else, every time the call is recorded
+    except Exception:  # noqa: BLE001
+        pass
+    return line
 
 
 def voice():
@@ -246,6 +253,11 @@ def _dial(kind, to, *, name="", purpose="", script="", message="", conversation=
               "StatusCallback": f"{base}/api/calls/status/{cid}", "StatusCallbackMethod": "POST",
               "StatusCallbackEvent": ["answered", "completed"],
               "MachineDetection": "DetectMessageEnd", "TimeLimit": str(MAX_SECONDS + 30), "Timeout": "30"}
+    try:
+        from . import recordings
+        params.update(recordings.dial_params(cid, base))
+    except Exception:  # noqa: BLE001
+        pass
     try:
         res = _twilio("Calls.json", params)
     except ToolError:
@@ -464,6 +476,14 @@ def twiml_for(call, params, now=None):
         msg = _opening(call) + (" Thanks, goodbye." if call["kind"] == "other" else "")
         _update(cid, turns=_add_turn(call, "theta", msg), outcome="left a voicemail")
         return _twiml(_say(msg), "<Hangup/>")
+    try:
+        from . import recordings
+        if recordings.on() and not recordings.declined(cid) and recordings.objects(heard):
+            msg = recordings.stop(call)  # they don't want it recorded: stop now, keep none of it, carry on
+            _update(cid, turns=_add_turn(call, "theta", msg), silence=0)
+            return _twiml(_gather(cid, turn + 1, msg), _redirect(cid, turn + 1))
+    except Exception:  # noqa: BLE001
+        pass
     if turn >= MAX_TURNS or now - started >= MAX_SECONDS:
         msg = _closing(call)
         _update(cid, turns=_add_turn(call, "theta", msg))
@@ -657,6 +677,8 @@ def settings_route(req, start):
             db.set_setting("phone", p)
         if "call_on_red" in body:
             db.set_setting("call_on_red", bool(body["call_on_red"]))
+        if "record" in body:
+            db.set_setting("record_calls", bool(body["record"]))
         if "name" in body:
             db.set_setting("call_name", re.sub(r"[^\w .'-]", "", str(body.get("name") or "")).strip()[:40])
     elif req.method != "GET":
@@ -664,7 +686,8 @@ def settings_route(req, start):
     now = time.time()
     return respond_json(start, {"phone": user_phone(), "call_on_red": bool(db.get_setting("call_on_red", False)),
                                 "name": user_name(), "configured": configured(), "public_url": bool(public_base()),
-                                "cap": _cap(), "today": calls_today(now), "hours": list(HOURS)})
+                                "cap": _cap(), "today": calls_today(now), "hours": list(HOURS),
+                                "record": db.get_setting("record_calls") is not False})
 
 
 def test_route(req, start):
@@ -724,8 +747,16 @@ def history(limit=60):
                     "to": d["to_number"], "t": d["t"], "duration": d.get("duration") or 0, "state": d["state"],
                     "outcome": d.get("outcome") or "", "purpose": d.get("purpose") or d.get("message") or "",
                     "turns": [{"who": t.get("who"), "text": t.get("text")} for t in json.loads(d.get("turns") or "[]")],
-                    "message_id": d.get("message_id")})
+                    "message_id": d.get("message_id"), "audio": _audio(d["id"])})
     return out
+
+
+def _audio(cid):
+    try:
+        from . import recordings
+        return f"/api/calls/audio/{cid}" if recordings.has(cid) else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def history_route(req, start_response):
