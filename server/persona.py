@@ -38,6 +38,10 @@ STYLE = """How to answer (same rules whichever model you are):
 - When you use numbered web results or research sources, cite them as [n] right after the claim they \
 support (e.g. "Rates held at 4.5% [2]."), using the source's own number. The app turns these into links, \
 so don't add a list of links at the end.
+- Write like a person texting, not a chatbot. These read as AI-written, so don't use them:
+  words: delve, tapestry, testament, pivotal, crucial, vibrant, intricate, meticulous, robust, seamless, landscape (abstract), realm, showcase, underscore, highlight (as a verb), foster, garner, bolster, boast, enhance, leverage, multifaceted, interplay, enduring, nestled, groundbreaking, renowned, "align with", "resonate with", "deep dive", "valuable insights", "in the heart of", "rich history";
+  patterns: "serves as"/"stands as"/"functions as" (say "is"); "not only X but also Y", "it's not X, it's Y", "no X, no Y, just Z"; lists of exactly three for rhythm; trailing "-ing" clauses that add fake depth ("..., highlighting its importance"); vague sources ("experts say", "some argue"); "despite these challenges" wrap-ups; "it's important to note", "it's worth noting"; "in summary", "in conclusion", "overall" endings; em dashes (use a comma, period, colon or parentheses); title-case headings; bold labels at the start of every bullet; emoji in lists; "I hope this helps", "Let me know if...", "Would you like...", "Is there anything else", "You're absolutely right"; knowledge-cutoff disclaimers.
+  Instead: plain verbs ("is", "has", "made", "used"), specific facts, short sentences, one idea at a time.
 - The user's latest message may end with a "Context for this turn" block from the app (time, live results, \
 Vantage). It isn't from the user: use it, don't recite it, never mention the block itself."""
 
@@ -194,6 +198,7 @@ def said(content):
 
 _LEAD = re.compile(
     r"^\s*(?:(?:certainly|absolutely|of course|sure thing|sure|great question|good question|excellent question"
+    r"|you'?re (?:absolutely |completely |totally )?right"
     r"|i'd be (?:happy|glad) to help(?: with that)?|i'm happy to help|happy to help|what a great question)"
     r"[!.,:]+\s*)+", re.I)
 _AI = re.compile(
@@ -203,6 +208,37 @@ _AI = re.compile(
     re.I)
 _TAIL = re.compile(r"\s*(?:let me know if (?:you (?:have|need)|there'?s) [^.!?\n]*[.!?]|"
                    r"i hope (?:this|that) helps[.!?]?|feel free to ask[^.!?\n]*[.!?])\s*$", re.I)
+
+
+# Wikipedia: Signs of AI writing (https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing). The style rules
+# above keep Theta from writing these; this pass removes the unmistakable ones from any model's reply.
+def _inline(s):
+    """Character-level fixes, safe mid-stream: em/en dashes used as punctuation, curly quotes, tracking tags."""
+    s = re.sub(r"\s+[—–]\s+", ", ", s)              # "a — b" -> "a, b"
+    s = re.sub(r"(?<=[A-Za-z0-9)])—(?=[A-Za-z(])", ", ", s)  # "a—b" -> "a, b"
+    s = s.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    s = re.sub(r"[?&]utm_source=(?:chatgpt\.com|openai|copilot\.com)\b|[?&]referrer=grok\.com\b", "", s)
+    return s
+
+
+_NOTE = re.compile(r"\b(?:it'?s|it is) (?:important|worth|crucial|essential) (?:to (?:note|remember|mention|keep in mind)"
+                   r"|noting|remembering|mentioning) that\s+(\w)", re.I)
+_WRAP = re.compile(r"(?m)^(\s*)(?:in summary|in conclusion|to sum up|to summarize|overall|ultimately|all in all),\s*(\w)", re.I)
+_DELVE = re.compile(r"\bdelv(e|es|ed|ing) into\b", re.I)
+_DELVE_TO = {"e": "dig", "es": "digs", "ed": "dug", "ing": "digging"}
+_ASK_TAIL = re.compile(r"\s*(?:is there anything else[^.!?\n]*[.!?]|let me know (?:if|whether|what|how)[^.!?\n]*[.!?]"
+                       r"|(?:i )?hope (?:this|that) helps[.!?]?|happy to help further[.!?]?)\s*$", re.I)
+
+
+def _scrub(out):
+    out = _inline(out)
+    # a cut at the start of a sentence capitalizes the word that now starts it
+    out = _NOTE.sub(lambda m: m.group(1).upper() if re.search(r"(^|[.!?]\s+)$", out[:m.start()]) else m.group(1), out)
+    out = _WRAP.sub(lambda m: m.group(1) + m.group(2).upper(), out)
+    out = _DELVE.sub(lambda m: _DELVE_TO[m.group(1).lower()] + " into", out)
+    for _ in range(2):
+        out = _ASK_TAIL.sub("", out)
+    return out
 
 
 def _cap(s):
@@ -216,6 +252,7 @@ def clean(text):
     out = _LEAD.sub("", text, count=1)
     out = _AI.sub("", out)
     out = _TAIL.sub("", out)
+    out = _scrub(out)
     out = _cap(out.lstrip())
     return out.strip() or text.strip()
 
@@ -235,12 +272,12 @@ class Cleaner:
     def feed(self, chunk):
         self.full += chunk
         if self.open:
-            return chunk
+            return _inline(chunk)
         self.buf += chunk
         if len(self.buf) < self.HOLD and not re.search(r"[.!?]\s+\S{3,}", self.buf):
             return ""
         self.open = True
-        out = _cap(_AI.sub("", _LEAD.sub("", self.buf, count=1)).lstrip())
+        out = _inline(_cap(_AI.sub("", _LEAD.sub("", self.buf, count=1)).lstrip()))
         self.buf = ""
         return out
 
