@@ -353,10 +353,75 @@ def _approval_actions(approvals):
     return out[:4]
 
 
-def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=None):
+class _Turn:
+    """Watches one chat turn's stream: when the first reply text went out, and what Theta did (the activity
+    events). Restamps each activity's t as ms since the turn began. meta() is the reply's meta.timing
+    {total_ms, first_ms} and meta.activity [texts] (plus meta.live when the browser was used)."""
+
+    def __init__(self, emit, t0):
+        self._emit, self.t0 = emit, t0
+        self.first = None
+        self.texts, self.kinds = [], set()
+        self.lock = threading.Lock()
+        self.think = None
+        self.n = 0
+
+    def ms(self, t=None):
+        return int(((t or time.monotonic()) - self.t0) * 1000)
+
+    def emit(self, ev, data):
+        if ev == "delta" and self.first is None and isinstance(data, dict) and data.get("text"):
+            self.first = time.monotonic()
+            self._end_think()
+        elif ev == "activity" and isinstance(data, dict):
+            data = dict(data, t=self.ms())
+            if data.get("state") == "start":
+                if data.get("kind") != "think":
+                    self._end_think()
+                with self.lock:
+                    if len(self.texts) < 40:
+                        self.texts.append(str(data.get("text") or ""))
+                    self.kinds.add(data.get("kind"))
+        self._emit(ev, data)
+
+    def start(self, text, kind):
+        with self.lock:
+            self.n += 1
+            aid = f"turn{self.n}"
+        self.emit("activity", {"id": aid, "text": text, "state": "start", "kind": kind})
+        return aid
+
+    def done(self, aid, text, kind, ok=True):
+        self.emit("activity", {"id": aid, "text": text, "state": "done", "kind": kind, "ok": bool(ok)})
+
+    def thinking(self):
+        """"Thinking it through" until the first text or the first other activity."""
+        self.think = self.start("Thinking it through", "think")
+
+    def _end_think(self):
+        aid, self.think = self.think, None
+        if aid:
+            self.done(aid, "Thinking it through", "think")
+
+    def meta(self):
+        self._end_think()
+        now = time.monotonic()
+        out = {"timing": {"total_ms": self.ms(now), "first_ms": self.ms(self.first) if self.first else None}}
+        if self.texts:
+            out["activity"] = list(self.texts)
+        if "browse" in self.kinds:
+            out["live"] = True  # the browser was used: the status line can open the live view
+        return out
+
+
+def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=None, turn=None):
     """A tool turn: agent.run, then the stored reply (with approval chips if a send is waiting).
-    `tag` is merged into the meta of every message this turn stores (reply_to, an edit's note)."""
+    `tag` is merged into the meta of every message this turn stores (reply_to, an edit's note).
+    `turn` (_Turn) adds meta.timing and meta.activity to the reply."""
     tag = dict(tag or {})
+    if turn is None:
+        turn = _Turn(emit, t0)
+        emit = turn.emit
     cands = list(route.candidates) or [(route.provider, route.model)]
     provider, model = cands[0]
     emit("route", {"model": model, "provider": provider, "tier": route.tier, "why": route.why})
@@ -373,6 +438,8 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
                                                                     "reply_to": user["id"]}))
 
     msgs = _build(history, text, bot, context=tools.context_block(bot))
+    if route.tier == "think":
+        turn.thinking()
     info = {}
     tctx = {"bot": bot, "user_id": user["id"]}
     try:
@@ -417,6 +484,7 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
     if usage:
         rmeta["usage"] = usage
     rmeta.update(tag)
+    rmeta.update(turn.meta())
     if not approvals and not info.get("error"):  # a multi-step job that worked: offer to save it as a workflow
         try:
             from . import workflows
@@ -449,6 +517,8 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None):
     was already rewritten and the old replies deleted, so this emits deleted, then the updated user message,
     and regenerates the reply; the note (tool effects the old reply had) goes in the reply's meta."""
     t0 = time.monotonic()
+    turn = _Turn(emit, t0)
+    emit = turn.emit
     log_row = {"bot": bot, "chars_in": len(text), "ok": False, "tried": []}
     ttft = None
     replied = False
@@ -498,7 +568,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None):
         ack_text = persona.ack(route.tier, text, live=live, seed=user["id"])
         if _use_tools(text, images, route):
             try:
-                _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=tag)
+                _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=tag, turn=turn)
                 replied = True
             except models.ModelError as e:
                 log_row["error"] = str(e)[:300]
@@ -515,7 +585,15 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None):
                                                                              "reply_to": user["id"]}))
                 extra, sources = None, []
                 if route.tier == "search":
+                    if live:  # only say it's searching when a search really runs
+                        q = agent.safe_words(text)
+                        what = f"Searching the web for {q}" if q else "Searching the web"
+                        aid = turn.start(what, "search")
                     extra, sources = router.search_context(text)
+                    if live:
+                        turn.done(aid, what, "search", ok=bool(sources))
+                if route.tier == "think":
+                    turn.thinking()
                 if images and route.tier != "vision":  # no model that can see is configured
                     note = "The user attached an image, but no image-capable model is set up, so say you can't see it."
                     extra = f"{extra}\n\n{note}" if extra else note
@@ -551,6 +629,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None):
                     pmeta["usage"] = _usage_meta(usage, provider, model)
                 if sources:
                     pmeta["sources"] = sources
+                pmeta.update(turn.meta())
                 reply = db.add_message(bot, "assistant", cleaner.text(), pmeta)
                 log_row.update(reply_id=reply["id"], chars_out=len(reply["text"]), error=last_err)
                 _usage_row(log_row, usage, provider, model)
@@ -568,6 +647,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None):
             if um:
                 rmeta["usage"] = um
             rmeta.update(tag)
+            rmeta.update(turn.meta())
             reply = db.add_message(bot, "assistant", full, rmeta)
             log_row.update(reply_id=reply["id"], chars_out=len(full), ok=True)
             _usage_row(log_row, usage, provider, model)
