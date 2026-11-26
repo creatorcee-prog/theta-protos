@@ -650,7 +650,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
 _approve_lock = threading.Lock()
 
 
-def decide_approval(aid, decision, bot=None):
+def decide_approval(aid, decision, bot=None, quiet=False):
     """Approve or deny a pending action. On approve, runs the stored action exactly as stored
     (tools.run_approved; no model call). Adds an assistant message saying what happened.
     Returns {"ok", "id", "state", "result", "message"}; raises HTTPError 404/400."""
@@ -687,7 +687,8 @@ def decide_approval(aid, decision, bot=None):
             db.set_approval(aid, state)
             text = f"Done. {result}" if ok else f"That didn't go through: {result}"
     _mark_approval_card(aid, state, result)
-    msg = db.add_message(bot, "assistant", text, {"approval": aid, "state": state, "source": "approval"})
+    # quiet: tapped in a list of approvals, where the row's own mark says what happened (no bubble per tap)
+    msg = None if quiet else db.add_message(bot, "assistant", text, {"approval": aid, "state": state, "source": "approval"})
     return {"ok": state in ("done", "denied"), "id": aid, "state": state, "result": result, "message": msg,
             "status": status}
 
@@ -699,7 +700,7 @@ def approve(req, start):
     except (TypeError, ValueError):
         raise HTTPError(400, "id (the approval id) is required") from None
     decision = str(body.get("decision") or "").lower()
-    res = decide_approval(aid, decision)
+    res = decide_approval(aid, decision, quiet=bool(body.get("quiet")))
     status = res.pop("status", 200)
     return respond_json(start, res, status)
 

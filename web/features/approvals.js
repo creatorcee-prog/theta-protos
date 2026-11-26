@@ -29,6 +29,27 @@
 .ap-state svg { width: 16px; height: 16px; }
 .ap-state.good { color: #4cd07d; } .ap-state.bad { color: #ff8a80; } .ap-state.meh { color: var(--muted); }
 .ap-res { color: var(--muted); font-size: 13.5px; }
+/* two or more in one message: a compact list, one line each, with dot buttons */
+.apl { padding: 6px 0; min-width: 0; }
+.apl-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px 6px; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.apl-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 16px; min-height: 44px; }
+.apl-row + .apl-row { border-top: 1px solid #2c2c2c; }
+.apl-txt { flex: 1; min-width: 0; text-align: left; color: var(--text); }
+.apl-txt b { display: block; font-weight: 500; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.apl-txt small { display: block; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.apl-dot { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.apl-dot svg { width: 16px; height: 16px; }
+.apl-dot.yes { background: #fff; color: #111; }
+.apl-dot.no { background: #333; color: #ddd; }
+.apl-dot[disabled] { opacity: .45; }
+.apl-done { display: grid; place-items: center; width: 34px; height: 34px; flex: none; }
+.apl-done svg { width: 17px; height: 17px; }
+.apl-done.good { color: #4cd07d; } .apl-done.bad { color: #ff8a80; } .apl-done.meh { color: var(--muted); }
+.apl-more { padding: 0 16px 10px; font-size: 14px; color: #ddd; overflow-wrap: anywhere; }
+.apl-more p { margin: 0 0 4px; }
+.apl-why { color: #ff8a80; padding-top: 0; font-size: 13px; }
+.apl-all { font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0; text-transform: none; padding: 4px 0 4px 10px; }
+.apl-all[disabled] { opacity: .45; }
 `;
   document.head.append(style);
 
@@ -50,6 +71,7 @@
 
   T.card("approval", (c, m) => {
     const box = el("div", "ap-in");
+    box.dataset.ap = "1";
     const kick = el("div", "ap-kick"); kick.append(el("span", null, LABEL[c.tool] || "Action"));
     const body = el("div", "ap-body"); body.append(T.md(c.preview || ""));
     box.append(kick, body);
@@ -71,7 +93,7 @@
       } catch (e) {
         // 409: already handled elsewhere (another device, a double tap); show what the server says
         ok.disabled = no.disabled = false;
-        T.toast((e && e.message) || "That didn't go through. Try again.", 3600);
+        T.toast(human(e && e.message) || "That didn't go through. Try again.", 3600);
       }
       window.dispatchEvent(new Event("protos:inbox"));
     };
@@ -79,6 +101,97 @@
     no.addEventListener("click", () => decide("deny"));
     btns.append(ok, no); box.append(btns);
     return box;
+  });
+
+  // ---------------------------------------------------------------- two or more: one compact list
+  const plain = s => String(s || "").replace(/\*\*|__|`/g, "").replace(/^>\s?/, "").replace(/\s*<[^>]+@[^>]+>/g, "").trim();
+  // a tool's error is written for the model ("Ask the user to..."): show the user the plain part
+  function human(text) {
+    const t = String(text || "").replace(/^Error:\s*/, "");
+    if (/isn't connected|not connected|isn't set up|aren't set up/i.test(t)) {
+      const what = (t.match(/^(Google|Gmail|Twilio|Texting|Phone calls|Google Drive)/i) || [])[1] || "That app";
+      return `${what} isn't connected yet. Connect it in Settings > Apps, then try again.`;
+    }
+    const first = t.split(/(?<=[.!?])\s+/)[0] || "It didn't go through.";
+    return first.replace(/\b(the user|they)\b/g, "you").slice(0, 160);
+  }
+  function summary(c) {
+    const lines = String(c.preview || "").split("\n").map(plain).filter(Boolean);
+    return [lines[0] || (LABEL[c.tool] || "Action"), lines[1] || ""];
+  }
+  function stateOf(c) { return c.state && c.state !== "pending" ? c.state : ((c.id != null && T.store("ap:" + c.id)) || "pending"); }
+
+  function listCard(items) {
+    const box = el("div", "apl"), head = el("div", "apl-head");
+    const waiting = () => items.filter(c => stateOf(c) === "pending");
+    // the header says what actually happened: "3 waiting for you", "All set", or "2 didn't go through"
+    const headText = () => {
+      const w = waiting().length, bad = items.filter(c => stateOf(c) === "failed").length;
+      return w ? `${w} waiting for you` : bad ? `${bad} didn't go through` : "All set";
+    };
+    head.append(el("span", null, headText()));
+    const all = el("button", "apl-all", "Approve all"); all.type = "button";
+    if (waiting().length > 1) head.append(all);
+    box.append(head);
+    const rowsById = new Map();
+
+    const doneMark = st => { const [cls, ic] = STATES[st] || ["meh", "clock"]; const n = el("span", "apl-done " + cls); n.append(I[ic]()); n.setAttribute("aria-label", (STATES[st] || [0, 0, st])[2]); return n; };
+    async function decide(c, decision) {
+      const r = rowsById.get(c.id);
+      r.btns.forEach(b => { b.disabled = true; });
+      try {
+        const res = await T.post("/api/approve", {id: c.id, decision, quiet: true});
+        const st = (res && res.state) || (decision === "deny" ? "denied" : "done");
+        T.store("ap:" + c.id, st); c.state = st;
+        r.slot.replaceChildren(doneMark(st));
+        if (st === "failed") { r.why.textContent = human(res && res.result); r.why.hidden = false; }
+      } catch (e) {
+        r.btns.forEach(b => { b.disabled = false; });
+        T.toast((e && e.message) || "That didn't go through. Try again.", 3600);
+      }
+      head.firstChild.textContent = headText();
+      if (waiting().length < 2) all.remove();
+      window.dispatchEvent(new Event("protos:inbox"));
+    }
+
+    for (const c of items) {
+      const [title, sub] = summary(c), st = stateOf(c);
+      const row = el("div", "apl-row"), txt = el("button", "apl-txt"); txt.type = "button";
+      txt.append(el("b", null, title)); if (sub) txt.append(el("small", null, sub));
+      txt.setAttribute("aria-expanded", "false");
+      const more = el("div", "apl-more"); more.hidden = true; more.append(T.md(c.preview || ""));
+      txt.addEventListener("click", () => { more.hidden = !more.hidden; txt.setAttribute("aria-expanded", String(!more.hidden)); });
+      const why = el("div", "apl-more apl-why"); why.hidden = true;
+      const slot = el("span"); slot.style.display = "contents";
+      const btns = [];
+      if (st === "pending" && c.id != null) {
+        const yes = el("button", "apl-dot yes"), no = el("button", "apl-dot no");
+        yes.type = no.type = "button"; yes.append(I.check()); no.append(I.x());
+        yes.setAttribute("aria-label", "Approve: " + title); no.setAttribute("aria-label", "Discard: " + title);
+        yes.addEventListener("click", () => { if (T.state.demo) { T.toast("Demo mode: nothing was sent."); return; } decide(c, "approve"); });
+        no.addEventListener("click", () => { if (T.state.demo) { T.toast("Demo mode: nothing was sent."); return; } decide(c, "deny"); });
+        slot.append(yes, no); btns.push(yes, no);
+      } else slot.append(doneMark(st));
+      row.append(txt, slot);
+      box.append(row, why, more);
+      rowsById.set(c.id, {slot, btns, why});
+    }
+    all.addEventListener("click", async () => {
+      if (T.state.demo) { T.toast("Demo mode: nothing was sent."); return; }
+      all.disabled = true;
+      for (const c of waiting()) await decide(c, "approve");
+    });
+    return box;
+  }
+
+  T.decorate((m, row) => {
+    const items = ((m.meta || {}).cards || []).filter(c => c && c.type === "approval");
+    if (items.length < 2) return;
+    const nodes = [...row.querySelectorAll(".card")].filter(n => n.dataset.ap === "1");
+    if (nodes.length < 2) return;
+    const list = listCard(items); list.classList.add("card");
+    nodes[0].before(list);
+    nodes.forEach(n => n.remove());
   });
 
   // ---------------------------------------------------------------- Settings > Security > Approvals

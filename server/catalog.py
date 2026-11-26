@@ -1,4 +1,4 @@
-"""Apps Theta could connect to but doesn't yet. They show in Settings > Connections as "Soon" so the list reads like
+"""Apps Theta could connect to but doesn't yet. They show in Settings > Apps as "Soon" so the list reads like
 a real app directory, and so Theta can tell the user plainly that one isn't built (rather than inventing a way).
 Each entry: id (matches web/logos.js), name, cat (the filter chip), what (one line: what Theta would do with it).
 Built connections come from app.connections() and the features; an id here that a feature also reports is

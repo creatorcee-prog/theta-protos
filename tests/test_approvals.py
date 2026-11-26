@@ -71,4 +71,13 @@ try:
 except ValueError:
     bad = True
 check("read tools aren't in the list", bad)
+# a tap in a list of approvals is quiet: the row's mark says what happened, no chat bubble per tap
+from server import app
+aid = db.add_approval({"tool": "gmail_trash", "args": {"query": "from:x.com"}, "bot": "theta", "preview": "**Move 3 emails to Trash**",
+                       "created": time.time(), "expires": time.time() + 86400})
+holder = db.add_message("theta", "assistant", "Ready.", {"cards": app.approval_cards([{"id": aid, "tool": "gmail_trash", "preview": "x"}])})
+n0 = len(db.messages("theta", limit=500))
+res = app.decide_approval(aid, "deny", quiet=True)
+check("a quiet tap adds no message, and the card shows the outcome", res["message"] is None and len(db.messages("theta", limit=500)) == n0
+      and db.get_message(holder["id"])["meta"]["cards"][0]["state"] == "denied")
 print("all approvals checks passed")
