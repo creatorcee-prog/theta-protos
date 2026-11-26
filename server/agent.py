@@ -130,8 +130,11 @@ def _run_tools(calls, ctx, emit, info, deadline):
     return results
 
 
+NOTE_MAX = 160  # longest opening line held back as a possible note before tool calls
+
+
 def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_steps=MAX_STEPS,
-        turn_seconds=TURN_SECONDS, max_tokens=MAX_TOKENS):
+        turn_seconds=TURN_SECONDS, max_tokens=MAX_TOKENS, on_note=None):
     """Run the loop for one chat turn and return the final (cleaned) text. Raises models.ModelError if
     no candidate could answer before anything happened (no text sent, no write tool run, no approval).
     A failure after that returns what there is, with info["error"] set."""
@@ -148,11 +151,20 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
     cands = [c for c in cands if models.supports_tools(c[0])] or cands
     ci = 0
     cleaner = persona.Cleaner()
-    state = {"sep": False}
+    state = {"sep": False, "hold": "", "held": on_note is not None}
 
     def on_text(chunk):
         if not chunk:
             return
+        # A step's opening words are held while short: if tool calls follow, they're a note of their own
+        # ("On it. I'll pull your job alerts..."), shown as a separate message by on_note; if not, or once
+        # they grow past a short line, they stream as the reply.
+        if state["held"]:
+            state["hold"] += chunk
+            if len(state["hold"]) <= NOTE_MAX and "\n\n" not in state["hold"]:
+                return
+            state["held"] = False
+            chunk, state["hold"] = state["hold"], ""
         if state["sep"] and chunk.strip():
             chunk = "\n\n" + chunk.lstrip()
             state["sep"] = False
@@ -191,6 +203,15 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
         info["steps"] += 1
         models.add_usage(info["usage"], res.get("usage"))
         calls = res.get("tool_calls") or []
+        held, state["hold"] = state["hold"], ""
+        if held.strip() and calls and not final:
+            note = persona.clean(held).strip()
+            if note:
+                on_note(note)
+        elif held:
+            state["held"] = False
+            on_text(held)
+        state["held"] = on_note is not None
         if not calls or final:
             break
         if info["steps"] == 1 and not info["emitted"] and on_tool_start:

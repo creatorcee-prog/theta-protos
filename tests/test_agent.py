@@ -232,6 +232,32 @@ def test_loop():
     check("loop: assistant tool_calls kept in history", CALLS[1]["messages"][-2]["tool_calls"][0]["id"] == "c1")
     check("loop: info lists tools and steps", info["tools"] == ["remind_me"] and info["steps"] == 2 and out)
 
+    # the model's short line before its tool calls is a note of its own, not part of the reply
+    ev.clear(); CALLS.clear()
+    notes, acks = [], []
+    SCRIPT[:] = [{"text": "On it. I'll set that reminder.", "tool_calls": [tc("remind_me", {"text": "rent", "in_minutes": 1}, "n1")]},
+                 {"text": "Checking it saved.", "tool_calls": [tc("remind_me", {"text": "rent 2", "in_minutes": 1}, "n2")]},
+                 {"text": "Done. I'll remind you about rent in 5 minutes."}]
+    out = agent.run(route_for(), base_msgs("remind me about rent"), emit, info={}, ctx={"bot": "theta"},
+                    on_tool_start=acks.append, on_note=notes.append)
+    deltas = "".join(d["text"] for e, d in ev if e == "delta")
+    check("notes: each line before tool calls becomes its own note", notes == ["On it. I'll set that reminder.", "Checking it saved."], notes)
+    check("notes: the reply holds only the final text", out == deltas == "Done. I'll remind you about rent in 5 minutes.", (out, deltas))
+    check("notes: the ack hook still fires on the first tool step", len(acks) == 1)
+
+    # no tool call: the held opening still streams as the reply
+    ev.clear(); notes.clear()
+    SCRIPT[:] = [{"text": "Short answer."}]
+    out = agent.run(route_for(), base_msgs("hi"), emit, info={}, ctx={"bot": "theta"}, on_note=notes.append)
+    check("notes: no tools -> the held text is the reply, no note", out == "Short answer." == "".join(d["text"] for e, d in ev if e == "delta") and not notes)
+
+    # a long opening streams as soon as it's past a short line, even if tools follow
+    ev.clear(); notes.clear()
+    long = "Here's what I found so far, and there's a lot of it. " * 5
+    SCRIPT[:] = [{"text": long, "tool_calls": [tc("remind_me", {"text": "x", "in_minutes": 1}, "n3")]}, {"text": "All set."}]
+    out = agent.run(route_for(), base_msgs("long"), emit, info={}, ctx={"bot": "theta"}, on_note=notes.append)
+    check("notes: a long opening is part of the reply, not a note", not notes and out.startswith("Here's what I found") and out.endswith("All set."), out[-40:])
+
     # step cap: a model that never stops calling tools gets a final no-tools call at step 6
     CALLS.clear()
     SCRIPT[:] = [lambda m, t, ch: {"tool_calls": [tc("history_search", {"query": "x"})]} if ch == "auto"
@@ -377,6 +403,15 @@ def test_app():
         t = db.turns(1)[0]
         check("app: plain turn logs tokens + cost", t["tokens_in"] == 20 and t["tokens_out"] == 5
               and t["cost_usd"] is not None and t["steps"] == 1, t)
+
+        # a search turn: no canned "checking live sources" line; the model's own line is the ack
+        SCRIPT[:] = [{"text": "On it. I'll check the latest on the Fed.", "tool_calls": [tc("remind_me", {"text": "fed", "in_minutes": 1}, "s1")]},
+                     {"text": "Rates held this week."}]
+        evs = sse(port, "what is the latest news on the fed")
+        acks = [d["text"] for e, d in evs if e == "ack"]
+        done = [d for e, d in evs if e == "done"]
+        check("app: a search tool turn's only ack is the model's own line", acks == ["On it. I'll check the latest on the Fed."], acks)
+        check("app: that line is its own message, not part of the reply", done and done[-1]["text"] == "Rates held this week.", done[-1:])
 
         # tool turn: remind me -> route, ack, tool running/done, deltas, done; job row exists
         SCRIPT[:] = [{"tool_calls": [tc("remind_me", {"text": "stretch", "in_minutes": 2}, "r1")]},

@@ -366,6 +366,11 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
                                                                  "reply_to": user["id"]}))
         acked["done"] = True
 
+    def on_note(note):  # the model's own line before its tool calls: the ack, or a progress text after it
+        acked["done"] = True
+        emit("ack", db.add_message(bot, "assistant", note, {"ack": True, "progress": True, "tier": route.tier,
+                                                            **tag, "reply_to": user["id"]}))
+
     def on_tool_start(_calls):  # ack-then-result for tool turns: the first step called a tool
         if not acked["done"]:
             acked["done"] = True
@@ -377,7 +382,7 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
     tctx = {"bot": bot, "user_id": user["id"]}
     try:
         final = agent.run(route, msgs, emit, info=info, ctx=tctx,
-                          on_tool_start=on_tool_start, max_tokens=MAX_TOKENS)
+                          on_tool_start=on_tool_start, on_note=on_note, max_tokens=MAX_TOKENS)
     finally:
         log_row["tried"] = info.get("tried") or [f"{provider}/{model}"]
         log_row.update(provider=info.get("provider") or provider, model=info.get("model") or model,
@@ -501,7 +506,10 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None):
         ack_text = persona.ack(route.tier, text, live=live, seed=user["id"])
         if _use_tools(text, images, route):
             try:
-                _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=tag)
+                # a search turn's canned line ("Checking live sources now", or "I can't check live") would
+                # guess at what the tools will do; the model's own line before its first call says it instead
+                _agent_turn(bot, text, history, user, route, None if route.tier == "search" else ack_text,
+                            emit, log_row, t0, tag=tag)
                 replied = True
             except models.ModelError as e:
                 log_row["error"] = str(e)[:300]
