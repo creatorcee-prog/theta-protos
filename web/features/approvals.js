@@ -1,6 +1,7 @@
 /* approvals: the card for an action waiting for the user's tap, and Settings > Security > Approvals.
- * - Card {type: "approval", id, tool, preview, state, result}: what it'll do (the code-written preview), with its
- *   own Approve and Discard. Tapping calls POST /api/approve; the card then says what happened (Done, Discarded,
+ * - Card {type: "approval", id, tool, preview, state, result}: shown as a compact list, one line per action (one or
+ *   many) with a check and a cross dot; tap a line for the code-written preview. The full card below is the fallback
+ *   renderer the list replaces. Tapping calls POST /api/approve; the card then says what happened (Done, Discarded,
  *   Didn't go through, Expired). state "auto" is a receipt: done without a tap because the user allows that action.
  * - Settings > Security > Approvals: for each action, ask first or just do it (server/approvals.py).
  * DOM nodes only, never innerHTML. Uses window.Theta (app.js). */
@@ -47,6 +48,7 @@
 .apl-done.good { color: #4cd07d; } .apl-done.bad { color: #ff8a80; } .apl-done.meh { color: var(--muted); }
 .apl-more { padding: 0 16px 10px; font-size: 14px; color: #ddd; overflow-wrap: anywhere; }
 .apl-more p { margin: 0 0 4px; }
+.apl-lit { white-space: pre-wrap; }
 .apl-why { color: #ff8a80; padding-top: 0; font-size: 13px; }
 .apl-all { font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0; text-transform: none; padding: 4px 0 4px 10px; }
 .apl-all[disabled] { opacity: .45; }
@@ -103,7 +105,7 @@
     return box;
   });
 
-  // ---------------------------------------------------------------- two or more: one compact list
+  // ---------------------------------------------------------------- every approval: a compact list (one line each)
   const plain = s => String(s || "").replace(/\*\*|__|`/g, "").replace(/^>\s?/, "").replace(/\s*<[^>]+@[^>]+>/g, "").trim();
   // a tool's error is written for the model ("Ask the user to..."): show the user the plain part
   function human(text) {
@@ -127,7 +129,9 @@
     // the header says what actually happened: "3 waiting for you", "All set", or "2 didn't go through"
     const headText = () => {
       const w = waiting().length, bad = items.filter(c => stateOf(c) === "failed").length;
-      return w ? `${w} waiting for you` : bad ? `${bad} didn't go through` : "All set";
+      if (w) return w === 1 ? "Waiting for you" : `${w} waiting for you`;
+      if (bad) return items.length === 1 ? "Didn't go through" : `${bad} didn't go through`;
+      return items.length === 1 && stateOf(items[0]) === "denied" ? "Discarded" : "All set";
     };
     head.append(el("span", null, headText()));
     const all = el("button", "apl-all", "Approve all"); all.type = "button";
@@ -159,8 +163,13 @@
       const row = el("div", "apl-row"), txt = el("button", "apl-txt"); txt.type = "button";
       txt.append(el("b", null, title)); if (sub) txt.append(el("small", null, sub));
       txt.setAttribute("aria-expanded", "false");
-      const more = el("div", "apl-more"); more.hidden = true; more.append(T.md(c.preview || ""));
-      txt.addEventListener("click", () => { more.hidden = !more.hidden; txt.setAttribute("aria-expanded", String(!more.hidden)); });
+      // details: what the title and detail line don't already say (an email's body, a trash list), quotes unwrapped
+      // quoted lines are the literal words being sent (an email body, a text): plain text, never markdown
+      const rest = String(c.preview || "").split("\n").filter(l => l.trim()).slice(2);
+      const more = el("div", "apl-more"); more.hidden = true;
+      for (const l of rest) more.append(/^>/.test(l) ? el("p", "apl-lit", l.replace(/^>\s?/, "")) : T.md(l));
+      if (rest.length) txt.addEventListener("click", () => { more.hidden = !more.hidden; txt.setAttribute("aria-expanded", String(!more.hidden)); });
+      else txt.removeAttribute("aria-expanded");
       const why = el("div", "apl-more apl-why"); why.hidden = true;
       const slot = el("span"); slot.style.display = "contents";
       const btns = [];
@@ -186,9 +195,9 @@
 
   T.decorate((m, row) => {
     const items = ((m.meta || {}).cards || []).filter(c => c && c.type === "approval");
-    if (items.length < 2) return;
+    if (!items.length) return;
     const nodes = [...row.querySelectorAll(".card")].filter(n => n.dataset.ap === "1");
-    if (nodes.length < 2) return;
+    if (!nodes.length) return;
     const list = listCard(items); list.classList.add("card");
     nodes[0].before(list);
     nodes.forEach(n => n.remove());
