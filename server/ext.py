@@ -21,6 +21,9 @@ import sys
 import threading
 
 FEATURES = ("google", "gcal", "routines", "workflows", "subagents", "media", "browser", "calls", "passkeys")
+FEATURES += ("reactions", "uploads", "gifs")  # stage 5, builder A: tapbacks, photos, GIFs
+FEATURES += ("live",)  # stage 5, builder B: the live view of Theta's browser
+FEATURES += ("cards", "onboarding")  # stage 5, builder C: the card kit, connect cards, the in-chat intro
 
 _lock = threading.Lock()
 _mods = None

@@ -2,6 +2,10 @@
  * Views: splash -> home <-> chat, plus full-screen sheets (Connect apps, Settings), the attach sheet, the "..." menu,
  * voice mode, and a login screen when the server answers 401.
  * Theta's status is its globe's motion (orb.js): idle, ack, working, speaking, waiting on you, done. No typing dots.
+ * Texting (0.4): bubbles group like a text thread (tails on the last of a group, time separators, Delivered/Read,
+ * swipe left for times), tapbacks, screen and bubble effects, photos and GIFs, haptics, and human pacing: a short
+ * chatty reply lands as a few bubbles with a typing beat each. Pacing is presentation only; the words are exactly
+ * the model's, and the status line under the globe says what Theta is really doing.
  */
 (() => {
   "use strict";
@@ -11,10 +15,12 @@
   const HOVER = matchMedia("(hover: hover) and (pointer: fine)");
   // this app's version (the files the phone loaded); the server says its own in /api/health. Keep in step with
   // server/__init__.py (tests/test_web.py checks).
-  const APP_VERSION = "0.3.0";
+  const APP_VERSION = "0.4.0";
   const BOT = "theta", POLL_MS = 20000, PAGE = 50, EARLIER = 30;
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } };
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const haptic = (kind, from) => { try { return window.ThetaHaptics ? window.ThetaHaptics.haptic(kind, from) : false; } catch (e) { return false; } };
+  const wait = ms => new Promise(r => setTimeout(r, Math.max(0, ms)));
   const svg = id => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"), u = document.createElementNS("http://www.w3.org/2000/svg", "use"); u.setAttribute("href", "#" + id); s.append(u); s.setAttribute("aria-hidden", "true"); return s; };
 
   const S = {
@@ -231,15 +237,108 @@
   const fmtTime = t => new Date(t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"});
   const SOURCES = {vantage: "an alert near you", brief: "your brief", reminder: "a reminder"};
 
-  function bubble(m, streaming) {
-    const b = el("div", "msg " + (m.role === "user" ? "u" : "a"));
-    if (m.role === "user") b.textContent = m.text; else b.append(md(m.text, streaming, (m.meta || {}).sources));
-    if (m.id != null) {
+  // ---- pace: start (pure: how a reply is split into bubbles, how long each one "types")
+  // A short, chatty reply is split on its paragraph breaks into 2-4 bubbles, but only when every part is short and
+  // there's no list, code, heading, image, citation or card in it. Anything longer or detailed stays one bubble
+  // (and streams). The parts are the model's own text, cut only at blank lines.
+  const SPLIT_PART = 160, SPLIT_MAX = 4, SPLIT_TOTAL = 480;
+  const DETAILED = /```|^\s*(?:[-*•]|\d{1,3}[.)]|#{1,6})\s/m;
+  function chatParts(text, meta) {
+    text = String(text || "").trim(); meta = meta || {};
+    if (!text || (Array.isArray(meta.sources) && meta.sources.length) || meta.task || (Array.isArray(meta.cards) && meta.cards.length) || meta.ack) return [text];
+    if (text.length > SPLIT_TOTAL || DETAILED.test(text) || /\[image:/.test(text)) return [text];
+    const parts = text.split(/\n[ \t]*\n/).map(x => x.trim()).filter(Boolean);
+    if (parts.length < 2 || parts.length > SPLIT_MAX || parts.some(x => x.length > SPLIT_PART)) return [text];
+    return parts;
+  }
+  // a typing beat: about 38 ms a character, at least 0.3 s, at most 1.8 s a bubble
+  const typingMs = part => Math.round(Math.min(1800, Math.max(320, String(part || "").length * 38)));
+  // a reply is "detailed" (it streams, as before) once it's long or has structure
+  const detailed = buf => buf.length > SPLIT_TOTAL || DETAILED.test(buf);
+  // "Reading your inbox" -> "read your inbox", for the line under a finished reply
+  const PAST = {reading: "read", opening: "opened", searching: "searched", waking: "woke", drafting: "drafted", checking: "checked",
+    looking: "looked", writing: "wrote", making: "made", calling: "called", browsing: "browsed", finding: "found", sending: "sent",
+    getting: "got", running: "ran", planning: "planned", sorting: "sorted", adding: "added", saving: "saved", creating: "created",
+    asking: "asked", loading: "loaded", summarizing: "summarized", generating: "generated", drawing: "drew", taking: "took",
+    filling: "filled", clicking: "clicked", scrolling: "scrolled", moving: "moved", updating: "updated", reviewing: "reviewed",
+    comparing: "compared", fetching: "fetched", watching: "watched", listening: "listened", thinking: "thought", reacting: "reacted"};
+  function pastTense(t) {
+    t = String(t || "").trim(); const m = /^([A-Za-z]+)(.*)$/.exec(t);
+    if (!m) return t;
+    const w = m[1].toLowerCase();
+    return (PAST[w] || (w[0] + w.slice(1))) + m[2];
+  }
+  function fmtDur(ms) {
+    const s = Math.max(1, Math.round(Number(ms || 0) / 1000));
+    return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s";
+  }
+  // "Took 6s · read your inbox, drafted the email": meta.timing and meta.activity (from the server), else the time
+  // this phone measured. Nothing at all for a plain quick reply.
+  function afterText(meta, measuredMs) {
+    meta = meta || {};
+    const acts = (Array.isArray(meta.activity) ? meta.activity : []).map(a => typeof a === "string" ? a : (a && a.text) || "").filter(a => a && !/^thinking it through$/i.test(a.trim()));
+    const tm = meta.timing && typeof meta.timing === "object" ? Number(meta.timing.total_ms) || 0 : 0, total = tm || Number(measuredMs) || 0;
+    if (!acts.length && total < 5000) return "";
+    const uniq = [...new Set(acts.map(pastTense))], parts = [];
+    if (total) parts.push("Took " + fmtDur(total));
+    if (uniq.length) parts.push(uniq.slice(0, 2).join(", ") + (uniq.length > 2 ? ` +${uniq.length - 2} more` : ""));
+    return parts.join(" · ");
+  }
+  // screen effects, triggered by what a message says
+  const FX_WORDS = [[/\bhappy\s+birthday\b|\bhbd\b/i, "balloons"], [/\bcongrat(?:s|ulations)\b/i, "confetti"], [/\bhappy\s+new\s+year\b/i, "fireworks"],
+    [/\bpew\s*pew\b/i, "lasers"], [/\bhappy\s+anniversary\b/i, "celebration"]];
+  const fxFor = text => { for (const [re, k] of FX_WORDS) if (re.test(String(text || ""))) return k; return null; };
+  // ---- pace: end
+
+  const UPLOAD = /^\/api\/uploads\/[0-9a-f]{32}$/;
+  const viewUrl = new Map(); // /api/uploads/<id> -> the blob: URL this phone already has (no reload flash)
+  function uploadsOf(m) {
+    const u = (m.meta || {}).uploads;
+    return (Array.isArray(u) ? u : []).filter(x => typeof x === "string" && (UPLOAD.test(x) || /^blob:/.test(x) || /^data:image\/(png|jpeg|gif|webp);/.test(x))).slice(0, 8);
+  }
+  function photoBubble(m, src) {
+    const b = el("div", "msg photo " + (m.role === "user" ? "u" : "a")), img = el("img");
+    img.alt = m.role === "user" ? "Photo you sent" : "Photo"; img.decoding = "async"; img.loading = "lazy";
+    img.src = viewUrl.get(src) || src; img.draggable = false;
+    img.addEventListener("load", () => b.classList.add("loaded"), {once: true});
+    img.addEventListener("error", () => { b.classList.add("broken"); b.replaceChildren(el("span", "photo-gone", S.demo ? "(a photo)" : "This photo isn't available.")); }, {once: true});
+    const open = el("button", "photo-open"); open.type = "button"; open.setAttribute("aria-label", "View photo full screen");
+    b.append(img, open);
+    return b;
+  }
+  function bubbles(m, streaming) {
+    const meta = m.meta || {}, user = m.role === "user", out = [];
+    for (const src of uploadsOf(m)) out.push(photoBubble(m, src));
+    const text = m.text || "";
+    if (text || !out.length) {
+      const parts = !user && !streaming ? chatParts(text, meta) : [text];
+      parts.forEach((part, i) => {
+        const b = el("div", "msg text " + (user ? "u" : "a"));
+        if (user) b.textContent = part; else b.append(md(part, streaming, meta.sources));
+        if (parts.length > 1) b.dataset.part = String(i);
+        out.push(b);
+      });
+    }
+    if (m.id != null) for (const b of out) {
       b.dataset.id = m.id;
       // on a mouse, a small "..." beside the bubble opens the same bar a long-press does
       if (!streaming) { const mb = el("button", "more-btn"); mb.type = "button"; mb.setAttribute("aria-label", "Message actions"); mb.setAttribute("aria-haspopup", "dialog"); mb.append(svg("i-more")); b.append(mb); }
     }
-    return b;
+    return out;
+  }
+  function bubble(m, streaming) { return bubbles(m, streaming)[0]; }
+  // tapbacks in the bubble's corner: yours and Theta's
+  function tapbackBadges(m, pop) {
+    const r = (m.meta || {}).reactions;
+    if (!r || typeof r !== "object" || (!r.user && !r.theta)) return null;
+    const box = el("div", "tbs");
+    for (const who of ["theta", "user"]) {
+      if (typeof r[who] !== "string" || !r[who]) continue;
+      const t = el("span", "tb " + (who === "user" ? "mine" : "theirs") + (pop === who ? " pop" : ""), r[who]);
+      t.setAttribute("role", "img"); t.setAttribute("aria-label", (who === "user" ? "You reacted " : "Theta reacted ") + r[who]);
+      box.append(t);
+    }
+    return box;
   }
   // "1,234 in · 210 out · $0.0004": the finished reply's token use (meta.usage), never while streaming
   const fmtN = n => Number(n || 0).toLocaleString();
@@ -270,24 +369,32 @@
     requestAnimationFrame(() => { const o = ThetaOrb.mount(cv, {dots: 150, scale: 1.7, dotK: 1.6, glow: 0.6, maxDpr: 3}); o.setState(state === "working" ? "working" : state === "waiting" ? "waiting" : "idle"); });
     return c;
   }
-  // one message as a row: (the "Theta texted you" line) + bubble or task card + (choice chips)
+  // one message as a row: (the "Theta texted you" line) + bubble(s) or task card + (choice chips) + quiet lines
   function item(m, opts) {
     opts = opts || {};
-    const row = el("div", "item"); row.dataset.key = m.id != null ? "m" + m.id : m.cid;
+    const row = el("div", "item " + (m.role === "user" ? "from-u" : "from-a")); row.dataset.key = m.id != null ? "m" + m.id : m.cid;
+    row.dataset.role = m.role; row.dataset.t = String(Math.round(m.t || Date.now() / 1000));
     const meta = m.meta || {};
     if (meta.proactive && m.role === "assistant") {
       const t = el("div", "texted" + (opts.fresh ? " fresh" : ""), "Theta texted you · " + fmtTime(m.t || Date.now() / 1000));
       row.append(t);
     }
-    let main;
-    if (meta.task && typeof meta.task === "object") main = taskCard(m);
-    else main = bubble(m);
-    if (opts.pending) main.classList.add("pending");
-    if (opts.fresh) { main.classList.add("fresh"); setTimeout(() => main.classList.add("settled"), 2500); }
-    else if (opts.anim) main.classList.add("new");
-    row.append(main);
+    let main, all;
+    if (meta.task && typeof meta.task === "object") { main = taskCard(m); all = [main]; }
+    else { all = bubbles(m); main = all.find(b => b.classList.contains("text")) || all[0]; }
+    for (const b of all) {
+      if (opts.pending) b.classList.add("pending");
+      if (opts.fresh) { b.classList.add("fresh"); setTimeout(() => b.classList.add("settled"), 2500); }
+      else if (opts.anim) b.classList.add("new");
+      row.append(b);
+    }
+    if (meta.effect && main.classList.contains("text")) applyEffect(main, meta.effect, !!opts.effectNow);
+    const tbs = tapbackBadges(m, opts.popTb);
+    if (tbs) { all[0].append(tbs); row.classList.add("has-tb"); }
     if (Array.isArray(meta.actions) && meta.actions.length && m.role === "assistant") row.append(actionChips(meta.actions, m));
     if (m.role === "assistant" && !meta.ack && !meta.task) {
+      const after = afterText(meta, opts.measuredMs);
+      if (after) row.append(activityLine(after, m, false));
       const src = Array.isArray(meta.sources) && meta.sources.length ? sourcesRow(meta.sources) : null;
       if (src) row.append(src);
       if (meta.note) row.append(el("div", "note", String(meta.note)));
@@ -307,7 +414,18 @@
       }
     }
     for (const d of decorators) { try { d(m, row, main); } catch (err) { console.error(err); } }
+    // the time, shown when you swipe the thread left
+    const st = el("time", "stamp", fmtTime(m.t || Date.now() / 1000)); st.setAttribute("aria-hidden", "true"); row.append(st);
     return row;
+  }
+  // the status line: live under the working globe ("Reading your inbox · 4s"), or under a finished reply
+  // ("Took 6s · read your inbox"). Tapping it tells features (the live browser view listens for this).
+  function activityLine(text, m, live) {
+    const b = el("button", "activity-line" + (live ? " live" : ""));
+    b.type = "button"; if (m && m.id != null) b.dataset.msg = m.id;
+    b.append(el("span", "al-txt", text));
+    b.setAttribute("aria-label", (live ? "Theta is " : "What Theta did: ") + text);
+    return b;
   }
   const decorators = []; // features add things to a message (images, call transcripts): Theta.decorate(fn)
   const cardKinds = {};  // meta.cards [{type, ...}] -> Theta.card(type, fn(card, message) -> element)
@@ -343,6 +461,7 @@
     // keep id order: a message that arrives late (e.g. from the inbox) goes before any newer one already shown
     const later = m.id == null ? null : [...thread.querySelectorAll('[data-key^="m"]')].find(n => +n.dataset.key.slice(1) > m.id);
     if (later) thread.insertBefore(row, later); else thread.append(row);
+    regroup();
     return row;
   }
   function emptyState() {
@@ -352,12 +471,94 @@
     c.dataset.key = "welcome"; thread.append(c);
   }
 
+
+  // ---------------------------------------------------------------- the thread's rhythm: groups, times, receipts
+  // Messages from the same side within a minute of each other are one group: 2 px apart, the tail only on the
+  // last bubble. More than 15 minutes between messages puts a centered time between them ("Today 9:41 AM").
+  const GROUP_S = 60, SEP_S = 15 * 60;
+  function sepText(t) {
+    const d = new Date(t * 1000), now = new Date(), day = 86400000;
+    const start = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((start(now) - start(d)) / day), time = fmtTime(t);
+    if (diff === 0) return ["Today", time];
+    if (diff === 1) return ["Yesterday", time];
+    if (diff > 1 && diff < 7) return [d.toLocaleDateString([], {weekday: "long"}), time];
+    return [d.toLocaleDateString([], {weekday: "short", month: "short", day: "numeric", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric"}), time];
+  }
+  function sepEl(t) {
+    const [day, time] = sepText(t), s = el("div", "tsep"); s.dataset.t = String(t);
+    s.append(el("b", null, day), " " + time); s.setAttribute("role", "separator"); return s;
+  }
+  const isBubble = c => c.classList.contains("msg") && !c.hidden;
+  function regroup() {
+    let prev = null, lastT = null;
+    for (const n of [...thread.children]) {
+      if (n.classList.contains("tsep")) { if (!n.nextElementSibling || !n.nextElementSibling.classList.contains("item")) n.remove(); continue; }
+      if (!n.classList.contains("item")) { prev = null; continue; } // the working globe, cards: a group ends
+      const t = Number(n.dataset.t) || 0, role = n.dataset.role;
+      let sep = n.previousElementSibling && n.previousElementSibling.classList.contains("tsep") ? n.previousElementSibling : null;
+      const need = !!t && (lastT == null || t - lastT > SEP_S);
+      if (need && (!sep || sep.dataset.t !== String(t))) { const ns = sepEl(t); if (sep) sep.replaceWith(ns); else thread.insertBefore(ns, n); sep = ns; }
+      else if (!need && sep) { sep.remove(); sep = null; }
+      if (t) lastT = t;
+      const bs = [...n.children].filter(isBubble);
+      const cont = !!(prev && prev.open && prev.role === role && !sep && t && prev.t && t - prev.t <= GROUP_S && bs.length && !n.querySelector(".texted"));
+      n.classList.toggle("g-cont", cont);
+      if (cont) prev.last.classList.remove("tail");
+      bs.forEach((b, i) => b.classList.toggle("tail", i === bs.length - 1));
+      // a row ends its group when something sits under its last bubble (token use, sources, chips, a card)
+      const tailEnd = [...n.children].filter(c => !c.hidden && !c.classList.contains("stamp") && !c.classList.contains("receipt") && getComputedStyle(c).display !== "none").pop();
+      prev = bs.length ? {role, t, last: bs[bs.length - 1], open: tailEnd === bs[bs.length - 1]} : null;
+    }
+  }
+  // "Delivered" under your message once Theta's server has it; "Read 9:41 AM" when Theta starts on its reply. Only
+  // while your message is the newest thing in the chat (like any texting app): Theta's reply replaces it.
+  function receipt(row, state, t) {
+    thread.querySelectorAll(".receipt").forEach(r => r.remove());
+    if (!state || !row || !row.isConnected) return;
+    const r = el("div", "receipt" + (state === "read" ? " read" : ""));
+    r.append(el("b", null, state === "read" ? "Read" : "Delivered"));
+    if (state === "read") r.append(" " + fmtTime(t || Date.now() / 1000));
+    row.append(r);
+  }
+  function historyReceipt() {
+    const items = [...thread.querySelectorAll(".item[data-key^='m']")], last = items[items.length - 1];
+    receipt(last && last.dataset.role === "user" ? last : null, "delivered");
+  }
+
+  // swipe the thread left to see every message's time, as in a texting app; it springs back when you let go
+  const PEEK = 72;
+  let swipe = null;
+  thread.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" || e.target.closest("button, a, input, .tb-more")) { swipe = null; return; }
+    swipe = {x: e.clientX, y: e.clientY, id: e.pointerId, on: false};
+  });
+  thread.addEventListener("pointermove", e => {
+    if (!swipe || e.pointerId !== swipe.id) return;
+    const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+    if (!swipe.on) {
+      if (dx < -10 && Math.abs(dx) > Math.abs(dy) * 1.3) { swipe.on = true; thread.classList.remove("peek-back"); thread.classList.add("peek"); clearTimeout(pressT); pressAt = null; closeBar(); }
+      else if (Math.abs(dy) > 12) { swipe = null; return; } else return;
+    }
+    const d = Math.min(0, dx + 10), x = d < -PEEK ? -PEEK - (-d - PEEK) * 0.18 : d;
+    thread.style.setProperty("--peek", x.toFixed(1) + "px");
+  });
+  const endSwipe = e => {
+    if (!swipe || (e && e.pointerId !== swipe.id)) return;
+    const was = swipe.on; swipe = null;
+    if (!was) return;
+    thread.classList.add("peek-back"); thread.style.setProperty("--peek", "0px");
+    setTimeout(() => { if (!swipe) thread.classList.remove("peek", "peek-back"); }, 420);
+  };
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) thread.addEventListener(ev, endSwipe);
+
   // ---------------------------------------------------------------- history
   async function loadHistory() {
     const d = await api(`/api/messages?bot=${BOT}&limit=${PAGE}`);
     const list = d.messages || [];
     thread.replaceChildren();
-    for (const m of list) appendMsg(m);
+    for (const m of list) { remember(m); thread.append(item(m)); }
+    regroup(); historyReceipt();
     S.inboxId = list.length ? list[list.length - 1].id : 0;
     S.noMore = list.length < PAGE;
     $("earlier").textContent = S.noMore && list.length ? "This is the start of your chat with Theta." : "";
@@ -370,7 +571,7 @@
       const d = await api(`/api/messages?bot=${BOT}&before=${S.oldestId}&limit=${EARLIER}`), list = (d.messages || []).filter(m => !S.msgs.has(m.id));
       const h0 = scroller.scrollHeight, top0 = scroller.scrollTop, frag = document.createDocumentFragment();
       for (const m of list) { remember(m); frag.append(item(m)); }
-      thread.prepend(frag);
+      thread.prepend(frag); regroup();
       scroller.scrollTop = top0 + (scroller.scrollHeight - h0); // keep the view where it was
       S.noMore = (d.messages || []).length < EARLIER;
       $("earlier").textContent = S.noMore ? "This is the start of your chat with Theta." : "";
@@ -398,6 +599,8 @@
     appendMsg(m, {fresh, anim: !fresh});
     if (m.role === "assistant") {
       orbs.head.ack(); orbs.home.ack();
+      receipt(null);
+      if (view === "chat" && document.visibilityState === "visible") { haptic("light"); playFx(fxFor(m.text), m.id); }
       if (view !== "chat") { S.unread++; renderHome(); }
       if (Array.isArray((m.meta || {}).actions) || /\?\s*$/.test(m.text || "")) setStatus("waiting");
     }
@@ -409,11 +612,16 @@
   addEventListener("online", () => poll());
 
   // ---------------------------------------------------------------- sending
-  const SHORT_CHARS = 220, SHORT_MS = 700; // short replies land whole, like a text; long ones stream
+  // A short, chatty reply is held until it's complete, then lands as one or a few bubbles, each after a typing
+  // beat (pacing, presentation only: never longer than a person typing those words would take from the moment
+  // Theta read your message). A long or detailed reply streams as it's written. LONG_WAIT_MS: a short reply that
+  // still isn't finished by then starts showing as it comes, so nothing ever hangs behind the globe.
+  const LONG_WAIT_MS = 6000;
   async function send(text, opts) {
     opts = opts || {};
     text = String(text || "").trim();
-    if (!text) return null;
+    const imgs = Array.isArray(opts.images) ? opts.images.filter(Boolean).slice(0, 4) : [];
+    if (!text && !imgs.length) return null;
     if (S.streaming) { toast("One sec, Theta's still answering."); return null; }
     if (view !== "chat") go({v: "chat"});
     const w = thread.querySelector('[data-key="welcome"]'); if (w) w.remove();
@@ -423,91 +631,169 @@
     let row = editId != null ? thread.querySelector(`[data-key="m${editId}"]`) : null, userMsg = null;
     if (editId != null && !row) { toast("That message isn't on screen anymore."); return null; }
     if (row) { // editing: the same bubble takes the new words; the replies under it go when the server says so
-      const ub0 = row.querySelector(".msg"); ub0.textContent = text; ub0.classList.add("pending");
+      const ub0 = row.querySelector(".msg.text") || row.querySelector(".msg"); ub0.textContent = text; ub0.classList.add("pending");
     } else {
-      const local = {id: null, cid, role: "user", text: opts.show || text, t: Date.now() / 1000, meta: {}};
-      row = item(local, {pending: true, anim: true}); thread.append(row);
+      const local = {id: null, cid, role: "user", text: opts.show || text, t: Date.now() / 1000,
+        meta: Object.assign(imgs.length ? {uploads: imgs.map(i => i.view || i.url), images: imgs.length} : {}, opts.effect ? {effect: opts.effect} : {})};
+      row = item(local, {pending: true, anim: true, effectNow: true}); thread.append(row);
+      if (opts.effect === "slam") { thread.classList.remove("jolt"); void thread.offsetWidth; thread.classList.add("jolt"); setTimeout(() => thread.classList.remove("jolt"), 700); }
     }
-    let ub = row.querySelector(".msg");
+    let ub = row.querySelector(".msg.text") || row.querySelector(".msg");
+    regroup(); receipt(null);
+    haptic("light");
+    playFx(fxFor(text), "c:" + cid);
     toBottom(true);
     S.streaming = true;
-    // acknowledged: one pulse; then working: the swirl, also where the reply will appear
+    const t0 = performance.now();
+    // acknowledged: one pulse; then working: the swirl, in a small bubble where the reply will appear
     orbs.head.ack(); setStatus("working");
-    const pend = el("div", "pending-orb"), pcv = el("canvas"); pcv.setAttribute("aria-hidden", "true"); pend.append(pcv);
-    pend.setAttribute("role", "status"); pend.setAttribute("aria-label", "Theta is working on it");
-    thread.append(pend);
-    const porb = ThetaOrb.mount(pcv, {dots: 200, scale: 1.55, dotK: 1.5, glow: 0.8, maxDpr: 3}); porb.ack(); porb.setState("working");
+    const prow = el("div", "pending-row"), pend = el("div", "pending-orb"), pcv = el("canvas"); pcv.setAttribute("aria-hidden", "true"); pend.append(pcv);
+    pend.setAttribute("role", "status"); pend.setAttribute("aria-label", "Theta is typing");
+    prow.append(pend); thread.append(prow);
+    const porb = ThetaOrb.mount(pcv, {dots: 140, scale: 1.55, dotK: 1.5, glow: 0.8, maxDpr: 3}); porb.ack(); porb.setState("working");
     follow(true);
 
-    let route = null, reply = null, buf = "", shown = null, firstAt = 0, frame = 0, timer = 0;
+    // the live status line: what Theta is doing right now, and for how long
+    let live = null, liveTick = 0, liveText = "", liveKind = "", liveAt = 0;
+    const drawLive = () => {
+      if (!live) return;
+      const secs = Math.floor((performance.now() - liveAt) / 1000);
+      live.querySelector(".al-txt").textContent = liveText + (secs >= 1 ? ` · ${secs}s` : "");
+    };
+    const setLive = (d) => {
+      if (!d || !d.text) return;
+      if (d.state === "done") { if (d.text === liveText) live && live.classList.add("idle"); return; }
+      if (d.text !== liveText) liveAt = performance.now();
+      liveText = String(d.text); liveKind = d.kind || "";
+      if (!live) { live = activityLine(liveText, userMsg, true); prow.append(live); liveTick = setInterval(drawLive, 1000); }
+      live.classList.remove("idle"); live.classList.toggle("browse", liveKind === "browse");
+      live.setAttribute("aria-label", "Theta is " + liveText.charAt(0).toLowerCase() + liveText.slice(1));
+      pend.setAttribute("aria-label", liveText);
+      drawLive(); follow(false);
+    };
+    let read = false, readAt = 0;
+    const markRead = () => { if (read) return; read = true; readAt = performance.now(); if (userMsg) receipt(row, "read"); };
+
+    let route = null, reply = null, buf = "", shown = null, firstAt = 0, frame = 0, timer = 0, sawReact = false;
     const draw = () => { frame = 0; if (!shown) return; shown.replaceChildren(md(buf, true)); follow(false); };
     const startShow = () => {
       if (shown || reply) return;
-      pend.remove(); porb.destroy();
-      shown = el("div", "msg a streaming new"); thread.append(shown);
-      setStatus("speaking"); draw();
+      clearTimeout(timer);
+      prow.remove(); porb.destroy(); clearInterval(liveTick);
+      receipt(null);
+      shown = el("div", "msg a text streaming new"); const srow = el("div", "item from-a streaming-row"); srow.dataset.role = "assistant"; srow.dataset.t = String(Math.round(Date.now() / 1000));
+      srow.append(shown); thread.append(srow); shown._row = srow; regroup();
+      setStatus("speaking"); draw(); haptic("light");
     };
     try {
+      if (imgs.length) await prepImages(imgs);
+      const body = editId != null ? {bot: BOT, id: editId, text} : {bot: BOT, text, client_id: cid};
+      // the vision model gets each picture as a data: URL (what the server's chat reads)
+      if (imgs.length) body.images = imgs.map(i => i.data).filter(Boolean);
       const r = await http(editId != null ? "/api/messages/edit" : "/api/chat", {method: "POST", headers: {"content-type": "application/json", accept: "text/event-stream"},
-        body: JSON.stringify(editId != null ? {bot: BOT, id: editId, text} : {bot: BOT, text, client_id: cid})});
+        body: JSON.stringify(body)});
       if (r.status === 401) { needLogin(); throw new AuthError("sign in"); }
       if (r.status === 409 && editId != null) throw Object.assign(new Error("Only your latest message can be edited."), {status: 409, edit409: true});
       if (!r.ok || !r.body) throw Object.assign(new Error(`HTTP ${r.status}`), {status: r.status});
       await readSSE(r.body, (ev, data) => {
         for (const fn of (listeners[ev] || [])) { try { fn(data, {text, reply: () => reply}); } catch (err) { console.error(err); } }
         if (ev === "user" && data && data.id != null) {
-          remember(data); userMsg = data; row.dataset.key = "m" + data.id; ub.dataset.id = data.id; ub.classList.remove("pending");
+          remember(data); userMsg = data; row.dataset.key = "m" + data.id; row.dataset.t = String(Math.round(data.t || Date.now() / 1000));
+          row.querySelectorAll(".msg").forEach(b => { b.dataset.id = data.id; b.classList.remove("pending"); });
+          if (live) live.dataset.msg = data.id;
+          if (imgs.length) attachImages(data, imgs);
+          if (opts.effect) { data.meta = Object.assign({}, data.meta, {effect: opts.effect}); post("/api/messages/effect", {id: data.id, effect: opts.effect}).catch(() => {}); }
+          receipt(row, read ? "read" : "delivered");
         } else if (ev === "deleted" && data && Array.isArray(data.ids)) {
           // an edit: Theta's earlier replies to this message go (other texts stay)
           for (const id of data.ids) { S.msgs.delete(id); const n = thread.querySelector(`[data-key="m${id}"]`); if (n) n.replaceWith(); }
+          regroup();
         } else if (ev === "route") route = data;
         else if (ev === "ack" && data && data.id != null) {
           // "On it." is its own message, above the working globe and the reply that follows
-          if (!S.msgs.has(data.id)) { remember(data); thread.insertBefore(item(data, {anim: true}), pend.isConnected ? pend : null); }
+          markRead();
+          if (!S.msgs.has(data.id)) { remember(data); receipt(null); thread.insertBefore(item(data, {anim: true}), prow.isConnected ? prow : null); regroup(); }
+        } else if (ev === "activity" && data) {
+          markRead(); setLive(data);
         } else if (ev === "tool" && data) {
-          pend.setAttribute("aria-label", data.state === "running" ? `Theta is using ${data.name}` : "Theta is working on it");
+          markRead();
+          if (data.name === "react") sawReact = true;
+          if (!liveText) pend.setAttribute("aria-label", data.state === "running" ? `Theta is using ${data.name}` : "Theta is typing");
         } else if (ev === "delta") {
+          markRead();
           buf += (data && data.text) || "";
           orbs.head.pulse(Math.min(0.5, ((data && data.text) || "").length / 30));
           if (shown) { if (!frame) frame = requestAnimationFrame(draw); }
-          else if (buf.length > SHORT_CHARS) startShow();
-          else if (!firstAt) { firstAt = performance.now(); timer = setTimeout(startShow, SHORT_MS); }
+          else if (detailed(buf)) startShow();
+          else if (!firstAt) { firstAt = performance.now(); timer = setTimeout(startShow, LONG_WAIT_MS); }
         } else if (ev === "done") reply = data;
         else if (ev === "error") throw new Error((data && data.error) || "Theta hit an error");
       });
-      clearTimeout(timer);
+      clearTimeout(timer); clearInterval(liveTick);
       if (!reply || reply.id == null) throw new Error("The reply was cut off");
       if (route) S.routes.set(reply.id, route);
       reply.meta = Object.assign({}, reply.meta || {});
       if (route && !reply.meta.model) Object.assign(reply.meta, {model: route.model, tier: route.tier});
       if (route && route.why && !reply.meta.why) reply.meta.why = route.why;
       if (frame) cancelAnimationFrame(frame);
-      pend.remove(); porb.destroy();
       remember(reply);
-      const final = item(reply, {anim: !shown});
-      if (shown) shown.replaceWith(final); else thread.append(final);
-      if (userMsg && row.isConnected) { const nr = item(userMsg); row.replaceWith(nr); row = nr; ub = nr.querySelector(".msg"); } // its "..." and "Edited"
+      const measuredMs = performance.now() - t0;
+      if (userMsg && row.isConnected) { const nr = item(userMsg); row.replaceWith(nr); row = nr; ub = nr.querySelector(".msg.text") || nr.querySelector(".msg"); } // its "..." and "Edited"
+      if (shown) { // it streamed: the finished message takes the streaming bubble's place
+        const final = item(reply, {measuredMs});
+        shown._row.replaceWith(final); prow.remove(); porb.destroy();
+        regroup(); follow(true);
+      } else await land(reply, prow, porb, {measuredMs, readAt: readAt || t0});
+      receipt(null);
+      playFx(fxFor(reply.text), reply.id);
+      if (sawReact && userMsg) refreshReactions(userMsg);
       orbs.head.done(); orbs.home.done();
       if (Array.isArray(reply.meta.actions) || /\?\s*$/.test(reply.text || "")) setTimeout(() => { if (!S.streaming) setStatus("waiting"); }, 600);
       follow(true);
       return reply;
     } catch (e) {
-      clearTimeout(timer); if (frame) cancelAnimationFrame(frame);
-      pend.remove(); porb.destroy();
-      if (shown) { shown.classList.remove("streaming"); if (!buf) shown.remove(); }
-      setStatus("idle");
+      clearTimeout(timer); clearInterval(liveTick); if (frame) cancelAnimationFrame(frame);
+      prow.remove(); porb.destroy();
+      if (shown) { shown.classList.remove("streaming"); if (!buf) shown._row.remove(); }
+      setStatus("idle"); receipt(null);
       if (e instanceof AuthError) return null;
+      haptic("warning");
       if (e.edit409) { // a newer message came in (another device): put the old words back
         if (before) { const nr = item(before); row.replaceWith(nr); } else ub.classList.remove("pending");
-        toast(e.message, 3600); return null;
+        regroup(); toast(e.message, 3600); return null;
       }
-      ub.classList.remove("pending"); ub.classList.add("failed");
+      row.querySelectorAll(".msg").forEach(b => { b.classList.remove("pending"); b.classList.add("failed"); });
       const offline = !navigator.onLine || !e.status;
       dock("retry", {err: true, icon: "i-bell", title: offline && !e.message.startsWith("HTTP") ? "Theta didn't answer" : "Theta couldn't answer just now",
         text: e.message && !/^HTTP|fetch|network/i.test(e.message) ? e.message : "The message didn't go through. Nothing was lost.",
-        actions: [["Dismiss", () => dock("retry", null)], ["Try again", () => { if (editId == null) row.replaceWith(); dock("retry", null); send(text, opts); }, true]]});
+        actions: [["Dismiss", () => dock("retry", null)], ["Try again", () => { if (editId == null) { row.replaceWith(); regroup(); } dock("retry", null); send(text, opts); }, true]]});
       return null;
     } finally { S.streaming = false; if (S.pollAfter) { S.pollAfter = false; setTimeout(poll, 300); } }
+  }
+  // a finished short reply lands bubble by bubble, each after its typing beat; the typing globe stays between them
+  async function land(reply, prow, porb, o) {
+    const final = item(reply, {anim: true, measuredMs: o.measuredMs});
+    const parts = [...final.children].filter(c => c.classList.contains("msg"));
+    const rest = [...final.children].filter(c => !c.classList.contains("msg") && !c.classList.contains("stamp"));
+    const hurry = () => document.visibilityState !== "visible" || view !== "chat";
+    parts.slice(1).forEach(p => { p.hidden = true; });
+    rest.forEach(r => { r.hidden = true; });
+    const live = prow.querySelector(".activity-line"); if (live) live.remove();
+    // the first bubble: only what's left of its typing beat since Theta read the message
+    if (!hurry()) await wait(typingMs(parts[0] && parts[0].textContent) - (performance.now() - o.readAt));
+    thread.insertBefore(final, prow.isConnected ? prow : null);
+    receipt(null);
+    if (parts.length < 2) { prow.remove(); porb.destroy(); }
+    regroup(); haptic("light"); setStatus("speaking"); follow(true);
+    for (let i = 1; i < parts.length; i++) {
+      if (!hurry()) await wait(typingMs(parts[i].textContent));
+      parts[i].hidden = false; parts[i].classList.add("new");
+      if (i === parts.length - 1) { prow.remove(); porb.destroy(); }
+      regroup(); follow(true);
+    }
+    rest.forEach(r => { r.hidden = false; });
+    regroup(); follow(true);
+    return final;
   }
 
   // ---------------------------------------------------------------- composer
