@@ -477,10 +477,11 @@ def test_app():
         deltas = "".join(d["text"] for e, d in evs if e == "delta")
         check("app: streamed text == stored text", deltas == done["text"])
         check("app: nothing sent before the tap", ran == [])
+        calls_before = len(CALLS)
         s, j = req(port, "POST", "/api/approve", {"id": aid, "decision": "approve"})
         check("approve: runs the stored action exactly", s == 200 and j["state"] == "done" and ran ==
               [{"to": "sam@example.com", "subject": "Dinner", "body": "7pm?"}] and "Sent to" in j["message"]["text"], j)
-        check("approve: no model call to approve", all("approve" not in json.dumps(c["messages"][-1:]) for c in CALLS[-1:]))
+        check("approve: no model call to approve", len(CALLS) == calls_before, CALLS[calls_before:])
         s, j = req(port, "POST", "/api/approve", {"id": aid, "decision": "approve"})
         check("approve: double tap doesn't run twice", s == 409 and len(ran) == 1, (s, j))
         aid2 = db.add_approval({"tool": "send_email_draft", "args": {"to": "a@b.co", "subject": "s", "body": "b"},
