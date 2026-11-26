@@ -831,7 +831,11 @@ def _t_create(args, ctx):
     extra = ""
     if r.get("trigger"):
         extra = f" Status: {r['status']}." if r.get("status") else " It watches from now on."
-    return (f"Routine #{r['id']} “{r['name']}” saved: {r['when_words']}.{extra} "
+    nxt = ""
+    if r.get("next_run"):
+        from . import tools
+        nxt = f" First run: {tools.fmt_time(r['next_run'])} (say exactly this; don't work it out yourself)."
+    return (f"Routine #{r['id']} “{r['name']}” saved: {r['when_words']}.{nxt}{extra} "
             f"It runs as a full turn and posts the result as a message (at most {MAX_PER_DAY} runs a day). "
             "Tell the user in plain words when it will run.")
 

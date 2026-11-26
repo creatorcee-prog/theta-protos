@@ -248,7 +248,7 @@
       b.addEventListener("click", () => {
         if (wrap.classList.contains("used") || S.streaming) return;
         wrap.classList.add("used"); b.classList.add("picked"); store(usedKey, String(a.label));
-        send(String(a.value != null ? a.value : a.label));
+        send(String(a.value != null ? a.value : a.label), {show: String(a.label)});
       });
       wrap.append(b);
     }
@@ -345,7 +345,7 @@
     const w = thread.querySelector('[data-key="welcome"]'); if (w) w.remove();
     dock("retry", null);
     const cid = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    const local = {id: null, cid, role: "user", text, t: Date.now() / 1000, meta: {}};
+    const local = {id: null, cid, role: "user", text: opts.show || text, t: Date.now() / 1000, meta: {}};
     const row = item(local, {pending: true, anim: true}); thread.append(row);
     const ub = row.querySelector(".msg");
     toBottom(true);

@@ -136,8 +136,11 @@ def check_url(url):
 def _real_launch():
     from playwright.sync_api import sync_playwright
     pw = sync_playwright().start()
+    kw = {}
+    if os.environ.get("PROTOS_BROWSER_PROXY"):  # a network that only reaches the web through a proxy
+        kw["proxy"] = {"server": os.environ["PROTOS_BROWSER_PROXY"]}
     browser = pw.chromium.launch(headless=True, args=["--disable-dev-shm-usage", "--disable-gpu",
-                                                      "--disable-extensions", "--no-first-run"])
+                                                      "--disable-extensions", "--no-first-run"], **kw)
     return pw, browser
 
 

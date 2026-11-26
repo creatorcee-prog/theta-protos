@@ -429,10 +429,14 @@ def _chat_worker(bot, text, images, client_id, emit):
             meta["client_id"] = str(client_id)[:80]
         if images:
             meta["images"] = len(images)
-        user = db.add_message(bot, "user", text, meta)
+        tap = _APPROVE_TEXT.match(text) if not images else None
+        shown = text
+        if tap:  # the chat shows the button's word, not "approve:12"
+            meta["tap"] = text
+            shown = "Approve" if tap.group(1).lower() == "approve" else "Discard"
+        user = db.add_message(bot, "user", shown, meta)
         log_row["user_id"] = user["id"]
         emit("user", user)
-        tap = _APPROVE_TEXT.match(text) if not images else None
         if tap:
             emit("route", {"model": "none", "provider": "theta", "tier": "action", "why": "your tap"})
             res = decide_approval(int(tap.group(2)), tap.group(1).lower(), bot=bot)
