@@ -1,3 +1,6 @@
 # The server is Python 3.11+ standard library only. This one package adds phone notifications (Web Push:
 # payload encryption and VAPID signing). Without it everything else still works and Settings says why.
 pywebpush
+
+# 1Password: Theta's browser signs in with saved logins (server/vault.py). Optional; without it 1Password stays off.
+onepassword-sdk

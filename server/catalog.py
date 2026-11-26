@@ -6,7 +6,7 @@ dropped from this list, so building one never shows it twice."""
 
 CATS = {  # category chip for the built connections, by id
     "gmail": "Google", "calendar": "Google", "drive": "Google",
-    "vantage": "Theta", "search": "Web", "browser": "Web", "phone": "Messaging", "giphy": "Media",
+    "vantage": "Theta", "search": "Web", "browser": "Web", "phone": "Messaging", "giphy": "Media", "bank": "Money",
 }
 
 SOON = [

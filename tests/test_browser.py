@@ -329,7 +329,7 @@ check("a search form's submit button is allowed in browse_act", ok and "Page: Re
 
 ok, out = tools.execute("browse_open", {"url": "https://shop.example/order"}, CTX)
 check("the checkout page lists its fields", ok and "[e1] text field \"Full name\"" in out
-      and "password field \"Password\" (can't type here yet)" in out and "(submits: use browse_submit)" in out)
+      and "password field \"Password\" (only browse_sign_in fills it, from 1Password)" in out and "(submits: use browse_submit)" in out)
 check("a password value never reaches the model", "hunter2" not in out)
 for ref, label in [("e8", "Place order"), ("e9", "Continue (type=submit in a form)"), ("e10", "Delete my account link")]:
     ok, out = tools.execute("browse_act", {"actions": [{"do": "click", "ref": ref}]}, CTX)
@@ -342,7 +342,7 @@ ok, out = tools.execute("browse_act", {"actions": [{"do": "click", "ref": "e11"}
 check("'Order history' is fine (only labels that START with an action word count)", ok and "Page: History" in out)
 tools.execute("browse_open", {"url": "https://shop.example/order"}, CTX)
 ok, out = tools.execute("browse_act", {"actions": [{"do": "type", "ref": "e3", "text": "hunter2"}]}, CTX)
-check("typing into a password field is refused", not ok and "password entry isn't available yet" in out
+check("typing into a password field is refused (and it points to browse_sign_in)", not ok and "passwords are never typed by you" in out and "browse_sign_in" in out
       and not LOG.get("typed_password"))
 ok, out = tools.execute("browse_act", {"actions": [{"do": "type", "ref": "e1", "text": "Sam Lee"},
                                                    {"do": "select", "ref": "e5", "text": "Express"},
@@ -386,7 +386,7 @@ try:
     tools.preview("browse_submit", pw_bad)
     check("a password in browse_submit fields is refused", False)
 except tools.ToolError as e:
-    check("a password in browse_submit fields is refused", "password entry isn't available yet" in str(e))
+    check("a password in browse_submit fields is refused", "passwords are never typed by you" in str(e))
 
 # the user changes the page in the meantime; the approved run re-opens and sets exactly the approved values
 tools.execute("browse_act", {"actions": [{"do": "type", "ref": "e1", "text": "Someone Else"}]}, CTX)
@@ -438,5 +438,80 @@ check("an idle conversation's context is closed after 5 minutes, and the browser
       LOG["closed"] == closed + 1 and not browser._engine.sessions and LOG.get("browser_closed"))
 ok, out = tools.execute("browse_act", {"actions": [{"do": "scroll"}]}, CTX)
 check("after that, acting says to open the page again", not ok and "browse_open" in out)
+
+# ---------------------------------------------------------------- signing in with 1Password (server/vault.py)
+import asyncio, types
+from server import vault
+
+DNS["bank.example"] = ["93.184.216.40"]
+DNS["bank-login.example"] = ["93.184.216.41"]
+SITE["https://bank.example/login"] = {"title": "Sign in", "text": "Sign in to Bank", "els": [
+    {"tag": "input", "type": "email", "name": "email", "label": "Email", "form": 0, "autocomplete": "username"},
+    {"tag": "button", "type": "submit", "label": "Next", "form": 0, "to": "https://bank.example/password"}]}
+SITE["https://bank.example/password"] = {"title": "Password", "text": "Enter your password", "els": [
+    {"tag": "input", "type": "password", "name": "pw", "label": "Password", "form": 0},
+    {"tag": "button", "type": "submit", "label": "Sign in", "form": 0, "to": "https://bank.example/code"}]}
+SITE["https://bank.example/code"] = {"title": "Verify", "text": "Enter the 6-digit code from your authenticator", "els": [
+    {"tag": "input", "type": "text", "name": "otp", "label": "Verification code", "form": 0, "autocomplete": "one-time-code"},
+    {"tag": "button", "type": "submit", "label": "Verify", "form": 0, "to": "https://bank.example/home"}]}
+SITE["https://bank.example/home"] = {"title": "Accounts", "text": "Welcome back. Checking $1,523.40", "els": []}
+SITE["https://bank-login.example/login"] = dict(SITE["https://bank.example/login"])
+Page.wait_for_timeout = lambda self, ms: None
+SECRET_PW, SECRET_CODE = "correct-horse-battery-9", "481516"
+
+
+def F(fid, title, kind, value, code=None):
+    return types.SimpleNamespace(id=fid, title=title, field_type=types.SimpleNamespace(value=kind), value=value,
+                                 details=types.SimpleNamespace(content=types.SimpleNamespace(code=code)) if code else None)
+
+
+class FakeOP:
+    class vaults:
+        @staticmethod
+        async def list():
+            return [types.SimpleNamespace(id="v1", title="Theta")]
+
+    class items:
+        @staticmethod
+        async def list(vault_id):
+            return [types.SimpleNamespace(id="i1", title="Bank", category=types.SimpleNamespace(value="Login"), vault_id="v1",
+                                          websites=[types.SimpleNamespace(url="https://bank.example/login")]),
+                    types.SimpleNamespace(id="i2", title="Wifi note", category=types.SimpleNamespace(value="SecureNote"),
+                                          vault_id="v1", websites=[])]
+
+        @staticmethod
+        async def get(vault_id, item_id):
+            return types.SimpleNamespace(fields=[F("username", "username", "Text", "sam@example.com"),
+                                                 F("password", "password", "Concealed", SECRET_PW),
+                                                 F("otp", "one-time password", "Totp", "otpauth://...", code=SECRET_CODE)])
+
+
+class FakeClient:
+    @staticmethod
+    async def authenticate(auth, integration_name, integration_version):
+        assert auth == "ops_test"
+        return FakeOP
+
+
+sys.modules["onepassword"] = types.SimpleNamespace(Client=FakeClient)
+os.environ["OP_SERVICE_ACCOUNT_TOKEN"] = "ops_test"
+vault._cache.update(t=0.0, items=[])
+ok, out = tools.execute("vault_logins", {}, CTX)
+check("vault_logins lists logins and their sites, never passwords", ok and "Bank: bank.example" in out
+      and "Wifi" not in out and SECRET_PW not in out)
+LOG["typed_password"] = False
+tools.execute("browse_open", {"url": "https://bank.example/login"}, CTX)
+ok, out = tools.execute("browse_sign_in", {}, CTX)
+check("browse_sign_in signs in through a two-step form and an authenticator code", ok and "URL: https://bank.example/home" in out
+      and "filled: username, password, code" in out and LOG["typed_password"])
+check("and no password or code ever reaches the model", SECRET_PW not in out and SECRET_CODE not in out)
+tools.execute("browse_open", {"url": "https://bank-login.example/login"}, CTX)
+ok, out = tools.execute("browse_sign_in", {}, CTX)
+check("a look-alike site gets nothing", not ok and "no 1Password login saved for bank-login.example" in out)
+ok, out = tools.execute("browse_act", {"actions": [{"do": "type", "ref": "e1", "text": "x"}]}, CTX)
+check("browse_sign_in is a write tool; the model still can't type into password fields itself",
+      tools.BY_NAME["browse_sign_in"]["risk"] == "write")
+os.environ.pop("OP_SERVICE_ACCOUNT_TOKEN")
+check("without the token, 1Password shows as not connected", vault.connections()[0]["connected"] is False)
 
 print("all browser tests passed")

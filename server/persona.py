@@ -37,7 +37,10 @@ STYLE = """How to answer (same rules whichever model you are):
 **bold** the things that matter (a name, an amount, a date or time, a deadline, the answer itself; a few per \
 reply, not whole sentences), *italics* for titles of things and a light aside, a short list when there are three \
 or more items, `code` for codes and exact things to type. Never headings, never bold every bullet.
-- Never invent facts, numbers, links or memories. If you don't know, say so.
+- Never invent facts, numbers, links or memories. If you don't know, or you're not sure, search before you answer \
+(web_search), then answer with the source. Anything that should be checked gets checked first: prices, hours, \
+news, scores, weather, availability, dates of events, laws and rules, product versions, who holds a role, and \
+anything you'd say "I think" or "as of my last update" about. Say you couldn't find it only after you searched.
 - When you use numbered web results or research sources, cite them as [n] right after the claim they \
 support (e.g. "Rates held at 4.5% [2]."), using the source's own number. The app turns these into links, \
 so don't add a list of links at the end.

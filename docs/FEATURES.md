@@ -110,3 +110,8 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   and a one-word test per model. A model name the key can't use is replaced by the closest working one from the
   provider's own list ("model_fixes" setting, applied in router.fixed()). Key aliases (CLAUDE_API_KEY,
   GOOGLE_API_KEY, ...) are adopted at start (models.KEY_ALIASES).
+- Bank accounts (`server/bank.py`): SimpleFIN Bridge, read-only. A setup token is claimed for an Access URL kept in
+  the database (or SIMPLEFIN_ACCESS_URL); tools bank_accounts, bank_transactions; cached 30 min (~24 calls/day).
+- 1Password (`server/vault.py` + browser.py's browse_sign_in): a service account token (OP_SERVICE_ACCOUNT_TOKEN);
+  logins are used only on a page whose host matches the item's saved website; values never reach the model.
+- Search first: the persona and tool guide tell the model to search instead of guessing or saying it doesn't know.

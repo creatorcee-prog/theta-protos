@@ -133,6 +133,23 @@ someone else hangs up after 10 turns or 5 minutes; at most 20 texts a day.
 **If calls don't work:** "Telnyx refused it" says why. If the phone rings but goes silent, check
 `PROTOS_PUBLIC_URL` is exactly the app's address and the TeXML application's ID is right.
 
+## Bank accounts (SimpleFIN, read-only)
+Theta can read balances and transactions (never move money) through SimpleFIN Bridge, a small paid service for
+personal apps.
+1. Sign up at bridge.simplefin.org and link your banks and cards there.
+2. Make a **setup token** (Bridge > Apps > New connection) and copy it.
+3. In Theta: Settings > Apps > Bank accounts, paste it, tap **Connect**. Done; nothing to set on Railway.
+SimpleFIN updates about once a day, so balances can be up to a day old. To cut access, tap Disconnect, and revoke
+the connection at bridge.simplefin.org.
+
+## 1Password (Theta's browser signs in for you)
+Theta never sees the passwords: it fills them into the site itself, and only on the site the login belongs to.
+1. In 1Password, make a vault named **Theta** and put in only the logins you want Theta to use (each with the
+   site's address saved on it).
+2. developer.1password.com > **Service accounts** > create one with read access to the Theta vault. Copy its token.
+3. On Railway, add `OP_SERVICE_ACCOUNT_TOKEN=ops_...` and deploy.
+Then ask Theta to do something behind a login ("check my water bill"); it opens the site and signs in.
+
 ## Google: Gmail, Calendar, Drive, Docs and Slides
 One Google sign-in covers all of them. It takes about 15 minutes in a browser, once.
 1. Open console.cloud.google.com and create a project (any name, e.g. "Theta").

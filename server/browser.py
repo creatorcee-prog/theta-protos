@@ -15,7 +15,8 @@ Safety:
     CGNAT or reserved ones). Every request the page makes is checked the same way (context.route), and the
     redirect chain and final URL are checked again after each navigation.
   - Page text is outside content: it travels in an untrusted frame and can never ask for anything.
-  - No password vault yet, so password fields are never typed into ("password entry isn't available yet").
+  - Password fields are never typed into by the model ("password entry isn't available"); browse_sign_in fills
+    them from 1Password (server/vault.py) on a page that matches the login's saved site, without showing the value.
   - One browser context per conversation (bot), closed after IDLE seconds; the browser itself closes when no
     context is left (Railway bills RAM).
 
@@ -46,7 +47,8 @@ TEXT_CAP = 1000            # page text in a browse_open result (tools.cap trims 
 LIST_CAP = 800             # chars of the element list
 MAX_ACTIONS = 10
 PLAN_TTL = 24 * 3600
-NO_PASSWORD = "password entry isn't available yet (Theta has no password vault), so nothing was typed there"
+NO_PASSWORD = ("passwords are never typed by you; to sign in, use browse_sign_in (it fills them from 1Password), so "
+               "nothing was typed there")
 HOW = ("Web browsing needs Playwright and Chromium on the server. The repo's Dockerfile installs both; locally: "
        "pip install playwright && python -m playwright install chromium.")
 
@@ -371,7 +373,7 @@ def _line(e):
         return f"[{e['ref']}] select {lab} = {e.get('value', '')!r} options: {', '.join(e.get('options') or [])[:120]}"
     if tag in ("input", "textarea") and t not in ("submit", "button", "image", "reset"):
         if is_password(e):
-            return f"[{e['ref']}] password field {lab} (can't type here yet)"
+            return f"[{e['ref']}] password field {lab} (only browse_sign_in fills it, from 1Password)"
         if t in ("checkbox", "radio"):
             return f"[{e['ref']}] {t} {lab} {'[x]' if e.get('checked') else '[ ]'}"
         val = mask(e, e.get("value"))
@@ -805,9 +807,93 @@ def _browse_submit(args, ctx):
     return out
 
 
+# ---------------------------------------------------------------- signing in with 1Password (server/vault.py)
+
+_OTP = re.compile(r"one-time|otp|2fa|two.factor|verification|security code|authenticator|\bcode\b", re.I)
+
+
+def _is_user(e):
+    return (e["tag"] == "input" and (e.get("type") in ("email", "text", "tel", "") or "username" in (e.get("autocomplete") or ""))
+            and not is_password(e) and not _OTP.search(e.get("label") or "") and "one-time-code" not in (e.get("autocomplete") or "")
+            and not is_search(e) and (e.get("type") == "email" or re.search(r"user|email|login|account|phone|e-mail",
+                                      " ".join([e.get("label") or "", e.get("name") or "", e.get("id") or "", e.get("autocomplete") or ""]), re.I)))
+
+
+def _is_otp(e):
+    """A one-time-code field (is_password() counts these as secret too, so check this first)."""
+    return e["tag"] == "input" and ("one-time-code" in (e.get("autocomplete") or "")
+                                   or bool(_OTP.search(" ".join([e.get("label") or "", e.get("name") or "", e.get("id") or ""]))))
+
+
+def _press_enter(s, ref):
+    _loc(s, ref).press("Enter", timeout=ACT_TIMEOUT)
+    try:
+        s.page.wait_for_load_state("domcontentloaded", timeout=ACT_TIMEOUT)
+    except Exception:  # noqa: BLE001  single-page apps don't navigate
+        pass
+    s.page.wait_for_timeout(1200)
+    _after_nav(s)
+
+
+def _browse_sign_in(args, ctx):
+    _need()
+    from . import vault
+    if not vault.available():
+        raise ToolError("1Password isn't connected (OP_SERVICE_ACCOUNT_TOKEN on the server). Ask the user to set it up "
+                        "in Settings > Apps > 1Password")
+
+    def work(eng):
+        s = eng.session(_key(ctx), create=False)
+        if s is None or not s.page.url.startswith("http"):
+            raise ToolError("open the site's sign-in page first (browse_open), then call browse_sign_in")
+        item = vault.pick(s.page.url, args.get("item"))
+        sec = vault.secrets_for(item)  # stays inside this function: typed into the page, never returned
+        if not sec.get("password") and not sec.get("username"):
+            raise ToolError(f"the 1Password login {item['title']!r} has no username or password saved")
+        did = []
+        for _step in range(4):
+            title, text, els = _snap(s)
+            pw = next((e for e in els if is_password(e) and not _is_otp(e) and not e.get("disabled")), None)
+            user = next((e for e in els if _is_user(e) and not e.get("disabled")), None)
+            otp = next((e for e in els if _is_otp(e) and not e.get("disabled")), None)
+            if otp and not pw and "code" not in did:
+                if not sec.get("totp"):
+                    break  # a texted or emailed code: the user has to read it out
+                _loc(s, otp["ref"]).fill(sec["totp"], timeout=ACT_TIMEOUT)
+                did.append("code")
+                _press_enter(s, otp["ref"])
+                break
+            if user and "username" not in did and sec.get("username"):
+                _loc(s, user["ref"]).fill(sec["username"], timeout=ACT_TIMEOUT)
+                did.append("username")
+            if pw and "password" not in did and sec.get("password"):
+                _loc(s, pw["ref"]).fill(sec["password"], timeout=ACT_TIMEOUT)
+                did.append("password")
+                _press_enter(s, pw["ref"])
+                continue  # maybe a one-time-code page next
+            if user and "username" in did and not pw and "password" not in did:
+                _press_enter(s, user["ref"])  # two-step sign-in: the password page comes next
+                continue
+            break
+        sec.clear()
+        if not did:
+            raise ToolError("there's no sign-in form on this page. Open the site's sign-in page (browse_open) first")
+        title, text, els = _snap(s)
+        head = (f"Signed in with the 1Password login {item['title']!r} (filled: {', '.join(did)}; the values aren't "
+                "shown to you). Check the page below: if it asks for a code sent by text or email, ask the user for it.")
+        return _render(s, title, text, els, head=head)
+    return _engine.call(work)
+
+
 # ---------------------------------------------------------------- the plug-in contract
 
 TOOLS = [
+    {"name": "browse_sign_in", "risk": "write", "untrusted": True, "run": _browse_sign_in,
+     "description": ("Sign in on the page that's open in Theta's browser, with the user's login from 1Password. It "
+                     "fills the username, password and one-time code itself (you never see them) and only on a page "
+                     "whose address matches the login's saved website. Open the sign-in page with browse_open "
+                     "first. item picks a login by title when several fit. Example: {} or {\"item\": \"Amazon\"}."),
+     "params": {"type": "object", "properties": {"item": {"type": "string"}}}},
     {"name": "browse_open", "risk": "read", "untrusted": True, "run": _browse_open,
      "description": ("Open a web page in Theta's own browser and read it: you get its title, URL, the visible text "
                      "(about 1,000 chars; pass find='words' to jump to the part you need) and a numbered list of "
