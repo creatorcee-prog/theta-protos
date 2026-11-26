@@ -27,6 +27,7 @@ import json
 import os
 import re
 import time
+import urllib.parse
 
 from . import db
 
@@ -57,6 +58,18 @@ def _tz():
         return ZoneInfo(name)
     except Exception:
         return datetime.timezone.utc
+
+
+def public_url():
+    """PROTOS_PUBLIC_URL, forgiving the usual slips: no scheme ("x.up.railway.app" -> https://...), a trailing
+    slash, or a pasted callback path such as /api/google/callback. "" when unset."""
+    u = (os.environ.get("PROTOS_PUBLIC_URL") or "").strip().strip("\"'").rstrip("/")
+    if not u:
+        return ""
+    if "://" not in u:
+        u = "https://" + u
+    parts = urllib.parse.urlsplit(u)
+    return f"{parts.scheme.lower()}://{parts.netloc.lower()}"
 
 
 def local_time(ts):

@@ -780,7 +780,7 @@ def cardify(user_text, reply_text, kind, now_iso=""):
             return None
         prov, model = cands[0]
         prompt = (f"Make one '{kind}' card for a chat app from this exchange. Use only facts in the reply and "
-                  f"the message; don't add new ones, and use the real names from the exchange, never placeholders. Write the title in sentence case ("This week's errands", not "This Week's Errands"). "
+                  f"the message; don't add new ones, and use the real names from the exchange, never placeholders. Write the title in sentence case (\"This week's errands\", not \"This Week's Errands\"). "
                   f"Answer with JSON only, shaped like: {_FILL[kind]}\n"
                   f"Now: {now_iso}\n\nUser: {user_text[:1200]}\n\nAssistant: {reply_text[:2400]}")
         raw = models.complete(prov, model, [{"role": "user", "content": prompt}], max_tokens=600)

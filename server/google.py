@@ -104,7 +104,7 @@ def account():
 
 
 def _redirect_uri(req):
-    base = (os.environ.get("PROTOS_PUBLIC_URL") or "").strip().rstrip("/")
+    base = tools.public_url()
     if not base:
         host = req.header("X-Forwarded-Host") or req.header("Host") or req.env.get("SERVER_NAME") or "localhost"
         host = host.split(",")[0].strip()

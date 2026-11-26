@@ -158,6 +158,13 @@ s, j, h = call("/api/google/start", headers={"Host": "evil.example"})
 aq2 = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(h["Location"]).query).items()}
 check("PROTOS_PUBLIC_URL wins over the Host header", aq2["redirect_uri"] == "https://theta.up.railway.app/api/google/callback", aq2)
 check("each start makes a new state", aq2["state"] != state1)
+for slip in ("theta.up.railway.app", "https://theta.up.railway.app/api/google/callback", " HTTPS://Theta.up.railway.app// "):
+    os.environ["PROTOS_PUBLIC_URL"] = slip
+    s, j, h = call("/api/google/start", headers={"Host": "evil.example"})
+    aq3 = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(h["Location"]).query).items()}
+    check("a slip in PROTOS_PUBLIC_URL still gives the exact redirect URI: " + repr(slip),
+          aq3["redirect_uri"] == "https://theta.up.railway.app/api/google/callback", aq3)
+os.environ["PROTOS_PUBLIC_URL"] = "https://theta.up.railway.app/"
 
 # ---- callback: state checks
 TOKENS = {"access_token": "ya29.ACCESS-1", "refresh_token": "1//REFRESH-1", "expires_in": 3599,

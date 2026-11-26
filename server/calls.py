@@ -40,7 +40,7 @@ import urllib.request
 from xml.sax.saxutils import escape
 
 from . import db
-from .tools import ToolError, local_time
+from .tools import ToolError, local_time, public_url
 
 API = "https://api.twilio.com/2010-04-01"
 MAX_TURNS = 10
@@ -96,7 +96,7 @@ def voice():
 
 
 def public_base():
-    u = _env("PROTOS_PUBLIC_URL").rstrip("/")
+    u = public_url()
     if u:
         return u
     d = _env("RAILWAY_PUBLIC_DOMAIN")
@@ -492,8 +492,8 @@ def _candidate_urls(req):
     qs = req.env.get("QUERY_STRING") or ""
     tail = req.path + (("?" + qs) if qs else "")
     out = []
-    if _env("PROTOS_PUBLIC_URL"):
-        out.append(_env("PROTOS_PUBLIC_URL").rstrip("/") + tail)
+    if public_url():
+        out.append(public_url() + tail)
     host = req.header("X-Forwarded-Host") or req.header("Host")
     if host:
         proto = (req.header("X-Forwarded-Proto") or req.env.get("wsgi.url_scheme") or "https").split(",")[0].strip()

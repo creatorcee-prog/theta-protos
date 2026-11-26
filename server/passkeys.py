@@ -29,6 +29,7 @@ import time
 import urllib.parse
 
 from . import db
+from .tools import public_url
 
 CHALLENGE_SECONDS = 300
 MAX_CHALLENGES = 200       # live challenges kept at once (the login one is public, so this caps a flood)
@@ -133,7 +134,7 @@ def cbor_decode(data):
 
 def rp(req):
     """(rpId, origin) for this request: from PROTOS_PUBLIC_URL, else the Host and X-Forwarded-Proto headers."""
-    base = (os.environ.get("PROTOS_PUBLIC_URL") or "").strip().rstrip("/")
+    base = public_url()
     if not base:
         host = req.header("X-Forwarded-Host") or req.header("Host") or req.env.get("SERVER_NAME") or "localhost"
         host = host.split(",")[0].strip()
