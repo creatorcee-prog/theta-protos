@@ -667,6 +667,8 @@
     b.setAttribute("aria-label", (c.connected ? "Connected: " : "Connect ") + c.name);
     b.addEventListener("click", async () => {
       if (S.demo) { try { await post("/api/connections/" + encodeURIComponent(c.id), {}); c.connected = !c.connected; renderConnections(); } catch (e) {} return; }
+      if (c.connect_url && !c.connected && /^\/api\//.test(c.connect_url)) { location.href = c.connect_url; return; }
+      if (c.note && !c.connected) { toast(c.note, 5000); return; }
       toast(c.connected ? `${c.name} is connected on Theta.` : `Connecting ${c.name} from the phone comes later. Set it up on Theta for now.`, 3600);
     });
     row.append(ic, t, b);

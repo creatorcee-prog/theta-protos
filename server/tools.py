@@ -261,15 +261,15 @@ def _email_preview(args):
 
 
 def _send_email(args, ctx):
-    _email_check(args)
-    gmail = None
+    to = _email_check(args)
+    google = None
     try:
-        from . import gmail  # noqa: F401  (not in v0)
+        from . import google  # noqa: F401  (server/google.py: Gmail through the user's Google sign-in)
     except ImportError:
         pass
-    if gmail is None or not callable(getattr(gmail, "send", None)):
+    if google is None or not google.connected("gmail"):
         raise ToolError("Gmail isn't connected yet, so nothing was sent. Connect it in Settings, then ask again.")
-    return gmail.send(to=args["to"], subject=args["subject"], body=args["body"])
+    return google.send(to=", ".join(to), subject=args["subject"], body=args["body"])
 
 
 # ---- the registry
