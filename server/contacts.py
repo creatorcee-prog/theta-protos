@@ -1,13 +1,18 @@
-"""Contacts: the people the user saves so Theta can text, call or email them by name ("text Mom I'm running
-late"). The user manages them in Settings > General > Contacts; Theta can look them up, and save one when the
-user asks it to.
+"""Contacts: the people Theta can text, call or email by name ("text Mom I'm running late").
 
-    GET    /api/contacts                 [{id, name, phone, email, note}]
+Where they come from:
+- added in Settings > General > Contacts, or by Theta when the user asks ("save Sam's number")
+- imported from a vCard file (.vcf): how an iPhone or iCloud shares contacts
+- Google Contacts, synced on their own every SYNC_EVERY once Google is connected with contacts access (kept
+  apart, as "contacts_google", so a sync never overwrites what the user added; theirs win on a clash)
+
+    GET    /api/contacts[?q=...]          {contacts: [the user's own], google: {connected, count, synced}, matches?}
     POST   /api/contacts {name, phone?, email?, note?, id?}   add, or update the one with that id
+    POST   /api/contacts/import {vcf}    -> {added, updated, skipped}
+    POST   /api/contacts/sync            sync Google Contacts now
     DELETE /api/contacts?id=<id>
 
-Stored as the "contacts" setting. A phone number is kept in international form (+1...); a number typed
-without a country code is taken as US/Canada (+1) when it has 10 digits.
+A phone number is kept in international form (+1...); 10 digits without a country code are taken as US/Canada.
 """
 import re
 import secrets
@@ -17,13 +22,31 @@ from . import db
 from .tools import ToolError
 
 SETTING = "contacts"
-MAX = 200
+GSETTING, GSTATUS = "contacts_google", "contacts_google_sync"
+MAX = 1000
+GMAX = 5000
+SYNC_EVERY = 12 * 3600
+PEOPLE = "https://people.googleapis.com/v1/people/me/connections"
 _lock = threading.Lock()
 
 
 def all_contacts():
+    """The user's own contacts (added, imported)."""
     v = db.get_setting(SETTING)
     return [c for c in v if isinstance(c, dict) and c.get("id")] if isinstance(v, list) else []
+
+
+def google_contacts():
+    v = db.get_setting(GSETTING)
+    return [c for c in v if isinstance(c, dict) and c.get("id")] if isinstance(v, list) else []
+
+
+def everyone():
+    """Everyone Theta can reach: the user's own first, then synced Google contacts not already among them."""
+    own = all_contacts()
+    seen = {k for c in own for k in (c.get("phone"), c.get("email"), c["name"].lower()) if k}
+    return own + [c for c in google_contacts()
+                  if not ({c.get("phone"), c.get("email"), c["name"].lower()} - {None, ""}) & seen]
 
 
 def _save(items):
@@ -100,7 +123,7 @@ def find(query):
     if not q:
         return []
     out = []
-    for c in all_contacts():
+    for c in everyone():
         name, note = c["name"].lower(), (c.get("note") or "").lower()
         if q == name or q == note:
             rank = 0
@@ -119,7 +142,7 @@ def resolve(to, need="phone"):
     raw = str(to or "").strip()
     direct = phone(raw) if need == "phone" else _email(raw)
     if direct:
-        hit = next((c for c in all_contacts() if c.get(need) == direct), None)
+        hit = next((c for c in everyone() if c.get(need) == direct), None)
         return direct, (hit or {}).get("name") or ""
     hits = find(raw)
     if not hits:
@@ -174,11 +197,132 @@ RELEVANT = (r"\b(text|txt|message|msg|sms|call|ring|phone|email|e-mail)\b|\bcont
 
 
 def context(bot, now):
-    items = all_contacts()
-    if not items:
+    items, n_g = all_contacts(), len(google_contacts())
+    if not items and not n_g:
         return ""
     names = ", ".join(c["name"] + (f" ({c['note']})" if c.get("note") else "") for c in items[:30])
-    return f"Saved contacts (look one up with find_contact for the number): {names}."
+    more = f"{' and' if names else ''} {n_g} from Google Contacts" if n_g else ""
+    return f"Saved contacts{': ' + names if names else ''}{more} (look anyone up with find_contact)."
+
+
+# ---------------------------------------------------------------- vCard import (iPhone, iCloud)
+
+def _vunescape(v):
+    return re.sub(r"\\([,;nN\\])", lambda m: "\n" if m.group(1) in "nN" else m.group(1), v)
+
+
+def parse_vcf(text):
+    """[{name, phone, email}] from vCard text: FN (or N), the mobile number when typed, else the first, the first email."""
+    raw = re.sub(r"\r?\n[ \t]", "", str(text or ""))  # unfold continued lines
+    out = []
+    for card in re.findall(r"BEGIN:VCARD(.*?)END:VCARD", raw, re.S | re.I):
+        fn, n, phones, emails, note = "", "", [], [], ""
+        for line in card.splitlines():
+            if ":" not in line:
+                continue
+            key, val = line.split(":", 1)
+            prop = key.split(";")[0].split(".")[-1].upper()  # "item1.TEL;type=CELL" -> TEL
+            params = key.upper()
+            val = _vunescape(val.strip())
+            if prop == "FN":
+                fn = val
+            elif prop == "N":
+                parts = [p.strip() for p in val.split(";")]
+                n = " ".join(p for p in (parts[1:2] + parts[0:1]) if p)
+            elif prop == "TEL":
+                phones.append((0 if re.search(r"CELL|MOBILE|IPHONE", params) else 1, val))
+            elif prop == "EMAIL":
+                emails.append(val)
+            elif prop == "X-ABRELATEDNAMES" or prop == "ORG":
+                note = note or val.split(";")[0]
+        name = (fn or n).strip()
+        phone_ = next((phone(v) for _, v in sorted(phones, key=lambda x: x[0]) if phone(v)), "")
+        email_ = next((e for e in emails if _email(e)), "")
+        if name and (phone_ or email_):
+            out.append({"name": name[:60], "phone": phone_, "email": email_, "note": note[:80]})
+    return out
+
+
+def import_vcf(text):
+    added = updated = 0
+    people = parse_vcf(text)
+    before = {c["name"].lower() for c in all_contacts()}
+    for p in people:
+        try:
+            upsert(p)
+        except ValueError:
+            continue
+        if p["name"].lower() in before:
+            updated += 1
+        else:
+            added += 1
+            before.add(p["name"].lower())
+    return {"added": added, "updated": updated, "skipped": max(0, len(re.findall(r"BEGIN:VCARD", str(text or ""), re.I)) - added - updated)}
+
+
+# ---------------------------------------------------------------- Google Contacts sync
+
+def _google():
+    from . import google
+    return google
+
+
+def google_ready():
+    try:
+        g = _google()
+        return g.connected() and g.connected("contacts")
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def sync_google(now=None):
+    """Fetch the user's Google Contacts (saved ones, not "other contacts"). Returns how many were kept."""
+    import time as _t
+    now = now or _t.time()
+    g = _google()
+    people, token = [], None
+    for _page in range(10):
+        params = {"personFields": "names,phoneNumbers,emailAddresses,relations", "pageSize": 1000}
+        if token:
+            params["pageToken"] = token
+        got = g.api("GET", PEOPLE, params=params)
+        for p in got.get("connections") or []:
+            name = ((p.get("names") or [{}])[0].get("displayName") or "").strip()
+            nums = p.get("phoneNumbers") or []
+            nums = sorted(nums, key=lambda x: 0 if (x.get("type") or "").lower() in ("mobile", "iphone") else 1)
+            ph = next((phone(x.get("canonicalForm") or x.get("value")) for x in nums
+                       if phone(x.get("canonicalForm") or x.get("value"))), "")
+            em = next((_email(x.get("value")) for x in p.get("emailAddresses") or [] if _email(x.get("value"))), "")
+            if name and (ph or em):
+                rid = re.sub(r"[^A-Za-z0-9]", "", str(p.get("resourceName") or ""))[-16:] or secrets.token_hex(4)
+                people.append({"id": "g" + rid, "name": name[:60], "phone": ph, "email": em, "note": "", "source": "google"})
+        token = got.get("nextPageToken")
+        if not token:
+            break
+    db.set_setting(GSETTING, people[:GMAX])
+    db.set_setting(GSTATUS, {"t": now, "count": len(people[:GMAX])})
+    return len(people[:GMAX])
+
+
+def google_status():
+    st = db.get_setting(GSTATUS)
+    st = st if isinstance(st, dict) else {}
+    return {"connected": google_ready(), "count": int(st.get("count") or 0), "synced": st.get("t"),
+            "error": st.get("error")}
+
+
+def tick(now):
+    """Sync Google Contacts every SYNC_EVERY (and soon after Google is first connected with contacts access)."""
+    if not google_ready():
+        return []
+    st = db.get_setting(GSTATUS) or {}
+    if isinstance(st, dict) and now - float(st.get("t") or 0) < SYNC_EVERY:
+        return []
+    try:
+        sync_google(now)
+    except Exception as e:  # noqa: BLE001  try again next round; say why in Settings
+        db.set_setting(GSTATUS, dict(st if isinstance(st, dict) else {}, t=now, error=str(e)[:160]))
+    return []
 
 
 # ---------------------------------------------------------------- route
@@ -186,7 +330,11 @@ def context(bot, now):
 def route(req, start_response):
     from .app import HTTPError, respond_json
     if req.method == "GET":
-        return respond_json(start_response, all_contacts())
+        out = {"contacts": all_contacts(), "google": google_status()}
+        q = str(req.query.get("q") or "").strip()
+        if q:
+            out["matches"] = find(q)[:25]
+        return respond_json(start_response, out)
     if req.method == "POST":
         body = req.json()
         if not isinstance(body, dict):
@@ -203,4 +351,30 @@ def route(req, start_response):
     raise HTTPError(405, "method not allowed")
 
 
-ROUTES = {"/api/contacts": route}
+def route_import(req, start_response):
+    from .app import HTTPError, respond_json
+    if req.method != "POST":
+        raise HTTPError(405, "method not allowed")
+    body = req.json()
+    vcf = body.get("vcf") if isinstance(body, dict) else None
+    if not isinstance(vcf, str) or "BEGIN:VCARD" not in vcf.upper():
+        raise HTTPError(400, "that isn't a contacts file (.vcf)")
+    if len(vcf) > 5_000_000:
+        raise HTTPError(400, "that file is too big; export fewer contacts at a time")
+    return respond_json(start_response, import_vcf(vcf))
+
+
+def route_sync(req, start_response):
+    from .app import HTTPError, respond_json
+    if req.method != "POST":
+        raise HTTPError(405, "method not allowed")
+    if not google_ready():
+        raise HTTPError(409, "Google Contacts isn't allowed yet; reconnect Google and allow contacts")
+    try:
+        n = sync_google()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPError(502, f"Google didn't answer ({str(e)[:100]})") from None
+    return respond_json(start_response, dict(google_status(), count=n))
+
+
+ROUTES = {"/api/contacts": route, "/api/contacts/import": route_import, "/api/contacts/sync": route_sync}

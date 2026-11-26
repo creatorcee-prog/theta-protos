@@ -52,9 +52,13 @@ SLIDES = "https://slides.googleapis.com/v1/presentations"
 
 _S = "https://www.googleapis.com/auth/"
 SCOPES = [_S + "gmail.modify", _S + "gmail.send", _S + "calendar.events", _S + "calendar.readonly",
-          _S + "drive.file", _S + "drive.readonly", _S + "documents", _S + "presentations", "openid", "email"]
+          _S + "drive", _S + "drive.file", _S + "drive.readonly", _S + "documents", _S + "presentations",
+          _S + "contacts.readonly", "openid", "email"]
 SERVICE_SCOPES = {"gmail": (_S + "gmail.modify",), "calendar": (_S + "calendar.events", _S + "calendar.readonly"),
-                  "drive": (_S + "drive.file", _S + "drive.readonly")}
+                  "drive": (_S + "drive", _S + "drive.file", _S + "drive.readonly"),
+                  "drive_full": (_S + "drive",), "contacts": (_S + "contacts.readonly",)}
+# added after the first sign-ins: a sign-in from before lacks them until the user reconnects once (gdrive.py asks)
+NEWER = ("drive_full", "contacts")
 STATE_TTL = 600
 SETTING, STATES = "google", "google_oauth_states"
 TIMEOUT = 20

@@ -21,7 +21,7 @@ SETTING = "pending_connect"
 MAX_AGE = 3 * 86400
 MAX_ITEMS = 10
 NAMES = {"google": "Gmail", "twilio": "Twilio", "tavily": "Web search", "gemini": "Image generation",
-         "giphy": "GIFs"}
+         "giphy": "GIFs", "gdrive": "Google Drive"}
 _lock = threading.Lock()
 
 
@@ -31,7 +31,7 @@ def _items():
 
 
 def _ready(service):
-    if service in ("google", "twilio"):
+    if service in ("google", "twilio", "gdrive"):
         from . import agent
         return agent._service_ready(service)
     env = {"tavily": "TAVILY_API_KEY", "gemini": "GEMINI_API_KEY", "giphy": "GIPHY_API_KEY"}.get(service)

@@ -51,7 +51,8 @@ def _with_guide(messages):
 
 
 _NEEDS = {"send_email_draft": "google", "calendar_invite": "google", "call_someone": "twilio", "send_text": "twilio",
-          "gmail_trash": "google", "gmail_unsubscribe": "google", "calendar_delete": "google", "calendar_move": "google"}
+          "gmail_trash": "google", "gmail_unsubscribe": "google", "calendar_delete": "google", "calendar_move": "google",
+          "drive_trash": "gdrive", "drive_share": "gdrive"}
 
 
 def _service_ready(service):
@@ -59,6 +60,9 @@ def _service_ready(service):
         if service == "google":
             from . import google
             return bool(google.connected("gmail"))
+        if service == "gdrive":
+            from . import google
+            return bool(google.connected("drive_full"))
         if service == "twilio":
             import os
             return bool(os.environ.get("TWILIO_ACCOUNT_SID") and os.environ.get("TWILIO_AUTH_TOKEN"))
@@ -88,7 +92,7 @@ def _approval(call, ctx, emit, info):
     if needs and not _service_ready(needs):  # say so now, not when they tap Approve: the connect card comes too
         try:
             from . import cards
-            cards.attach(ctx, cards.connect(needs))
+            cards.attach(ctx, cards.connect("google" if needs == "gdrive" else needs))
         except Exception:  # noqa: BLE001
             pass
         try:

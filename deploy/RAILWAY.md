@@ -125,13 +125,13 @@ rings but goes silent or says "an application error", check `PROTOS_PUBLIC_URL` 
 One Google sign-in covers all of them. It takes about 15 minutes in a browser, once.
 1. Open console.cloud.google.com and create a project (any name, e.g. "Theta").
 2. **APIs & Services → Library**: enable **Gmail API**, **Google Calendar API**, **Google Drive API**,
-   **Google Docs API** and **Google Slides API**.
+   **Google Docs API**, **Google Slides API** and **People API** (Google Contacts).
 3. **Google Auth Platform** (the OAuth consent screen):
    - **Branding:** app name "Theta", with your email as both the support and the developer contact.
    - **Audience:** user type **External**, publishing status **Testing**. Under **Test users**, add your own
      Google address.
-   - **Data access:** add the Gmail (modify, send), Calendar (events, readonly), Drive (file, readonly), Docs and
-     Slides scopes, plus openid and email.
+   - **Data access:** add the Gmail (modify, send), Calendar (events, readonly), Drive (full `drive`, plus file and
+     readonly), Docs, Slides and Contacts (`contacts.readonly`) scopes, plus openid and email.
 4. **Clients → Create client → Web application.** Under authorized redirect URIs add exactly
    `https://<your app>.up.railway.app/api/google/callback` (https, no slash at the end). Copy the client ID and
    the secret.
