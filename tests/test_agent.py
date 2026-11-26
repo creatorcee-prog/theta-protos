@@ -257,12 +257,22 @@ def test_loop():
     out = agent.run(route_for(), base_msgs("hi"), emit, info={}, ctx={"bot": "theta"}, on_note=notes.append)
     check("notes: no tools -> the held text is the reply, no note", out == "Short answer." == "".join(d["text"] for e, d in ev if e == "delta") and not notes)
 
-    # a long opening streams as soon as it's past a short line, even if tools follow
+    # text written before the tools ran: only its opening sentence is a note; a premature "Done" is dropped
     ev.clear(); notes.clear()
-    long = "Here's what I found so far, and there's a lot of it. " * 5
-    SCRIPT[:] = [{"text": long, "tool_calls": [tc("remind_me", {"text": "x", "in_minutes": 1}, "n3")]}, {"text": "All set."}]
+    early = "Setting that up now. Done: a nudge every Sunday at 10 AM, here and on your phone. First one lands this Sunday."
+    SCRIPT[:] = [{"text": early, "tool_calls": [tc("remind_me", {"text": "x", "in_minutes": 1}, "n3")]},
+                 {"text": "Done: a nudge every Sunday at 10 AM. First one lands this Sunday."}]
+    out = agent.run(route_for(), base_msgs("plants"), emit, info={}, ctx={"bot": "theta"}, on_note=notes.append)
+    check("notes: before the tools run, only the opening line shows; the result is said once, after", notes == ["Setting that up now."]
+          and out == "Done: a nudge every Sunday at 10 AM. First one lands this Sunday." and out.count("Done:") == 1, (notes, out))
+
+    # a genuinely long answer still streams as it's written
+    ev.clear(); notes.clear()
+    long = "Here's a long answer with plenty of detail in it. " * 20
+    SCRIPT[:] = [{"text": long}]
     out = agent.run(route_for(), base_msgs("long"), emit, info={}, ctx={"bot": "theta"}, on_note=notes.append)
-    check("notes: a long opening is part of the reply, not a note", not notes and out.startswith("Here's what I found") and out.endswith("All set."), out[-40:])
+    first = next(i for i, (e, d) in enumerate(ev) if e == "delta")
+    check("notes: a long answer streams before it's finished", not notes and out == long.strip() and len(ev[first][1]["text"]) < len(long), len(ev[first][1]["text"]))
 
     # step cap: a model that never stops calling tools gets a final no-tools call at step 6
     CALLS.clear()

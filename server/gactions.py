@@ -415,12 +415,12 @@ TOOLS = [
     {"name": "gmail_filter_delete", "risk": "write", "run": _filter_delete,
      "description": "Remove a Gmail filter Theta made (the undo for gmail_filter)." + _NOT,
      "params": {"type": "object", "properties": {"filter_id": {"type": "string"}}, "required": ["filter_id"]}},
-    {"name": "calendar_delete", "risk": "send", "run": _delete, "preview": _del_preview,
+    {"name": "calendar_delete", "risk": "send", "run": _delete, "preview": _del_preview, "outward_if": lambda a: bool(_guests(_event(a.get("event_id")))),
      "description": ("Propose deleting an event from the user's Google Calendar (the id from calendar_list). The "
                      "user approves first; guests, if any, get Google's cancellation email. Example: "
                      "{\"event_id\": \"abc123def456\"}." + _NOT),
      "params": {"type": "object", "properties": {"event_id": {"type": "string"}}, "required": ["event_id"]}},
-    {"name": "calendar_move", "risk": "send", "run": _move, "preview": _move_preview,
+    {"name": "calendar_move", "risk": "send", "run": _move, "preview": _move_preview, "outward_if": lambda a: bool(_guests(_event(a.get("event_id")))),
      "description": ("Propose moving a timed event to a new start (and optional end; it keeps its length by "
                      "default). The user approves first; guests get the new time. Example: {\"event_id\": "
                      "\"abc123def456\", \"start\": \"2026-11-28T15:00\"}." + _NOT),

@@ -87,7 +87,7 @@
   // ---------------------------------------------------------------- markdown subset, built as DOM (never innerHTML)
   // **bold**, *italic*, `code`, [links](https://...) and bare https links, bullets, numbered lists, headings, ``` blocks.
   // [n] (or [1, 2]) right after a claim is a citation of meta.sources[n-1]: a small pill with the site's domain
-  const INLINE = /(`[^`\n]+`)|(\*\*[^\n]+?\*\*)|(\[[^\]\n]+\]\([^)\s]+\))|(https:\/\/[^\s<>()"']+[^\s<>()"'.,;:!?])|(\*[^*\s](?:[^*\n]*[^*\s])?\*)|(\n)|(\[\d{1,2}(?:\s*,\s*\d{1,2})*\](?!\())/g;
+  const INLINE = /(`[^`\n]+`)|(\*\*[^\n]+?\*\*)|(\[[^\]\n]+\]\([^)\s]+\))|(https:\/\/[^\s<>()"']+[^\s<>()"'.,;:!?])|(\*[^*\s](?:[^*\n]*[^*\s])?\*)|(\n)|(\[\d{1,2}(?:\s*,\s*\d{1,2})*\](?!\())|(~~[^~\n]+~~)|(\b_[^_\s](?:[^_\n]*[^_\s])?_\b)/g;
   function safeHref(href) {
     try { const u = new URL(href); return u.protocol === "https:" ? u.href : null; } catch (e) { return null; }
   }
@@ -132,6 +132,8 @@
       } else if (m[5]) { const i = el("em"); if (depth < 2) inline(i, tok.slice(1, -1), depth + 1); else i.textContent = tok.slice(1, -1); parent.append(i); }
       else if (m[6]) parent.append(el("br"));
       else if (m[7]) { const cs = citeParts(tok, mdSources); if (cs) cs.forEach(c => parent.append(pill(c))); else parent.append(tok); }
+      else if (m[8]) { const d = el("s"); if (depth < 2) inline(d, tok.slice(2, -2), depth + 1); else d.textContent = tok.slice(2, -2); parent.append(d); }
+      else if (m[9]) { const i = el("em"); if (depth < 2) inline(i, tok.slice(1, -1), depth + 1); else i.textContent = tok.slice(1, -1); parent.append(i); }
       last = re.lastIndex;
     }
     if (last < text.length) parent.append(text.slice(last));

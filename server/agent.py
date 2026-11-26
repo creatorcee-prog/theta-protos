@@ -17,6 +17,7 @@
 cost_usd, approvals [{"id", "tool", "preview"}], sources, ttft (monotonic time of first text), emitted.
 """
 
+import re
 import threading
 import time
 
@@ -118,7 +119,7 @@ def _auto_run(call, ctx, emit, info):
     Returns (ok, text) when it ran, None for the usual approval card (with why in ctx["auto_note"])."""
     try:
         from . import approvals
-        ok_here, why = approvals.allowed(call["name"], ctx, info)
+        ok_here, why = approvals.allowed(call["name"], ctx, info, call.get("args") or {})
     except Exception:  # noqa: BLE001
         return None
     if not ok_here:
@@ -209,8 +210,32 @@ def _run_tools(calls, ctx, emit, info, deadline):
     return results
 
 
-NOTE_MAX = 160  # longest opening line held back as a possible note before tool calls
+NOTE_MAX = 160  # longest note kept from the text before tool calls
+HOLD_MAX = 700  # text held back while it might turn out to come before tool calls
 MAX_NOTES = 2   # progress texts per turn: "On it, I'll..." and at most one update
+
+
+_CLAIM = re.compile(r"(?i)\b(done|set|all set|finished|sent|added|saved|created|booked|scheduled|fixed|archived|"
+                    r"deleted|trashed|moved)\b(?!\s+(?:it|that|this|them|up|you)\b)")  # a result, before it happened
+
+
+_DOING = re.compile(r"(?i)^(\w+ing\b|i'?ll\b|i will\b|i'?m\b|let me\b|going to\b|on it\b|now\b)")  # progress, not a result
+
+
+def _claims(sentence):
+    return bool(_CLAIM.search(sentence)) and not _DOING.match(sentence.strip())
+
+
+def _note_of(text):
+    """The note from text written before the tools ran: its first sentence, plus the second when the first is
+    just "On it." and the second doesn't already claim a result. "" when even the first is too long."""
+    parts = [p for p in re.split(r"(?<=[.!?])\s+", text.split("\n\n")[0].strip()) if p]
+    if not parts or len(parts[0]) > NOTE_MAX or _claims(parts[0]):
+        return ""
+    out = parts[0]
+    if len(out) < 25 and len(parts) > 1 and not _claims(parts[1]) and len(out) + len(parts[1]) < NOTE_MAX:
+        out += " " + parts[1]
+    return out
 
 
 def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_steps=MAX_STEPS,
@@ -241,7 +266,7 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
         # they grow past a short line, they stream as the reply.
         if state["held"]:
             state["hold"] += chunk
-            if len(state["hold"]) <= NOTE_MAX and "\n\n" not in state["hold"]:
+            if len(state["hold"]) <= HOLD_MAX:
                 return
             state["held"] = False
             chunk, state["hold"] = state["hold"], ""
@@ -285,7 +310,9 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
         calls = res.get("tool_calls") or []
         held, state["hold"] = state["hold"], ""
         if held.strip() and calls and not final:
-            note = persona.clean(held).strip()
+            # only the opening sentence or two is a note; anything after it was written before the tools ran (a
+            # premature "Done: ..." the reply will say properly once they have), so it's dropped
+            note = _note_of(persona.clean(held).strip())
             if note and state["notes"] < MAX_NOTES:  # the opening line, and one update; more is just chatter
                 state["notes"] += 1
                 on_note(note)

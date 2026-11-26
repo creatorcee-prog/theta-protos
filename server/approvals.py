@@ -1,6 +1,8 @@
 """Which actions wait for the user's Approve tap, and which Theta may just do (Settings > Security > Approvals).
 
-Every "send" tool asks by default. The user can switch any of them to "just do it". Two kinds, with one guard:
+Only what matters asks by default: anything that reaches other people, spends money or can't be undone. Tidy
+actions on the user's own things (DEFAULT_AUTO) run without a tap unless the user turns them off; a calendar change
+that would email guests still asks unless the user turned that action on themselves. Two kinds, with one guard:
 - tidy actions (trash, unsubscribe, delete or move an event, Drive trash) work on the user's own stuff and can
   mostly be undone; when allowed, they run in any turn.
 - outward actions (email, text, calls, invites, sharing, website submits) reach other people or spend money; when
@@ -28,6 +30,7 @@ POLICY = [  # (tool, label, what it does, outward)
     ("drive_trash", "Trash Drive files", "Drive keeps its trash for 30 days", False),
 ]
 OUTWARD = {t for t, _l, _w, o in POLICY if o}
+DEFAULT_AUTO = {"gmail_trash", "gmail_unsubscribe", "drive_trash", "calendar_delete", "calendar_move"}
 
 
 def _all():
@@ -39,7 +42,8 @@ def on(tool):
     """Is `tool` set to run without a tap?"""
     if tool == "send_text":
         return db.get_setting("texts_auto") is not False
-    return bool(_all().get(tool))
+    v = _all().get(tool)
+    return (tool in DEFAULT_AUTO) if v is None else bool(v)
 
 
 def set_on(tool, auto):
@@ -85,10 +89,19 @@ def tainted(info):
     return any((tools.BY_NAME.get(n) or {}).get("untrusted") for n in ((info or {}).get("tools") or [])[:-1])
 
 
-def allowed(tool, ctx, info):
+def allowed(tool, ctx, info, args=None):
     """(True, "") when `tool` may run now without a tap, else (False, why not, or "" when it's simply set to ask)."""
     if not on(tool):
         return False, ""
+    if tool in DEFAULT_AUTO and _all().get(tool) is None:  # on by default, not by the user's own choice
+        from . import tools
+        check = (tools.BY_NAME.get(tool) or {}).get("outward_if")
+        try:
+            reaches = bool(check and check(args or {}))
+        except Exception:  # noqa: BLE001  can't tell: ask
+            reaches = True
+        if reaches:
+            return False, "it would email the event's guests"
     if tool not in OUTWARD:
         return True, ""
     ctx = ctx if isinstance(ctx, dict) else {}

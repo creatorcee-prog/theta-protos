@@ -419,7 +419,8 @@ def guide():
     """The tool guide for the system prompt: stable text, the same every turn."""
     _ext()
     return (f"{GUIDE_MARK}: {', '.join(t['name'] for t in TOOLS)}.\n"
-            "- Use a tool only when it changes the answer; simple lookups take 1-3 calls.\n"
+            "- Use a tool whenever it gets the job done or makes the answer right; simple lookups take 1-3 calls. "
+            "Reading, searching and looking things up never need asking: just do them.\n"
             "- In the same message as your first tool call, write one short line before it, in first person, "
             "saying what you're doing (\"Setting that up now.\", \"On it. I'll check your inbox for the receipt.\"). "
             "The user sees it right away as its own text; the result comes after. At most one more short update "
