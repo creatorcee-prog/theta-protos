@@ -183,18 +183,9 @@ def _signed_out(note):
         try:
             db.add_message("theta", "assistant", "Google signed me out of your account, so I can't reach Gmail, "
                            "Calendar or Drive right now. Open Connect apps and tap Connect on Gmail to sign in again.",
-                           {"proactive": True, "source": "google", "cards": _connect_card(attach=False)})
+                           {"proactive": True, "source": "google"})
         except Exception:  # noqa: BLE001
             pass
-
-
-def _connect_card(attach=True):
-    """The Google connect card (server/cards.py), attached to the running tool call; [card] for a message's meta."""
-    try:
-        from . import cards
-        return [cards.connect_card(None, "google") if attach else cards.connect("google")]
-    except Exception:  # noqa: BLE001
-        return []
 
 
 EXPIRED_NOTE = ("Google signed Theta out (apps in Testing mode are signed out after 7 days, or access was removed). "
@@ -204,7 +195,6 @@ EXPIRED_NOTE = ("Google signed Theta out (apps in Testing mode are signed out af
 def _refresh(rec):
     if not rec.get("refresh_token"):
         _signed_out(EXPIRED_NOTE)
-        _connect_card()
         raise GoogleError("Google isn't connected any more (the sign-in expired). Ask the user to tap Connect on "
                           "Gmail in Connect apps, then try again.")
     status, j = _post_form(TOKEN_URL, {"client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
@@ -214,7 +204,6 @@ def _refresh(rec):
         if j.get("error") in ("invalid_grant", "unauthorized_client", "invalid_client"):
             log(f"refresh refused ({j.get('error')}); marked signed out")
             _signed_out(EXPIRED_NOTE)
-            _connect_card()
             raise GoogleError("Google signed Theta out (the sign-in expired or was removed). Ask the user to tap "
                               "Connect on Gmail in Connect apps, then try again.")
         log(f"refresh failed: HTTP {status} {j.get('error', '')}")
@@ -235,7 +224,6 @@ def access_token(force=False):
     with _lock:
         rec = _store()
         if not (rec.get("refresh_token") or rec.get("access_token")):
-            _connect_card()
             raise GoogleError("Google isn't connected, so this can't be done. Ask the user to tap Connect on Gmail "
                               "in Connect apps (the ... menu).")
         if force or not rec.get("access_token") or float(rec.get("expires_at") or 0) < time.time() + 60:
@@ -460,7 +448,6 @@ def _need(service):
     if not connected(service):
         if not connected():
             access_token()  # raises the "not connected" error
-        _connect_card()
         raise GoogleError(f"Google is connected but without {service} access. Ask the user to reconnect in Connect "
                           "apps and allow everything.")
 

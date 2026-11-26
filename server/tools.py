@@ -76,15 +76,6 @@ def fmt_time(ts, now=None):
     return t.strftime("%a %d %b %Y ") + hm
 
 
-def _connect(ctx, service):
-    """Attach the connect card for a service that isn't connected or set up (server/cards.py)."""
-    try:
-        from . import cards
-        cards.connect_card(ctx, service)
-    except Exception:  # noqa: BLE001  a missing card never hides the error itself
-        pass
-
-
 # ---- web_search
 
 def _web_search(args, ctx):
@@ -93,7 +84,6 @@ def _web_search(args, ctx):
     if not query:
         raise ToolError("query is empty: pass what to look up, e.g. query='Denver weather tomorrow'")
     if not (os.environ.get("TAVILY_API_KEY") or "").strip():
-        _connect(ctx, "tavily")
         return ("Live search isn't set up (no search key), so nothing was looked up. Answer from what you know "
                 "and say you couldn't check live sources.")
     block, sources = router.search_context(query, max_results=int(args.get("max_results") or 5))
@@ -283,7 +273,6 @@ def _send_email(args, ctx):
     except ImportError:
         pass
     if google is None or not google.connected("gmail"):
-        _connect(ctx, "google")
         raise ToolError("Gmail isn't connected yet, so nothing was sent. Connect it in Connect apps, then ask again.")
     return google.send(to=", ".join(to), subject=args["subject"], body=args["body"])
 
@@ -482,46 +471,13 @@ def execute(name, args, ctx=None):
         return False, f"Error: there is no tool named {name!r}. Available: {', '.join(BY_NAME)}."
     if tool["risk"] == "send":
         return False, "Error: this tool needs the user's approval and can't be run directly."
-    ctx = ctx if ctx is not None else {}
-    token = _cards_running(ctx)
     try:
         args = validate(tool, copy.deepcopy(args))
-        ok, out = True, cap(tool["run"](args, ctx))
+        return True, cap(tool["run"](args, ctx if ctx is not None else {}))
     except ToolError as e:
-        ok, out = False, cap(f"Error: {e}")
+        return False, cap(f"Error: {e}")
     except Exception as e:  # noqa: BLE001  the model sees a short reason, not a traceback
-        ok, out = False, f"Error: {name} failed ({type(e).__name__}: {str(e)[:160]}). Try again or answer without it."
-    finally:
-        _cards_done(token)
-    if not ok:  # "not connected / not set up" -> a connect card, even where the tool didn't attach one
-        _cards_note(ctx, name, ok, out)
-    return ok, out
-
-
-def _cards_running(ctx):
-    try:
-        from . import cards
-        return cards.running(ctx)
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def _cards_done(token):
-    if token is None:
-        return
-    try:
-        from . import cards
-        cards.done(token)
-    except Exception:  # noqa: BLE001
-        pass
-
-
-def _cards_note(ctx, name, ok, text):
-    try:
-        from . import cards
-        cards.note_result(ctx, name, ok, text)
-    except Exception:  # noqa: BLE001
-        pass
+        return False, f"Error: {name} failed ({type(e).__name__}: {str(e)[:160]}). Try again or answer without it."
 
 
 def preview(name, args):

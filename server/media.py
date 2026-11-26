@@ -100,11 +100,6 @@ def generate(prompt, size=None, timeout=TIMEOUT):
     """Call Gemini; returns (png_or_image_bytes, mime, text_note). Raises ToolError with a fix hint."""
     key = (os.environ.get("GEMINI_API_KEY") or "").strip()
     if not key:
-        try:
-            from . import cards
-            cards.connect_card(None, "gemini")
-        except Exception:  # noqa: BLE001
-            pass
         raise _err("image generation isn't set up (no GEMINI_API_KEY), so no image was made. Tell the user.")
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"responseModalities": ["IMAGE"]}}

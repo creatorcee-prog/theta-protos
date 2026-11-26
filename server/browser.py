@@ -19,10 +19,6 @@ Safety:
   - One browser context per conversation (bot), closed after IDLE seconds; the browser itself closes when no
     context is left (Railway bills RAM).
 
-The live view (server/live.py: /api/live, the frame and the user's own taps) uses live_state / live_frame /
-live_act below. They follow the same rules as browse_act: no typing into password fields, no tap or key that
-would submit, buy, send or delete ("Use Approve in chat for that."), and navigation is URL-checked.
-
 Playwright's sync API belongs to the thread that started it, and the server is threaded, so every browser call
 runs on one worker thread (_Engine). Playwright is imported lazily: without it the tools say how to enable it.
 Tests swap `_launch` for a fake browser and `_resolve` for a fake DNS.
@@ -158,7 +154,6 @@ class _Session:
         self.els = {}       # ref -> element info from the last snapshot
         self.blocked = []   # requests the route guard refused (for the message)
         self.url = ""       # the page's URL as of the last result (read by context() from other threads)
-        self.title = ""     # its title (read by live_state from other threads)
 
 
 class _Engine:
@@ -420,7 +415,6 @@ def _excerpt(text, find=None, cap=TEXT_CAP):
 
 def _render(s, title, text, els, find=None, head=""):
     url = s.url = s.page.url
-    s.title = title or ""
     blocked = ""
     if s.blocked:
         blocked = f"\n({len(s.blocked)} request(s) to private or local addresses were blocked.)"
@@ -885,187 +879,3 @@ def context(bot, now):
             return f"Browser: a page is open ({url[:120]}); browse_act and browse_submit work on it."
     return ""
 
-
-def ref_label(ctx, ref):
-    """The label of element `ref` on this conversation's page, from the last snapshot ("" if unknown). Used for
-    activity text ("Clicking Learn more"); a label, never a field's value."""
-    s = _engine.sessions.get(_key(ctx))
-    e = (s.els.get(str(ref or "").strip()) if s is not None else None) or {}
-    return str(e.get("label") or "")
-
-
-# ---------------------------------------------------------------- the live view (server/live.py)
-
-PHONE = {"width": 390, "height": 844}
-LIVE_KEYS = ("Enter", "Tab", "Backspace", "Delete", "Escape", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
-             "PageUp", "PageDown", "Home", "End", "Space")
-APPROVE_IN_CHAT = "Use Approve in chat for that."
-
-
-class Refused(ToolError):
-    """The live view won't do this (a submit-looking tap, a password field...)."""
-
-
-class NoSession(ToolError):
-    pass
-
-
-# what is under a point (or focused): the same shape as a snapshot element, for is_submit / is_password
-_DESCRIBE_JS = r"""e0 => {
-  if (!e0 || e0.nodeType !== 1) return null;
-  const sel = "a[href], button, input:not([type=hidden]), textarea, select, [role=button], [role=link], [contenteditable=true], summary";
-  const e = e0.closest(sel) || e0;
-  const clean = s => (s || "").replace(/\s+/g, " ").trim();
-  const tag = e.tagName.toLowerCase(), type = (e.getAttribute("type") || (tag === "button" ? "submit" : "")).toLowerCase();
-  const form = e.form || e.closest("form");
-  const lab = (e.labels && e.labels[0] && e.labels[0].innerText) || "";
-  const label = clean(e.getAttribute("aria-label") || lab || e.getAttribute("placeholder") ||
-    (tag === "input" && /^(submit|button|reset)$/.test(type) ? e.value : "") || e.innerText || e.getAttribute("title") ||
-    e.getAttribute("alt") || e.getAttribute("name") || "").slice(0, 80);
-  return {tag, type, role: e.getAttribute("role") || "", label, name: e.getAttribute("name") || "", id: e.id || "",
-    autocomplete: (e.getAttribute("autocomplete") || "").toLowerCase(),
-    form: form ? Array.prototype.indexOf.call(document.forms, form) : -1,
-    search: !!(form && (form.getAttribute("role") === "search" || form.querySelector("input[type=search]") ||
-      /search/i.test((form.getAttribute("action") || "") + " " + form.id + " " + form.className))),
-    inForm: !!form, href: tag === "a" ? e.href : "", interactive: e.matches(sel),
-    editable: !!(e.isContentEditable || tag === "textarea" || (tag === "input" &&
-      !/^(submit|button|image|reset|checkbox|radio|file|range|color)$/.test(type)))};
-}"""
-POINT_JS = "([x, y]) => (" + _DESCRIBE_JS + ")(document.elementFromPoint(x, y))"
-FOCUS_JS = "() => (" + _DESCRIBE_JS + ")(document.activeElement)"
-UNTARGET_JS = ("([x, y]) => { const e = document.elementFromPoint(x, y); const a = e && e.closest('a');"
-               " if (a) a.removeAttribute('target'); }")
-
-
-def _live_session(eng, bot):
-    s = eng.sessions.get(str(bot or "theta"))
-    if s is None or not s.page.url.startswith("http"):
-        raise NoSession("Theta isn't using its browser right now.")
-    return s
-
-
-def live_state(bot="theta"):
-    """{active, url, title, ts} for the live view; never waits for the browser thread."""
-    s = _engine.sessions.get(str(bot or "theta")) if available() else None
-    url = (s.url or "") if s is not None else ""
-    if s is None or not url.startswith("http"):
-        return {"active": False, "url": "", "title": "", "ts": None}
-    return {"active": True, "url": url, "title": s.title or "", "ts": round(s.used, 3)}
-
-
-def live_frame(bot="theta", quality=60, timeout=10):
-    """(jpeg bytes, {"width", "height"}) of the page as it is now, at phone size (the viewport is switched to
-    390x844 the first time). Doesn't count as use, so watching doesn't keep an idle browser open."""
-    _need()
-    deadline = time.monotonic() + timeout
-
-    def work(eng):
-        if time.monotonic() > deadline:  # the caller gave up while the browser was busy
-            return None
-        s = _live_session(eng, bot)
-        if (s.page.viewport_size or {}) != PHONE:
-            s.page.set_viewport_size(dict(PHONE))
-        data = s.page.screenshot(type="jpeg", quality=int(quality), timeout=8000)
-        s.url = s.page.url
-        try:
-            s.title = s.page.title() or s.title
-        except Exception:  # noqa: BLE001
-            pass
-        return data, dict(s.page.viewport_size or PHONE)
-    out = _engine.call(work, timeout=timeout)
-    if out is None:
-        raise ToolError("the browser is busy; try again")
-    return out
-
-
-def _settle(s, before, nav=False):
-    """After a tap or key: give a navigation time to start (up to 5 s when a link was tapped, else a moment),
-    then let it load, close any popup, and re-check the new URL."""
-    try:
-        s.page.wait_for_url(lambda u: u != before, timeout=5000 if nav else 600)
-    except Exception:  # noqa: BLE001  most taps don't navigate
-        pass
-    try:
-        s.page.wait_for_load_state("domcontentloaded", timeout=5000)
-    except Exception:  # noqa: BLE001
-        pass
-    for p in list(getattr(s.context, "pages", []) or []):  # a popup the page opened: keep to one tab
-        if p is not s.page:
-            try:
-                p.close()
-            except Exception:  # noqa: BLE001
-                pass
-    if s.page.url != before:
-        _after_nav(s)
-
-
-def live_act(bot, act):
-    """Do one of the user's own actions on Theta's page. act is already validated by live.py:
-    {"type": "tap", "x", "y"} (x, y relative 0..1) | {"type": "type", "text"} | {"type": "key", "key"} |
-    {"type": "scroll", "dy"} (a fraction of the screen height) | {"type": "back"} | {"type": "reload"} |
-    {"type": "goto", "url"}. Returns {ok, url, title}. Raises Refused, NoSession or ToolError."""
-    _need()
-    kind = act.get("type")
-    if kind == "goto":
-        url = str(act.get("url") or "").strip()
-        if url and "://" not in url:
-            url = "https://" + url
-        why = check_url(url)
-        if why:
-            raise Refused(why)
-
-    def work(eng):
-        s = _live_session(eng, bot)
-        s.used = time.time()
-        vp = s.page.viewport_size or PHONE
-        before = s.page.url
-        if kind == "tap":
-            x, y = float(act["x"]) * vp["width"], float(act["y"]) * vp["height"]
-            e = s.page.evaluate(POINT_JS, [x, y]) or {}
-            if e and is_submit(e):
-                raise Refused(f"That looks like it submits, buys, sends or deletes ({e.get('label') or e.get('tag')!r}). "
-                              + APPROVE_IN_CHAT)
-            if e.get("tag") == "a":
-                try:
-                    s.page.evaluate(UNTARGET_JS, [x, y])
-                except Exception:  # noqa: BLE001
-                    pass
-            s.page.mouse.click(x, y)
-            _settle(s, before, nav=e.get("tag") == "a" and str(e.get("href") or "").startswith("http"))
-        elif kind == "type":
-            e = s.page.evaluate(FOCUS_JS) or {}
-            if not e.get("editable"):
-                raise Refused("Tap a text field first, then type.")
-            if is_password(e):
-                raise Refused("Theta's browser never types passwords (there's no password vault yet).")
-            s.page.keyboard.type(str(act.get("text") or ""))
-        elif kind == "key":
-            key = act["key"]
-            if key in ("Enter", "Space"):
-                e = s.page.evaluate(FOCUS_JS) or {}
-                if is_submit(e) or (key == "Enter" and e.get("editable") and e.get("tag") != "textarea"
-                                    and e.get("inForm") and not is_search(e)):
-                    raise Refused("That would submit the form. " + APPROVE_IN_CHAT)
-            s.page.keyboard.press(" " if key == "Space" else key)
-            _settle(s, before)
-        elif kind == "scroll":
-            s.page.mouse.wheel(0, float(act.get("dy") or 0) * vp["height"])
-        elif kind == "back":
-            try:
-                s.page.go_back(timeout=NAV_TIMEOUT)
-            except Exception:  # noqa: BLE001
-                pass
-            _after_nav(s)
-        elif kind == "reload":
-            _goto(s, s.page.url)  # a fresh GET: never re-posts a form
-        elif kind == "goto":
-            _goto(s, url)
-        else:
-            raise ToolError(f"unknown action {kind!r}")
-        try:
-            title, _t, _els = _snap(s)  # keep Theta's own refs in step with what the user did
-        except Exception:  # noqa: BLE001
-            title = s.title
-        s.url, s.title = s.page.url, title or s.title
-        return {"ok": True, "url": s.url, "title": s.title}
-    return _engine.call(work, timeout=40)
