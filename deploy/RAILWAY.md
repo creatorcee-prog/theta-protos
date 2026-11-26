@@ -119,6 +119,9 @@ aren't, but Telnyx is the one to use.) About 15 minutes in a browser, once.
 ElevenLabs (a paid plan): in Telnyx, **Integration Secrets > Add**, paste your ElevenLabs API key and give the secret
 a name; then in Theta pick **My own ElevenLabs voice**, paste the voice ID from ElevenLabs > Voices, and the secret's
 name.
+Or use **Fish Audio**: pick **My own Fish Audio voice**, paste the voice's ID from its page on fish.audio, and choose
+a model (`s2.1-pro`, `s2-pro` or `s1`). If Telnyx asks for your Fish Audio key, add it under Integration Secrets the
+same way and enter the secret's name.
 
 **Recording:** on by default (Settings > Apps > Phone calls > Record calls). Calls to others open with "This call is
 recorded."; if they object, Theta stops and keeps none of it. Audio is kept 90 days.

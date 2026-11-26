@@ -675,19 +675,23 @@ def _provider_name():
 
 
 def _clean_voice(v):
-    """{"id": a preset} | {"kind": "elevenlabs", "voice_id", "model"?, "key_ref"?} | {"kind": "custom", "value"}."""
+    """{"id": a preset} | {"kind": "elevenlabs" or "fishaudio", "voice_id", "model"?, "key_ref"?} |
+    {"kind": "custom", "value"}."""
     from . import telco
     from .app import HTTPError
     v = v if isinstance(v, dict) else {}
-    if v.get("kind") == "elevenlabs":
+    kind = v.get("kind")
+    if kind in telco.OWN:
+        who = {"elevenlabs": "ElevenLabs", "fishaudio": "Fish Audio"}[kind]
         vid, model, ref = (str(v.get(k) or "").strip() for k in ("voice_id", "model", "key_ref"))
-        if not re.fullmatch(r"[A-Za-z0-9]{8,40}", vid):
-            raise HTTPError(400, "that ElevenLabs voice id doesn't look right (copy it from ElevenLabs > Voices)")
-        if model and not re.fullmatch(r"[a-z0-9_.-]{3,40}", model):
-            raise HTTPError(400, "that ElevenLabs model id doesn't look right")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", vid):
+            raise HTTPError(400, f"that {who} voice id doesn't look right (copy it from the voice's page on {who})")
+        allowed = telco.OWN_MODELS.get(kind)
+        if model and (not re.fullmatch(r"[a-z0-9_.-]{2,40}", model) or (allowed and model not in allowed)):
+            raise HTTPError(400, f"that {who} model isn't one Telnyx takes" + (f" ({', '.join(allowed)})" if allowed else ""))
         if ref and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", ref):
             raise HTTPError(400, "that secret name doesn't look right")
-        return {"kind": "elevenlabs", "voice_id": vid, "model": model or "eleven_turbo_v2_5", "key_ref": ref}
+        return {"kind": kind, "voice_id": vid, "model": model or telco.OWN[kind][1], "key_ref": ref}
     if v.get("kind") == "custom":
         val = str(v.get("value") or "").strip()
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{2,120}", val):

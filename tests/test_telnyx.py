@@ -70,6 +70,17 @@ check("your own ElevenLabs voice, with Telnyx's secret name for the key", 'voice
 g = calls._gather(call["id"], 2, "Anything else?")
 check("speech is gathered in Telnyx's dialect (no Twilio-only attributes)", '<Gather input="speech"' in g and "actionOnEmptyResult" not in g
       and 'speechTimeout="2"' in g and "ElevenLabs." in g, g)
+v = calls._clean_voice({"kind": "fishaudio", "voice_id": "7f92f8afb8ec43bf81429cc1c9199cb1", "model": "s2-pro"})
+db.set_setting("call_voice", v)
+say = calls._say("Hello")
+check("your own Fish Audio voice, in Telnyx's FishAudio.model.voice format", v["kind"] == "fishaudio"
+      and 'voice="FishAudio.s2-pro.7f92f8afb8ec43bf81429cc1c9199cb1"' in say and "api_key_ref" not in say, say)
+check("Fish Audio defaults to its newest model", calls._clean_voice({"kind": "fishaudio", "voice_id": "7f92f8afb8ec43bf81429cc1c9199cb1"})["model"] == "s2.1-pro")
+try:
+    calls._clean_voice({"kind": "fishaudio", "voice_id": "7f92f8afb8ec43bf81429cc1c9199cb1", "model": "s9-turbo"}); badm = False
+except Exception:  # noqa: BLE001
+    badm = True
+check("a Fish Audio model Telnyx doesn't take is refused", badm)
 try:
     calls._clean_voice({"kind": "elevenlabs", "voice_id": "bad id!"}); bad = False
 except Exception:  # noqa: BLE001

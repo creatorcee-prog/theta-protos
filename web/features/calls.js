@@ -109,10 +109,23 @@
   const vr = row("Voice", "What people hear when Theta calls. Natural voices sound like a person, not a robot.");
   vr.r.append(vsel);
   const elWrap = el("div", "calls-el"); elWrap.hidden = true;
-  const elId = el("input", "calls-phone"); elId.placeholder = "ElevenLabs voice ID"; elId.autocomplete = "off"; elId.setAttribute("aria-label", "ElevenLabs voice ID");
-  const elRef = el("input", "calls-phone"); elRef.placeholder = "Telnyx secret name for your key"; elRef.autocomplete = "off"; elRef.setAttribute("aria-label", "Telnyx secret name");
+  const elId = el("input", "calls-phone"); elId.placeholder = "Voice ID"; elId.autocomplete = "off"; elId.setAttribute("aria-label", "Voice ID");
+  const elRef = el("input", "calls-phone"); elRef.placeholder = "Telnyx secret name"; elRef.autocomplete = "off"; elRef.setAttribute("aria-label", "Telnyx secret name");
   const elSave = el("button", "btn-dark", "Use this voice"); elSave.type = "button";
-  elWrap.append(el("p", "calls-note", "Use any ElevenLabs voice, including one cloned from your own. Copy its voice ID from ElevenLabs > Voices. In Telnyx, add your ElevenLabs API key under Integration Secrets and put that secret's name here. ElevenLabs needs a paid plan for this."), elId, elRef, elSave);
+  // your own voice: ElevenLabs or Fish Audio, both through Telnyx
+  const OWN = {
+    elevenlabs: {label: "My own ElevenLabs voice…", note: "Use any ElevenLabs voice, including one cloned from your own. Copy its voice ID from ElevenLabs > Voices. In Telnyx, add your ElevenLabs API key under Integration Secrets and put that secret's name here. ElevenLabs needs a paid plan for this.", models: null},
+    fishaudio: {label: "My own Fish Audio voice…", note: "Use any Fish Audio voice, including one cloned from your own. Copy the voice's ID from its page on fish.audio. If Telnyx asks for your Fish Audio API key, add it under Integration Secrets and put that secret's name here.", models: ["s2.1-pro", "s2-pro", "s1"]},
+  };
+  const elNote = el("p", "calls-note", "");
+  const elModel = el("select"); elModel.setAttribute("aria-label", "Voice model"); elModel.hidden = true;
+  elWrap.append(elNote, elId, elModel, elRef, elSave);
+  const showOwn = kind => {
+    const o = OWN[kind]; elWrap.hidden = !o; if (!o) return;
+    elNote.textContent = o.note;
+    elModel.replaceChildren(); elModel.hidden = !o.models;
+    for (const m of o.models || []) { const op = el("option", null, m); op.value = m; elModel.append(op); }
+  };
   g.append(pr.r, nr.r, rr.r, recr.r, vr.r, elWrap, tr.r, note);
 
   let state = {};
@@ -126,11 +139,11 @@
     phone.value = state.phone || ""; name.value = state.name || ""; red.checked = !!state.call_on_red; rec.checked = state.record !== false;
     vsel.replaceChildren();
     for (const v of state.voices || []) { const o = el("option", null, v.label); o.value = v.id; vsel.append(o); }
-    const own = el("option", null, "My own ElevenLabs voice…"); own.value = "elevenlabs"; vsel.append(own);
+    for (const [k, o] of Object.entries(OWN)) { const op = el("option", null, o.label); op.value = k; vsel.append(op); }
     const cur = state.voice || {};
-    vsel.value = cur.kind === "elevenlabs" ? "elevenlabs" : (cur.id || ((state.voices || [])[0] || {}).id || "");
-    elWrap.hidden = vsel.value !== "elevenlabs";
-    if (cur.kind === "elevenlabs") { elId.value = cur.voice_id || ""; elRef.value = cur.key_ref || ""; }
+    vsel.value = OWN[cur.kind] ? cur.kind : (cur.id || ((state.voices || [])[0] || {}).id || "");
+    showOwn(vsel.value);
+    if (OWN[cur.kind]) { elId.value = cur.voice_id || ""; elRef.value = cur.key_ref || ""; if (cur.model && OWN[cur.kind].models) elModel.value = cur.model; }
     status();
   };
 
@@ -168,11 +181,14 @@
   red.addEventListener("change", () => save({call_on_red: red.checked}));
   rec.addEventListener("change", () => save({record: rec.checked}));
   vsel.addEventListener("change", () => {
-    elWrap.hidden = vsel.value !== "elevenlabs";
-    if (vsel.value !== "elevenlabs") save({voice: {id: vsel.value}}).then(() => T.toast("Voice changed. Tap Test call to hear it.", 3200));
+    showOwn(vsel.value);
+    if (!OWN[vsel.value]) save({voice: {id: vsel.value}}).then(() => T.toast("Voice changed. Tap Test call to hear it.", 3200));
   });
   elSave.addEventListener("click", async () => {
-    try { await T.post("/api/calls/settings", {voice: {kind: "elevenlabs", voice_id: elId.value.trim(), key_ref: elRef.value.trim()}}); T.toast("Using your ElevenLabs voice. Tap Test call to hear it.", 3600); }
+    const kind = vsel.value, o = OWN[kind];
+    const voice = {kind, voice_id: elId.value.trim(), key_ref: elRef.value.trim()};
+    if (o && o.models) voice.model = elModel.value;
+    try { await T.post("/api/calls/settings", {voice}); T.toast(`Using your ${kind === "fishaudio" ? "Fish Audio" : "ElevenLabs"} voice. Tap Test call to hear it.`, 3600); }
     catch (e) { T.toast((e && e.message) || "That voice didn't save.", 4000); }
   });
   test.addEventListener("click", async () => {
@@ -202,6 +218,7 @@
 .ch-who { font-size: 11.5px; color: var(--muted); margin: 0 4px -3px; }
 .ch-who.r { align-self: flex-end; }
 .calls-el { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
+.calls-el select { background: #2a2a2a; border: 0; border-radius: 12px; padding: 10px 12px; font-size: 16px; color: var(--text); align-self: flex-start; }
 .ch-audio { width: 100%; height: 40px; margin-bottom: 6px; }
 .ch-rec { font-size: 12px; color: #ff8a80; margin-left: 6px; }
 `;

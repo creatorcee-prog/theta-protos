@@ -104,4 +104,5 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 - Phone provider (`server/telco.py`): Telnyx when TELNYX_API_KEY is set (TeXML calls, /v2/messages texts, Ed25519
   webhook signatures, TeXML recordings), else Twilio. calls.py, texts.py and recordings.py go through it.
 - Call voice: the "call_voice" setting: a preset (Polly neural voices, Telnyx Kokoro) or {"kind": "elevenlabs",
-  "voice_id", "model", "key_ref"} (a Telnyx integration secret holding the ElevenLabs key).
+  "voice_id", "model", "key_ref"} or the same with "kind": "fishaudio" (models s2.1-pro, s2-pro, s1); key_ref is a
+  Telnyx integration secret holding that company's key.

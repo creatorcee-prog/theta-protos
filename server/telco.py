@@ -305,16 +305,20 @@ VOICES = [  # (id shown in Settings, label, the <Say voice> value)
     ("kokoro", "Telnyx Kokoro (female)", "Telnyx.KokoroTTS.af_heart"),
 ]
 DEFAULT_VOICE_ID = "natural-f"
+# your own voice from a voice company, through Telnyx: kind -> (<Say> prefix, default model). Telnyx's format is
+# Prefix.ModelId.VoiceId; Fish Audio's models are s2.1-pro, s2-pro and s1.
+OWN = {"elevenlabs": ("ElevenLabs", "eleven_turbo_v2_5"), "fishaudio": ("FishAudio", "s2.1-pro")}
+OWN_MODELS = {"elevenlabs": None, "fishaudio": ("s2.1-pro", "s2-pro", "s1")}
 
 
 def voice_attrs():
     """(voice, extra attributes) for <Say>: the user's pick, or their own ElevenLabs voice."""
     v = db.get_setting("call_voice")
     v = v if isinstance(v, dict) else {}
-    if v.get("kind") == "elevenlabs" and v.get("voice_id"):
-        model = v.get("model") or "eleven_turbo_v2_5"
+    if v.get("kind") in OWN and v.get("voice_id"):
+        prefix, default_model = OWN[v["kind"]]
         extra = {"api_key_ref": v["key_ref"]} if v.get("key_ref") else {}
-        return f"ElevenLabs.{model}.{v['voice_id']}", extra
+        return f"{prefix}.{v.get('model') or default_model}.{v['voice_id']}", extra
     if v.get("kind") == "custom" and v.get("value"):
         return v["value"], {}
     pick = dict((i, val) for i, _l, val in VOICES).get(v.get("id") or DEFAULT_VOICE_ID)
