@@ -85,8 +85,11 @@ class WebPushException(Exception):
 
 
 class R:
-    def __init__(self, code):
-        self.status_code = code
+    def __init__(self, code, reason=""):
+        self.status_code, self._reason = code, reason
+
+    def json(self):
+        return {"reason": self._reason} if self._reason else {}
 
 
 STATUS = {}
@@ -96,8 +99,11 @@ def webpush(sub, data, vapid_private_key=None, vapid_claims=None, ttl=None, time
     SENT.append({"endpoint": sub["endpoint"], "data": json.loads(data), "vapid": vapid_private_key, "claims": vapid_claims,
                  "ttl": ttl, "headers": headers, "keys": sub["keys"]})
     code = STATUS.get(sub["endpoint"], 201)
+    reason = ""
+    if isinstance(code, tuple):
+        code, reason = code
     if code >= 400:
-        raise WebPushException(f"Push failed: {code}", response=R(code))
+        raise WebPushException(f"Push failed: {code}", response=R(code, reason))
     return R(code)
 
 
@@ -171,4 +177,19 @@ t = push.test()
 check("test(): urgent, so quiet hours never hold it, with per-device results", t["ok"] and t["sent"] == 2 and len(t["results"]) == 2)
 push.db.subs.clear()
 check("test() with no device says to turn it on first", push.test()["ok"] is False and "Turn on" in push.test()["error"])
+# ---- what Apple says, in plain words
+push.db.subs.clear()
+push.subscribe({"endpoint": "https://web.push.apple.com/old", "keys": {"p256dh": "x", "auth": "y"}})
+STATUS["https://web.push.apple.com/old"] = (400, "VapidPkHashMismatch")
+t = push.test()
+check("a sign-up made with an older key is dropped, and the test says the app will sign up again",
+      not t["ok"] and "different key" in t["results"][0]["why"] and not push.db.push_subs())
+push.subscribe({"endpoint": "https://web.push.apple.com/jwt", "keys": {"p256dh": "x", "auth": "y"}})
+STATUS["https://web.push.apple.com/jwt"] = (403, "BadJwtToken")
+t = push.test()
+check("Apple refusing the signature points at VAPID_SUBJECT", "VAPID_SUBJECT" in t["results"][0]["why"])
+os.environ["VAPID_SUBJECT"] = "theta"
+check("a VAPID_SUBJECT that isn't mailto: or https: is caught before sending", "VAPID_SUBJECT" in (push.problem() or ""))
+os.environ["VAPID_SUBJECT"] = "mailto:me@example.com"
+check("a proper mailto: subject passes", push.problem() is None)
 print("all push tests passed")

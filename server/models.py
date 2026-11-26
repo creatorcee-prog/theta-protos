@@ -34,6 +34,23 @@ PROVIDERS = ("deepseek", "anthropic", "gemini", "groq", "local")
 KEY_ENV = {"deepseek": "DEEPSEEK_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
            "gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY"}
 TOOL_PROVIDERS = ("deepseek", "groq", "anthropic", "gemini")
+# other names people give the same keys on Railway: copied to the name Theta reads, once, at start
+KEY_ALIASES = {"ANTHROPIC_API_KEY": ("CLAUDE_API_KEY", "ANTHROPIC_KEY", "CLAUDE_KEY"),
+               "GEMINI_API_KEY": ("GOOGLE_API_KEY", "GOOGLE_GEMINI_API_KEY", "GEMINI_KEY", "GOOGLE_AI_API_KEY"),
+               "GROQ_API_KEY": ("GROQ_KEY",), "DEEPSEEK_API_KEY": ("DEEPSEEK_KEY",),
+               "TAVILY_API_KEY": ("TAVILY_KEY",), "GIPHY_API_KEY": ("GIPHY_KEY",)}
+
+
+def _adopt_aliases():
+    for main, others in KEY_ALIASES.items():
+        if not (os.environ.get(main) or "").strip():
+            for o in others:
+                if (os.environ.get(o) or "").strip():
+                    os.environ[main] = os.environ[o].strip()
+                    break
+
+
+_adopt_aliases()
 
 # USD per million tokens: (input, cached input read, cache write, output). Estimates; a model not listed
 # uses its provider's row. Override any row with PROTOS_PRICES='{"model": [in, read, write, out]}'.

@@ -106,3 +106,7 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 - Call voice: the "call_voice" setting: a preset (Polly neural voices, Telnyx Kokoro) or {"kind": "elevenlabs",
   "voice_id", "model", "key_ref"} or the same with "kind": "fishaudio" (models s2.1-pro, s2-pro, s1); key_ref is a
   Telnyx integration secret holding that company's key.
+- Models check (`server/modelcheck.py`, Settings > General > Models): which keys are present, what each tier uses,
+  and a one-word test per model. A model name the key can't use is replaced by the closest working one from the
+  provider's own list ("model_fixes" setting, applied in router.fixed()). Key aliases (CLAUDE_API_KEY,
+  GOOGLE_API_KEY, ...) are adopted at start (models.KEY_ALIASES).

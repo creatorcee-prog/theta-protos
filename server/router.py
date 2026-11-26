@@ -49,8 +49,21 @@ class Route(NamedTuple):
 
 def _m(provider, env=None, default=None):
     def get():
-        return (os.environ.get(env) if env else None) or default or models.default_model(provider)
+        name = (os.environ.get(env) if env else None) or default or models.default_model(provider)
+        return fixed(provider, name)
     return provider, get
+
+
+def fixed(provider, name):
+    """A model name the check found missing for this key gets the working replacement it chose
+    (server/modelcheck.py, the "model_fixes" setting). A name set in the env is left as the user wrote it only
+    when it works; a missing one is replaced the same way."""
+    try:
+        from . import db
+        fixes = db.get_setting("model_fixes") or {}
+        return fixes.get(f"{provider}:{name}") or name
+    except Exception:  # noqa: BLE001
+        return name
 
 
 # Per-tier candidates, best first. Models are resolved at call time so env

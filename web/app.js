@@ -1380,6 +1380,22 @@
   const pushOn = () => store("protos:push") === "1";
   function b64u(s) { const p = "=".repeat((4 - s.length % 4) % 4), raw = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(raw, c => c.charCodeAt(0)); }
   const canPush = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  // a sign-up is tied to the server's key: if the key changed (new VAPID keys on the server), the old sign-up gets
+  // every push refused, so sign up again with the current key
+  const sameKey = (sub, key) => { try { const a = new Uint8Array(sub.options.applicationServerKey || []), b = b64u(key); return a.length === b.length && a.every((v, i) => v === b[i]); } catch (e) { return true; } };
+  async function pushSignUp(key) {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub && !sameKey(sub, key)) { try { await sub.unsubscribe(); } catch (e) {} sub = null; }
+    if (!sub) sub = await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64u(key)});
+    await post("/api/push/subscribe", {subscription: sub.toJSON()});
+    return sub;
+  }
+  // on every open: keep the sign-up current and on the server (it may have been dropped as stale)
+  async function refreshPush() {
+    if (S.demo || !pushOn() || !canPush() || Notification.permission !== "granted") return;
+    try { const {key} = await api("/api/push/key"); if (key) await pushSignUp(key); } catch (e) {}
+  }
   async function enablePush() {
     if (!canPush()) { toast(/iPhone|iPad/.test(navigator.userAgent) ? "On iPhone, add Theta to your Home Screen first, then turn this on." : "This browser can't get push notifications.", 4000); return false; }
     try {
@@ -1388,9 +1404,7 @@
       if (S.demo) { store("protos:push", "1"); toast("Notifications on (demo)."); return true; }
       const {key} = await api("/api/push/key");
       if (!key) { toast("Push isn't set up on Theta's server yet."); return false; }
-      const reg = await navigator.serviceWorker.ready;
-      const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64u(key)});
-      await post("/api/push/subscribe", {subscription: sub.toJSON()});
+      await pushSignUp(key);
       store("protos:push", "1"); toast("Notifications on."); return true;
     } catch (e) { if (!(e instanceof AuthError)) toast("Couldn't turn on notifications: " + (e.message || e)); return false; }
   }
@@ -1462,7 +1476,15 @@
   });
   $("set-push-test").addEventListener("click", async () => {
     if (S.demo) { toast("In demo mode a test is just this toast. On Theta it pushes to your phone."); return; }
-    try { await post("/api/push/test"); toast("Sent. It should land in a few seconds."); } catch (e) { if (!(e instanceof AuthError)) toast("The test didn't send: " + (e.status || e.message)); }
+    const btn = $("set-push-test"); btn.disabled = true;
+    try {
+      await refreshPush();
+      const r = await post("/api/push/test");
+      const bad = (r && r.results || []).filter(x => !x.ok);
+      if (r && r.ok) toast(`Sent to ${(r.results || []).filter(x => x.ok).map(x => x.device).join(", ") || "your phone"}. It should land in a few seconds.`, 4000);
+      else toast("It didn't send: " + ((bad[0] && bad[0].why) || (r && r.error) || "no reason given"), 7000);
+    } catch (e) { if (!(e instanceof AuthError)) toast("The test didn't send: " + (e.message || e.status), 6000); }
+    finally { btn.disabled = false; }
   });
   $("set-proactive").addEventListener("change", e => saveSetting({proactive: e.target.checked}));
   for (const id of ["set-quiet-from", "set-quiet-to"]) $(id).addEventListener("change", () => saveSetting({quiet: [Number($("set-quiet-from").value), Number($("set-quiet-to").value)]}));
@@ -1566,6 +1588,7 @@
   async function loadAll() {
     await loadHistory();
     S.ready = true;
+    refreshPush();  // keep this phone's push sign-up current (fixes one made with an older server key)
     if (S.demo && S.demoAuto) dock("demo", {icon: "i-bell", title: "Demo mode", text: "Theta's server isn't reachable, so this is a built-in demo. Nothing you type leaves this page.",
       actions: [["OK", () => dock("demo", null)]]});
     renderHome();

@@ -7,6 +7,7 @@
   FEATURES.push("onboarding"); // the first-run intro, in the chat
   FEATURES.push("contacts"); // Settings > General > Contacts
   FEATURES.push("approvals"); // approval cards, Settings > Security > Approvals
+  FEATURES.push("models"); // Settings > General > Models
   for (const f of FEATURES) {
     const s = document.createElement("script");
     s.src = "/static/features/" + f + ".js"; s.async = false;

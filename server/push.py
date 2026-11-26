@@ -14,6 +14,7 @@ still in the inbox), an urgent one (Red, the test push) goes through. Dead subsc
 import base64
 import json
 import os
+import re
 import time
 from datetime import datetime
 from urllib.parse import urlparse
@@ -129,6 +130,10 @@ def problem():
         return "VAPID_PRIVATE_KEY isn't a usable P-256 key: generate a new pair"
     if derived != _unb64(pub):
         return "the two VAPID keys aren't a pair (one came from another pair): replace both"
+    subject = (os.environ.get("VAPID_SUBJECT") or "").strip()
+    if subject and not (re.fullmatch(r"mailto:[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", subject) or re.fullmatch(r"https://[^\s/]+\.[^\s]+", subject)):
+        return ("VAPID_SUBJECT must be mailto:you@example.com or an https:// address; Apple refuses every push "
+                "otherwise (it's set to something else now)")
     return None
 
 
@@ -223,13 +228,24 @@ def notify(title, body, url="/", urgent=False, now=None):
             sent += 1
             results.append({"device": _name(sub), "ok": True, "code": getattr(r, "status_code", None)})
         except WebPushException as e:
-            code = getattr(getattr(e, "response", None), "status_code", None)
-            gone = code in (404, 410)
-            if gone:   # gone for good (app removed or re-added): drop it
+            resp = getattr(e, "response", None)
+            code = getattr(resp, "status_code", None)
+            reason = ""
+            try:
+                reason = (resp.json() or {}).get("reason", "") if resp is not None else ""
+            except Exception:  # noqa: BLE001
+                reason = (getattr(resp, "text", "") or "")[:80]
+            stale = code in (404, 410) or "mismatch" in reason.lower() or code == 400 and "vapid" in str(e).lower()
+            if stale:   # gone, or signed up with an older key: drop it; the app signs up again on its next open
                 _db().drop_push_sub(sub["endpoint"])
-            error = f"push service returned {code}: {str(e)[:120]}"
-            results.append({"device": _name(sub), "ok": False, "code": code,
-                            "why": "this sign-up no longer exists, so it was dropped" if gone else error})
+            if stale:
+                why = "this phone's sign-up was old or made with a different key, so it was dropped: open Theta and it signs up again"
+            elif code == 403 and "jwt" in reason.lower():
+                why = "Apple refused Theta's signature (BadJwtToken): check VAPID_SUBJECT is mailto:you@example.com"
+            else:
+                why = f"the push service said {code}{' (' + reason + ')' if reason else ''}"
+            error = why
+            results.append({"device": _name(sub), "ok": False, "code": code, "why": why})
         except Exception as e:  # noqa: BLE001  network trouble shouldn't break a round
             error = f"push failed: {e!r}"[:160]
             results.append({"device": _name(sub), "ok": False, "code": None, "why": error})
