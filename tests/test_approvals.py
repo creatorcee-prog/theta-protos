@@ -80,4 +80,18 @@ n0 = len(db.messages("theta", limit=500))
 res = app.decide_approval(aid, "deny", quiet=True)
 check("a quiet tap adds no message, and the card shows the outcome", res["message"] is None and len(db.messages("theta", limit=500)) == n0
       and db.get_message(holder["id"])["meta"]["cards"][0]["state"] == "denied")
+# emails, texts and calls carry their words, so the chat frames them in the bubble
+aid2 = db.add_approval({"tool": "send_email_draft", "args": EMAIL, "bot": "theta", "preview": "**Email to sam@example.com**",
+                        "created": time.time(), "expires": time.time() + 86400})
+c2 = app.approval_cards([{"id": aid2, "tool": "send_email_draft", "preview": "x"}])[0]
+check("an email approval carries to, subject and body", c2.get("comm") == {"kind": "email", "to": "sam@example.com", "cc": "",
+      "subject": "Hi", "body": "Hello"}, c2)
+check("a trash approval has no frame (it isn't a message)", "comm" not in app.approval_cards([{"id": aid, "tool": "gmail_trash", "preview": "x"}])[0])
+approvals.set_on("send_email_draft", True)
+ctx = {"bot": "theta", "user_id": u["id"]}
+turn("send_email_draft", EMAIL, ctx)
+check("an email sent without asking leaves a framed receipt", any(cd.get("state") == "auto" and (cd.get("comm") or {}).get("body") == "Hello"
+      for cd in ctx.get("cards", [])), ctx.get("cards"))
+check("a call proposal is framed with who and why", approvals.comm_of("call_someone", {"to": "+13035551234", "name": "Luigi's", "purpose": "table for 2"})
+      == {"kind": "call", "to": "Luigi's", "number": "+13035551234", "body": "table for 2"})
 print("all approvals checks passed")

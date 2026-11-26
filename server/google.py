@@ -542,6 +542,16 @@ def _addr_list(s):
     return [a.strip() for a in re.split(r"[,;]", s or "") if a.strip()]
 
 
+def _draft_card(ctx, to, subject, body, cc=""):
+    """Show the draft, framed in the reply's bubble (web/features/approvals.js), so its words are visible."""
+    try:
+        from . import cards
+        cards.attach(ctx, {"type": "comm", "state": "draft", "comm": {"kind": "email", "to": to, "cc": cc,
+                                                                      "subject": subject, "body": body}})
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _gmail_draft(args, ctx):
     _need("gmail")
     to = tools._email_check(args)
@@ -551,6 +561,7 @@ def _gmail_draft(args, ctx):
         raise ToolError(f"not an email address in cc: {', '.join(bad)}")
     raw = _mime(", ".join(to), args["subject"].strip(), args["body"], ", ".join(cc))
     d = api("POST", f"{GMAIL}/drafts", {"message": {"raw": raw}})
+    _draft_card(ctx, ", ".join(to), args["subject"].strip(), args["body"], ", ".join(cc))
     return (f"Draft saved in the user's Gmail Drafts (draft id {d.get('id')}), to {', '.join(to)}, subject "
             f"{args['subject'].strip()!r}. Nothing was sent. They can open Gmail to edit and send it, or ask you to "
             "send it (send_email_draft, which needs their OK).")
@@ -573,6 +584,7 @@ def _gmail_reply_draft(args, ctx):
     refs = (_hdr(m, "References") + " " + mid).strip()
     raw = _mime(to, subj, args["body"], extra={"In-Reply-To": mid, "References": refs})
     d = api("POST", f"{GMAIL}/drafts", {"message": {"raw": raw, "threadId": m.get("threadId")}})
+    _draft_card(ctx, to, subj, args["body"])
     return (f"Reply draft saved in the user's Gmail Drafts (draft id {d.get('id')}) in the same thread, to "
             f"{_oneline(to, 120)}, subject {subj!r}. Nothing was sent.")
 

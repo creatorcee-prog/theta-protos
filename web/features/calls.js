@@ -152,6 +152,59 @@
     finally { test.disabled = false; }
   });
 
+  // ---------------------------------------------------------------- Call history: every call, with its transcript
+  const hstyle = document.createElement("style");
+  hstyle.textContent = `
+.ch-row { width: 100%; text-align: left; display: flex; gap: 12px; align-items: flex-start; padding: 12px 2px; border-top: 1px solid #262626; color: var(--text); }
+.ch-row:first-child { border-top: 0; }
+.ch-ic { width: 38px; height: 38px; border-radius: 50%; background: #262626; display: grid; place-items: center; flex: none; font-size: 17px; }
+.ch-txt { flex: 1; min-width: 0; }
+.ch-txt b { display: block; font-weight: 500; font-size: 16.5px; }
+.ch-txt small { display: block; color: var(--muted); font-size: 13.5px; }
+.ch-out { display: block; color: #cfcfcf; font-size: 14px; margin-top: 3px; }
+.ch-tr { padding: 4px 0 12px 50px; display: flex; flex-direction: column; gap: 6px; }
+.ch-say { max-width: 88%; padding: 7px 11px; border-radius: 16px; font-size: 14.5px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ch-say.theta { background: #2c2c2e; align-self: flex-start; }
+.ch-say.them { background: #0a84ff; color: #fff; align-self: flex-end; }
+.ch-who { font-size: 11.5px; color: var(--muted); margin: 0 4px -3px; }
+.ch-who.r { align-self: flex-end; }
+`;
+  document.head.append(hstyle);
+  const fmtNum = n => (/^\+1\d{10}$/.test(String(n || "")) ? `+1 ${n.slice(2, 5)}-${n.slice(5, 8)}-${n.slice(8)}` : String(n || ""));
+  const when = t => { const d = new Date(t * 1000); return d.toLocaleDateString([], {month: "short", day: "numeric"}) + ", " + d.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"}); };
+  const hist = T.sheet("callhist", "Call history", openHistory);
+  async function openHistory() {
+    hist.body.replaceChildren(el("p", "empty", "Loading…"));
+    let calls = [];
+    if (!T.state.demo) { try { calls = (await T.api("/api/calls/history")).calls || []; } catch (e) { /* offline */ } }
+    hist.pill.textContent = calls.length ? calls.length + (calls.length === 1 ? " call" : " calls") : "";
+    hist.body.replaceChildren();
+    if (!calls.length) { hist.body.append(el("p", "empty", T.state.demo ? "Demo mode: calls show here on Theta." : "No calls yet. Every call Theta makes shows here with its transcript.")); return; }
+    for (const c of calls) {
+      const other = c.kind === "other";
+      const row = el("button", "ch-row"); row.type = "button";
+      const tx = el("div", "ch-txt");
+      tx.append(el("b", null, other ? c.who : (c.kind === "alert" ? "Alert call to you" : "Theta called you")),
+        el("small", null, [when(c.t), c.duration ? dur(c.duration) : (c.state === "done" ? "" : c.state), other ? fmtNum(c.to) : ""].filter(Boolean).join(" · ")));
+      if (c.outcome || c.purpose) tx.append(el("span", "ch-out", c.outcome || c.purpose));
+      row.append(el("span", "ch-ic", other ? "☎" : "↘"), tx);
+      const tr = el("div", "ch-tr"); tr.hidden = true;
+      if (c.turns.length) {
+        for (const t of c.turns) {
+          const them = t.who !== "theta";
+          tr.append(el("div", "ch-who" + (them ? " r" : ""), them ? (other ? "Them" : "You") : "Theta"), el("div", "ch-say " + (them ? "them" : "theta"), t.text || ""));
+        }
+      } else tr.append(el("p", "fine", "No words were exchanged on this call."));
+      row.setAttribute("aria-expanded", "false");
+      row.addEventListener("click", () => { tr.hidden = !tr.hidden; row.setAttribute("aria-expanded", String(!tr.hidden)); });
+      hist.body.append(row, tr);
+    }
+  }
+  T.menu("Call history", "i-bell", "callhist");
+  const hr = row("Call history", "Every call Theta makes, with who, how long, how it went and the full transcript.");
+  const hb = el("button", "btn-dark", "Open"); hb.type = "button"; hb.addEventListener("click", () => T.open("callhist"));
+  hr.r.append(hb); g.append(hr.r);
+
   // load when Settings opens (and once now, if it's already open)
   const sheet = document.getElementById("settings");
   if (sheet) {

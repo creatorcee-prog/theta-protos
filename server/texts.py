@@ -187,7 +187,8 @@ def _auto(args, ctx, info):
     try:
         from . import cards
         cards.attach(ctx, {"type": "approval", "id": None, "tool": "send_text", "preview": _preview(args),
-                           "state": "auto", "result": f"Reviewed: {r.get('reason') or 'looked fine'}"})
+                           "state": "auto", "result": f"Reviewed: {r.get('reason') or 'looked fine'}",
+                           "comm": {"kind": "text", "to": name, "number": number, "body": body}})
     except Exception:  # noqa: BLE001
         pass
     return True, (f"Sent to {name} ({number}) without asking, after a review ({r.get('reason') or 'looked fine'}). "
@@ -238,7 +239,8 @@ def inbound(req, start_response):
         hit = next((c for c in contacts.all_contacts() if c.get("phone") == number), None)
         who = hit["name"] if hit else number
         msg = db.add_message("theta", "assistant", f"{who} texted:\n\n> " + body.replace("\n", "\n> "),
-                             {"proactive": True, "source": "text_in", "from": number, "untrusted": True})
+                             {"proactive": True, "source": "text_in", "from": number, "untrusted": True,
+                              "comm": {"kind": "text_in", "to": who, "number": number, "body": body}})
         try:
             from . import routines
             routines._push(msg, f"Text from {who}", now)

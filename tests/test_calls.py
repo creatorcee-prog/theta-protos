@@ -202,6 +202,11 @@ check("the transcript and an outcome summary are saved as a chat message",
       and last["meta"]["transcript"][0]["text"].startswith("Hi, this is Theta, an AI assistant")
       and last["text"].startswith("Call to Luigi's: Booked a table") and "(1:34)" in last["text"])
 
+h = {x["id"]: x for x in calls.history()}
+check("call history lists the call with who, how long, how it went and its transcript", cid in h and h[cid]["kind"] == "other"
+      and h[cid]["duration"] == 94 and len(h[cid]["turns"]) == 5 and h[cid]["turns"][0]["text"].startswith("Hi, this is Theta")
+      and "Booked a table" in h[cid]["outcome"])
+
 # ---------------------------------------------------------------- limits on the call itself
 clock["t"] += 700
 ok, _ = tools.run_approved({"tool": "call_someone", "args": {"to": "+13035550188", "purpose": "ask the hours"},

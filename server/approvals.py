@@ -53,6 +53,32 @@ def set_on(tool, auto):
     db.set_setting(SETTING, v)
 
 
+def comm_of(tool, args):
+    """What a message to someone looks like, for the chat to frame it in the bubble: an email (to, cc, subject,
+    body), a text (to, number, body) or a call (to, number, purpose). None for anything else."""
+    a = args if isinstance(args, dict) else {}
+    try:
+        if tool in ("send_email_draft", "gmail_draft"):
+            return {"kind": "email", "to": str(a.get("to") or ""), "cc": str(a.get("cc") or ""),
+                    "subject": str(a.get("subject") or ""), "body": str(a.get("body") or "")}
+        if tool == "gmail_reply_draft":
+            return {"kind": "email", "to": str(a.get("to") or "the sender"), "subject": "Re: the thread",
+                    "body": str(a.get("body") or "")}
+        if tool == "send_text":
+            from . import contacts
+            try:
+                number, name = contacts.resolve(a.get("to"), "phone")
+            except Exception:  # noqa: BLE001
+                number, name = str(a.get("to") or ""), ""
+            return {"kind": "text", "to": name or number, "number": number, "body": str(a.get("message") or "")}
+        if tool == "call_someone":
+            return {"kind": "call", "to": str(a.get("name") or a.get("to") or ""), "number": str(a.get("to") or ""),
+                    "body": str(a.get("purpose") or "")}
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
 def tainted(info):
     """Did this turn read outside text (mail, web, files) before now?"""
     from . import tools

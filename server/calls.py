@@ -714,7 +714,28 @@ RELEVANT = (r"\bcall me\b|\b(phone|ring) (me|them|him|her|us)\b|\bgive (me|them|
             r"|\bcall (the|my|a|an|this|that|them|him|her|back)\b|\bphone call\b|\bmake a call\b|\bcall up\b"
             r"|\bcall (and|to) (ask|book|check|order|cancel|reserve|confirm)\b")
 
-ROUTES = {"/api/calls/settings": settings_route, "/api/calls/test": test_route}
+def history(limit=60):
+    """Recent calls, newest first, with their transcripts: [{id, kind, who, to, t, duration, state, outcome, turns}]."""
+    rows = _c().execute("SELECT * FROM calls ORDER BY t DESC LIMIT ?", (int(limit),)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        out.append({"id": d["id"], "kind": d["kind"], "who": d.get("name") or ("You" if d["kind"] != "other" else d["to_number"]),
+                    "to": d["to_number"], "t": d["t"], "duration": d.get("duration") or 0, "state": d["state"],
+                    "outcome": d.get("outcome") or "", "purpose": d.get("purpose") or d.get("message") or "",
+                    "turns": [{"who": t.get("who"), "text": t.get("text")} for t in json.loads(d.get("turns") or "[]")],
+                    "message_id": d.get("message_id")})
+    return out
+
+
+def history_route(req, start_response):
+    from .app import HTTPError, respond_json
+    if req.method != "GET":
+        raise HTTPError(405, "method not allowed")
+    return respond_json(start_response, {"calls": history()})
+
+
+ROUTES = {"/api/calls/settings": settings_route, "/api/calls/test": test_route, "/api/calls/history": history_route}
 PUBLIC_ROUTES = {"/api/calls/twiml/": twiml_route, "/api/calls/status/": status_route}
 
 

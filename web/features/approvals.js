@@ -49,6 +49,25 @@
 .apl-more { padding: 0 16px 10px; font-size: 14px; color: #ddd; overflow-wrap: anywhere; }
 .apl-more p { margin: 0 0 4px; }
 .apl-lit { white-space: pre-wrap; }
+/* emails, texts and calls, framed inside Theta's bubble so the words are always visible */
+.cm { margin-top: 10px; border: 1px solid #3a3a3a; border-radius: 16px; background: #171717; padding: 11px 12px 12px; font-size: 15px; line-height: 1.4; text-align: left; }
+.cm:first-child { margin-top: 0; }
+.cm-head { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.cm-head svg { width: 15px; height: 15px; }
+.cm-pill { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 12.5px; padding: 2px 9px; border-radius: 999px; background: #2a2a2a; color: #ddd; }
+.cm-pill.good { background: rgba(76, 208, 125, .16); color: #4cd07d; } .cm-pill.bad { background: rgba(255, 138, 128, .15); color: #ff8a80; }
+.cm-pill.wait { background: #fff; color: #111; }
+.cm-line { color: #cfcfcf; font-size: 14px; overflow-wrap: anywhere; }
+.cm-line span { color: var(--muted); display: inline-block; min-width: 3.2em; }
+.cm-subj { font-weight: 600; font-size: 15.5px; margin: 4px 0 6px; overflow-wrap: anywhere; }
+.cm-body { white-space: pre-wrap; overflow-wrap: anywhere; color: #eee; border-top: 1px solid #2c2c2c; padding-top: 8px; }
+.cm-body.clamp { display: -webkit-box; -webkit-line-clamp: 9; -webkit-box-orient: vertical; overflow: hidden; }
+.cm-more { color: var(--accent); font-size: 14px; padding: 6px 0 0; }
+.cm-sms { margin-top: 6px; padding: 8px 12px; border-radius: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 92%; }
+.cm-sms.out { background: #0a84ff; color: #fff; margin-left: auto; border-bottom-right-radius: 6px; }
+.cm-sms.in { background: #2c2c2e; color: #fff; border-bottom-left-radius: 6px; }
+.cm-acts { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+.cm-why { color: #ff8a80; font-size: 13px; margin-top: 6px; }
 .apl-why { color: #ff8a80; padding-top: 0; font-size: 13px; }
 .apl-all { font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0; text-transform: none; padding: 4px 0 4px 10px; }
 .apl-all[disabled] { opacity: .45; }
@@ -193,14 +212,86 @@
     return box;
   }
 
-  T.decorate((m, row) => {
-    const items = ((m.meta || {}).cards || []).filter(c => c && c.type === "approval");
-    if (!items.length) return;
-    const nodes = [...row.querySelectorAll(".card")].filter(n => n.dataset.ap === "1");
-    if (!nodes.length) return;
-    const list = listCard(items); list.classList.add("card");
-    nodes[0].before(list);
+  // ---------------------------------------------------------------- emails, texts and calls, framed in the bubble
+  const ICON = {
+    email: () => icon(["M3.5 6.5h17v11h-17z", "M4 7l8 6 8-6"]),
+    text: () => icon("M4 5h16v11H9l-4 3.5V16H4z"),
+    text_in: () => icon("M4 5h16v11H9l-4 3.5V16H4z"),
+    call: () => icon("M6.6 3.5l3 3.2-1.8 2.4a12 12 0 006.1 6.1l2.4-1.8 3.2 3-1.6 2.6C11 20 4 13 4 5.1z"),
+  };
+  const fmtNum = n => (/^\+1\d{10}$/.test(String(n || "")) ? `+1 ${n.slice(2, 5)}-${n.slice(5, 8)}-${n.slice(8)}` : String(n || ""));
+  const KIND = {email: "Email", text: "Text", text_in: "Text", call: "Call"};
+  function pill(kind, st) {
+    const map = {pending: ["wait", "Waiting for you"], auto: ["good", kind === "call" ? "Calling" : "Sent"],
+      done: ["good", kind === "call" ? "Calling" : "Sent"], denied: ["", "Discarded"], failed: ["bad", "Didn't go through"],
+      expired: ["", "Expired"], draft: ["", "Draft in Gmail"], in: ["", "Received"]};
+    const [cls, text] = map[st] || ["", st];
+    return el("span", "cm-pill " + cls, text);
+  }
+  function frame(c) {
+    const cm = c.comm || {}, kind = cm.kind || "email", st = c.type === "in" ? "in" : (c.type === "comm" ? (c.state || "draft") : stateOf(c));
+    const box = el("div", "cm cm-" + kind), head = el("div", "cm-head");
+    head.append((ICON[kind] || ICON.email)(), el("span", null, KIND[kind] || "Message"));
+    let p = pill(kind, st); head.append(p);
+    box.append(head);
+    const line = (label, value) => { const d = el("div", "cm-line"); d.append(el("span", null, label), document.createTextNode(value)); return d; };
+    if (kind === "email") {
+      box.append(line("To", cm.to || ""));
+      if (cm.cc) box.append(line("Cc", cm.cc));
+      if (cm.subject) box.append(el("div", "cm-subj", cm.subject));
+      const body = el("div", "cm-body", cm.body || ""); box.append(body);
+      if ((cm.body || "").split("\n").length > 9 || (cm.body || "").length > 520) {
+        body.classList.add("clamp");
+        const more = el("button", "cm-more", "Show all"); more.type = "button";
+        more.addEventListener("click", () => { body.classList.toggle("clamp"); more.textContent = body.classList.contains("clamp") ? "Show all" : "Show less"; });
+        box.append(more);
+      }
+    } else if (kind === "text" || kind === "text_in") {
+      const who = (cm.number && cm.number === cm.to ? fmtNum(cm.to) : (cm.to || "")) + (cm.number && cm.number !== cm.to ? " · " + fmtNum(cm.number) : "");
+      box.append(line(kind === "text_in" ? "From" : "To", who));
+      box.append(el("div", "cm-sms " + (kind === "text_in" ? "in" : "out"), cm.body || ""));
+    } else {
+      box.append(line("To", (cm.to || "") + (cm.number && cm.number !== cm.to ? " · " + fmtNum(cm.number) : "")));
+      if (cm.body) box.append(el("div", "cm-body", cm.body));
+    }
+    if (st === "failed" && c.result) box.append(el("div", "cm-why", human(c.result)));
+    if (c.type === "approval" && st === "pending" && c.id != null) {
+      const acts = el("div", "cm-acts"), yes = el("button", "apl-dot yes"), no = el("button", "apl-dot no");
+      yes.type = no.type = "button"; yes.append(I.check()); no.append(I.x());
+      yes.setAttribute("aria-label", "Send it"); no.setAttribute("aria-label", "Discard it");
+      const go = async decision => {
+        if (T.state.demo) { T.toast("Demo mode: nothing was sent."); return; }
+        yes.disabled = no.disabled = true;
+        try {
+          const res = await T.post("/api/approve", {id: c.id, decision, quiet: true});
+          const s2 = (res && res.state) || (decision === "deny" ? "denied" : "done");
+          T.store("ap:" + c.id, s2); c.state = s2;
+          const np = pill(kind, s2); p.replaceWith(np); p = np; acts.remove();
+          if (s2 === "failed") box.append(el("div", "cm-why", human(res && res.result)));
+        } catch (e) { yes.disabled = no.disabled = false; T.toast(human(e && e.message), 3600); }
+        window.dispatchEvent(new Event("protos:inbox"));
+      };
+      yes.addEventListener("click", () => go("approve")); no.addEventListener("click", () => go("deny"));
+      acts.append(yes, no); box.append(acts);
+    }
+    return box;
+  }
+
+  T.card("comm", () => { const n = el("div"); n.dataset.comm = "1"; return n; });
+
+  T.decorate((m, row, bubble) => {
+    const meta = m.meta || {}, cards = meta.cards || [];
+    const comms = cards.filter(c => c && c.comm && (c.type === "approval" || c.type === "comm"));
+    if (meta.comm) comms.unshift({type: "in", comm: meta.comm});
+    const rest = cards.filter(c => c && c.type === "approval" && !c.comm);
+    const nodes = [...row.querySelectorAll(".card")].filter(n => n.dataset.ap === "1" || n.dataset.comm === "1");
+    if (!comms.length && !rest.length) return;
+    if (rest.length) { const list = listCard(rest); list.classList.add("card"); (nodes[0] ? nodes[0].before(list) : row.append(list)); }
     nodes.forEach(n => n.remove());
+    if (comms.length && bubble && bubble.classList.contains("msg")) {
+      if (meta.comm) bubble.replaceChildren();  // an incoming text: the frame is the whole message
+      for (const c of comms) bubble.append(frame(c));
+    }
   });
 
   // ---------------------------------------------------------------- Settings > Security > Approvals

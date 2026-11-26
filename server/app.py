@@ -349,8 +349,19 @@ def _use_tools(text, images, route):
 def approval_cards(approvals):
     """One card per action waiting for a tap: the exact action (code-written preview) with its own Approve and
     Discard. decide_approval() updates the card's state, so it reads Sent / Discarded after a reload too."""
-    return [{"type": "approval", "id": a["id"], "tool": a.get("tool") or "", "preview": a.get("preview") or "",
-             "state": "pending"} for a in approvals]
+    from . import approvals as A
+    out = []
+    for a in approvals:
+        card = {"type": "approval", "id": a["id"], "tool": a.get("tool") or "", "preview": a.get("preview") or "",
+                "state": "pending"}
+        args = a.get("args")
+        if args is None:
+            args = ((db.get_approval(a["id"]) or {}).get("action") or {}).get("args")
+        comm = A.comm_of(card["tool"], args)
+        if comm:
+            card["comm"] = comm  # an email, text or call: framed in the bubble so the words are always visible
+        out.append(card)
+    return out
 
 
 def _mark_approval_card(aid, state, result=None):

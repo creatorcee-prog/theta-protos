@@ -138,8 +138,13 @@ def _auto_run(call, ctx, emit, info):
     info["side_effects"] = info["side_effects"] or ok
     try:
         from . import cards
-        cards.attach(ctx, {"type": "approval", "id": None, "tool": call["name"], "preview": preview,
-                           "state": "auto" if ok else "failed", "result": str(text)[:300]})
+        from . import approvals as A
+        receipt = {"type": "approval", "id": None, "tool": call["name"], "preview": preview,
+                   "state": "auto" if ok else "failed", "result": str(text)[:300]}
+        comm = A.comm_of(call["name"], call.get("args"))
+        if comm:
+            receipt["comm"] = comm
+        cards.attach(ctx, receipt)
     except Exception:  # noqa: BLE001
         pass
     if not ok:

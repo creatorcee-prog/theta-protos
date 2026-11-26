@@ -225,7 +225,9 @@ aps = db.approvals("pending")
 check("send inside a routine: an approval card, never a send", not sent_for_real and aps
       and aps[0]["action"]["tool"] == "send_email_draft"
       and msg["meta"]["cards"][0] == {"type": "approval", "id": aps[0]["id"], "tool": "send_email_draft",
-                                      "preview": aps[0]["action"]["preview"], "state": "pending"}, (msg, aps))
+                                      "preview": aps[0]["action"]["preview"], "state": "pending",
+                                      "comm": {"kind": "email", "to": "sam@example.com", "cc": "", "subject": "Hi",
+                                               "body": "Running late"}}, (msg, aps))
 check("write tools run inside a routine (reminder job made)", any(j["kind"] == "remind" for j in db.jobs("pending")))
 # a routine can't make or start routines (no loops)
 SCRIPT[:] = [{"tool_calls": [{"id": "c1", "name": "routine_create", "args": {"prompt": "x", "when": "hourly"}},
