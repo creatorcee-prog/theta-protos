@@ -234,8 +234,10 @@
     else if (opts.anim) main.classList.add("new");
     row.append(main);
     if (Array.isArray(meta.actions) && meta.actions.length && m.role === "assistant") row.append(actionChips(meta.actions, m));
+    for (const d of decorators) { try { d(m, row, main); } catch (err) { console.error(err); } }
     return row;
   }
+  const decorators = []; // features add things to a message (images, call transcripts): Theta.decorate(fn)
   function actionChips(actions, m) {
     const wrap = el("div", "actions"); wrap.setAttribute("role", "group"); wrap.setAttribute("aria-label", "Reply options");
     const usedKey = "protos:acted:" + m.id, used = store(usedKey);
@@ -587,13 +589,16 @@
     const b = e.target.closest("button"); if (!b) return; hideMenu();
     if (b.dataset.act === "connect" || b.dataset.act === "settings") go(Object.assign({}, cur(), {sheet: b.dataset.act}));
     if (b.dataset.act === "refresh") { poll(); toast("Checked. You're up to date."); }
+    if (b.dataset.sheet) go(Object.assign({}, cur(), {sheet: b.dataset.sheet}));
   });
 
   // ---------------------------------------------------------------- sheets
+  const sheetOpeners = {};
   function openSheet(name) {
     const e = $(name); e.classList.remove("closing"); e.hidden = false;
     if (name === "connect") loadConnections();
     if (name === "settings") loadSettings();
+    if (sheetOpeners[name]) { try { sheetOpeners[name](e); } catch (err) { console.error(err); } }
   }
   function closeSheetEl(e) {
     if (REDUCE.matches) { e.hidden = true; return; }
@@ -815,10 +820,13 @@
     history.replaceState({v: "home"}, "", location.href);
     const splash = $("splash"), sorb = ThetaOrb.mount($("splash-orb"), {dots: 520, radiusPx: 53});
     let skip;
-    const opening = new Promise(res => { skip = res; sorb.opening(store("theta:opening") || "converge", res); });
+    // the full opening (about 3 s) once a day; every other open plays it 3x faster (about 1 s)
+    const today = new Date().toDateString(), full = store("theta:opened") !== today;
+    store("theta:opened", today);
+    const opening = new Promise(res => { skip = res; sorb.opening(store("theta:opening") || "converge", res, full ? 1 : 3); });
     splash.addEventListener("click", () => skip(), {once: true});
     const ready = (async () => { await detect(); try { await loadAll(); } catch (e) { if (!(e instanceof AuthError)) { S.demo = true; S.demoAuto = true; await loadAll().catch(() => {}); } } })();
-    await Promise.all([Promise.race([opening, new Promise(r => setTimeout(r, 5000))]), ready]);
+    await Promise.all([Promise.race([opening, new Promise(r => setTimeout(r, full ? 4000 : 1500))]), ready]);
     const target = Q.get("m");
     if (!S.authed) showLogin();
     else if (target) { show("home"); openChat(Number(target)); }
@@ -828,5 +836,44 @@
     if (target) { const u = new URL(location.href); u.searchParams.delete("m"); history.replaceState(history.state, "", u.href); }
   }
   window.ThetaApp = {send, poll, state: S, md}; // for tests and the console
+
+  // ---- for feature screens (web/features/*.js; the list is in web/features.js). They build their own sheets
+  // with Theta.sheet(), add rows to Settings and items to the "..." menu, and call the API through Theta.api.
+  window.Theta = {
+    api, post, http, toast, send, el, svg, store, md, state: S,
+    open(id) { go(Object.assign({}, cur(), {sheet: id})); },
+    // fn(message, rowEl, bubbleEl) runs for every message shown; add to rowEl, build DOM nodes only (no innerHTML)
+    decorate(fn) { decorators.push(fn); },
+    close() { if (history.state && history.state.sheet) history.back(); else render({v: view}); },
+    // a full-screen sheet like Settings: returns {root, body, foot}; onOpen(root) runs each time it opens
+    sheet(id, title, onOpen) {
+      if (!$(id)) {
+        const root = el("section", "sheet full"); root.id = id; root.hidden = true;
+        root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true"); root.setAttribute("aria-label", title);
+        const head = el("header", "sheet-head"), x = el("button", "round"); x.setAttribute("aria-label", "Close"); x.append(svg("i-close"));
+        x.addEventListener("click", () => Theta.close());
+        head.append(x, el("h2", null, title), el("span", "count-pill"));
+        root.append(head, el("div", "sheet-body"), el("div", "sheet-foot"));
+        root.querySelector(".sheet-foot").hidden = true;
+        $("app").append(root);
+        if (!SHEETS.includes(id)) SHEETS.push(id);
+      }
+      if (onOpen) sheetOpeners[id] = onOpen;
+      const root = $(id);
+      return {root, body: root.querySelector(".sheet-body"), foot: root.querySelector(".sheet-foot"), pill: root.querySelector(".count-pill")};
+    },
+    // a button in the chat "..." menu that opens a sheet (or runs fn)
+    menu(label, icon, sheetOrFn) {
+      const b = el("button"); b.setAttribute("role", "menuitem"); b.append(svg(icon || "i-grid"), document.createTextNode(label));
+      if (typeof sheetOrFn === "function") b.addEventListener("click", sheetOrFn); else b.dataset.sheet = sheetOrFn;
+      $("menu").append(b); return b;
+    },
+    // a section in Settings, above the "about" line: returns the group element to fill with .row-set rows
+    settings(title) {
+      const body = $("settings").querySelector(".settings-body"), about = $("set-about");
+      const h = el("h3", "sec", title), g = el("div", "group"); body.insertBefore(h, about); body.insertBefore(g, about); return g;
+    },
+  };
+  window.dispatchEvent(new Event("theta:ready"));
   boot();
 })();

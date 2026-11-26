@@ -91,10 +91,11 @@
       if (W !== this.W || H !== this.H) { this.cv.width = W; this.cv.height = H; this.W = W; this.H = H; this.dpr = dpr; if (this.open) this._seed(); }
     }
     // ---- openings
-    opening(kind, done) {
+    opening(kind, done, speed) {
       kind = kind === "signal" ? "signal" : "converge";
-      if (reduceQ.matches) { this.fade = 0; this.open = {kind: "fade", t0: performance.now(), done}; kick(); return; }
-      this.open = {kind, t0: performance.now(), done, sky: []};
+      speed = speed > 0 ? speed : 1;
+      if (reduceQ.matches) { this.fade = 0; this.open = {kind: "fade", t0: performance.now(), done, speed}; kick(); return; }
+      this.open = {kind, t0: performance.now(), done, sky: [], speed};
       this._size(); this._seed();
       for (const q of this.dots) { q.w = null; q.v = [0, 0, 0]; }
       kick();
@@ -151,7 +152,7 @@
       g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, W, H);
       let op = this.open, ot = 0, out = 1, end = 0;
       if (op) {
-        ot = (performance.now() - op.t0) / 1000;
+        ot = (performance.now() - op.t0) / 1000 * (op.speed || 1);
         end = op.kind === "signal" ? 2.9 : op.kind === "converge" ? 2.7 : 0.5;
         if (op.kind === "fade") this.fade = Math.min(1, ot / 0.5);
         out = Math.max(0, Math.min(1, (ot - end) / 0.4)); // how far the globe has taken over

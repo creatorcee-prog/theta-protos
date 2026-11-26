@@ -351,15 +351,44 @@ TOOLS = [
          "required": ["to", "subject", "body"]}},
 ]
 BY_NAME = {t["name"]: t for t in TOOLS}
+_CORE = len(TOOLS)
+_ext_done = False
+
+
+def _ext():
+    """Add the plug-in features' tools (server/ext.py) once, after the core ones, so the order stays fixed."""
+    global _ext_done
+    if _ext_done:
+        return
+    _ext_done = True
+    try:
+        from . import ext
+        for t in ext.tools():
+            if t.get("name") and t["name"] not in BY_NAME:
+                TOOLS.append(t)
+                BY_NAME[t["name"]] = t
+    except Exception as e:  # noqa: BLE001
+        print(f"[protos] feature tools failed to load: {e!r}")
+
+
+def _ext_reset():
+    """Drop feature tools (tests)."""
+    global _ext_done
+    del TOOLS[_CORE:]
+    for k in [k for k in BY_NAME if k not in {t["name"] for t in TOOLS}]:
+        del BY_NAME[k]
+    _ext_done = False
 
 
 def specs(tools=None):
     """What the model sees: [{name, description, params}], in a fixed order (cache-friendly)."""
+    _ext()
     return [{"name": t["name"], "description": t["description"], "params": t["params"]} for t in (tools or TOOLS)]
 
 
 def guide():
     """The tool guide for the system prompt: stable text, the same every turn."""
+    _ext()
     return (f"{GUIDE_MARK}: {', '.join(t['name'] for t in TOOLS)}.\n"
             "- Use a tool only when it changes the answer; simple lookups take 1-3 calls.\n"
             "- Anything you promise for later must be a remind_me call, now.\n"
@@ -431,6 +460,7 @@ def cap(text, n=OUTPUT_CAP):
 
 def execute(name, args, ctx=None):
     """Validate and run one read/write tool. Returns (ok, output text capped). Never raises; never runs "send"."""
+    _ext()
     tool = BY_NAME.get(name)
     if tool is None:
         return False, f"Error: there is no tool named {name!r}. Available: {', '.join(BY_NAME)}."
@@ -447,6 +477,7 @@ def execute(name, args, ctx=None):
 
 def preview(name, args):
     """Code-written text of a pending send action (what the user approves). Raises ToolError if args are bad."""
+    _ext()
     tool = BY_NAME[name]
     args = validate(tool, copy.deepcopy(args))
     fn = tool.get("preview")
@@ -455,6 +486,7 @@ def preview(name, args):
 
 def run_approved(action):
     """Run a stored send action with exactly its stored args (no model involved). Returns (ok, text)."""
+    _ext()
     tool = BY_NAME.get((action or {}).get("tool"))
     if tool is None or tool["risk"] != "send":
         return False, "That action isn't something Theta can run."
@@ -499,7 +531,13 @@ _RELEVANT = re.compile(
 
 def relevant(text):
     """True when the message likely needs a tool. Quick chat without one streams straight from the model."""
-    return bool(_RELEVANT.search(text or ""))
+    if _RELEVANT.search(text or ""):
+        return True
+    try:
+        from . import ext
+        return ext.relevant(text)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def context_block(bot="theta", now=None):
@@ -522,4 +560,11 @@ def context_block(bot="theta", now=None):
             f"- {fmt_time(j['due_t'], now)}: {(j.get('payload') or {}).get('text', '')}" for j in pending[:10]))
     else:
         lines.append("Pending reminders: none.")
+    try:
+        from . import ext
+        extra = ext.context(bot, now)
+        if extra:
+            lines.append(extra)
+    except Exception:  # noqa: BLE001
+        pass
     return "\n".join(lines)

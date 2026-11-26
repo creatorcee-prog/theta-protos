@@ -1,0 +1,69 @@
+# Features (v0.3): how they plug in, and who builds what
+
+Every feature is its own files. Nobody edits another feature's files.
+
+## The hookup
+
+### Server
+`server/ext.py` loads each module named in `FEATURES` (`google gcal routines workflows subagents media browser calls`).
+A module may define any of:
+- `TOOLS`, `RELEVANT`
+- `ROUTES` and `PUBLIC_ROUTES` (public routes must verify the caller themselves)
+- `JOB_KINDS`
+- `tick(now)`, `connections()`, `context(bot, now)`
+
+The exact contract is in the docstring at the top of ext.py. A missing or broken module is skipped.
+
+### Tools
+Tools use the shape in `server/tools.py` (name, risk, description written like docs for a new hire, params, run,
+preview). The risk levels:
+- `"read"` runs freely.
+- `"write"` runs freely but only changes the user's own things.
+- `"send"` never runs inside the model loop. It becomes an Approve/Discard card, and `run_approved` executes the
+  stored arguments exactly, only after the user taps Approve. Anything that reaches another person, spends money,
+  submits a form or deletes something is "send".
+
+Outputs that contain outside text (web pages, emails, files) set `untrusted: True`.
+
+### Storage
+`db.get_setting` / `db.set_setting` (JSON values) and `db.add_job(due_t, kind, payload)` with your own
+`JOB_KINDS`. A feature needing a table creates it itself with `CREATE TABLE IF NOT EXISTS`, through
+`db._conn()`. Files go under `os.path.join(db.data_dir(), "<feature>")`, or `$PROTOS_DATA`.
+
+### Sending a text plus a push
+```python
+m = db.add_message("theta", "assistant", text, {"proactive": True, "source": "<feature>"})
+push.notify("Theta", short, f"/?m={m['id']}")
+```
+
+### Running a turn from code (routines, sub-agents)
+`from server import models, router, persona, agent, tools`. See `app._agent_turn` for how a turn is put together.
+
+### Web
+`web/features/<name>.js` is loaded after app.js and uses `window.Theta`:
+- `Theta.api(path)` and `Theta.post(path, body)`
+- `Theta.toast(text)`, `Theta.send(text)`
+- `Theta.sheet(id, title, onOpen)`: returns `{root, body, foot, pill}`
+- `Theta.open(id)` and `Theta.close()`
+- `Theta.menu(label, icon, sheetIdOrFn)`
+- `Theta.settings(title)`: returns a `.group` to fill with `.row-set` rows
+- `Theta.decorate((msg, row, bubble) => ...)`
+- `Theta.el(tag, cls, text)` and `Theta.svg(iconId)`
+- `Theta.md(text)`: safe markdown to DOM
+
+Build DOM nodes only, never `innerHTML` with server or model text. In demo mode (`Theta.state.demo`), show a
+short note instead of calling the API. Styles go in a `<style>` element the script adds, prefixed with the
+feature's id.
+
+### Tests
+Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urllib.request.urlopen`), printing
+`PASS <name>` and exiting 1 on failure. The whole suite must stay green: `for t in tests/test_*.py`, with
+`node tests/shots.js` and `python3 tests/test_web.py`.
+
+## Who builds what
+
+| Builder | Files | Features |
+|---|---|---|
+| A: Google | `server/google.py`, `server/gcal.py`, `web/features/calendar.js`, `tests/test_google.py`, `tests/test_gcal.py` | Google sign-in; Gmail (search, read, drafts, send through approval); Calendar tools; Drive (search, read, create Docs and Slides); the in-app calendar, mirroring Google Calendar plus any calendar links |
+| B: Automation | `server/routines.py`, `server/workflows.py`, `server/subagents.py`, `server/media.py`, `web/features/routines.js`, `web/features/media.js`, tests | Routines and triggers; saved workflows; read-only research sub-agents; image generation |
+| C: Acting | `server/browser.py`, `server/calls.py`, `web/features/calls.js`, `web/features/browser.js`, `Dockerfile`, tests | A headless browser Theta drives (submitting or buying needs approval; no password vault yet); phone calls to the user, and to others with disclosure and approval |

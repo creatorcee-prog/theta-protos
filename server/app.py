@@ -603,6 +603,24 @@ def _deliver_reminder(job, now):
     return msg
 
 
+def _ext_job(kind):
+    try:
+        from . import ext
+        return ext.job_handler(kind)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def run_features(now=None):
+    """Each feature's tick (routines, mail watch, calendar sync...). Returns the messages they sent."""
+    try:
+        from . import ext
+        return ext.tick(now or time.time())
+    except Exception:  # noqa: BLE001
+        log("feature tick failed:\n" + traceback.format_exc())
+        return []
+
+
 def run_jobs(now=None):
     """Run every due job once (claimed first, so two ticks can't both run it). Returns the messages sent."""
     fn = getattr(db, "due_jobs", None)
@@ -621,6 +639,11 @@ def run_jobs(now=None):
                 msg = _deliver_reminder(j, now)
                 db.finish_job(j["id"], "done", {"message_id": msg["id"]})
                 sent.append(msg)
+            elif _ext_job(j.get("kind")):
+                msg = _ext_job(j.get("kind"))(j, now)
+                db.finish_job(j["id"], "done", {"message_id": msg["id"]} if isinstance(msg, dict) and "id" in msg else None)
+                if isinstance(msg, dict):
+                    sent.append(msg)
             else:
                 db.finish_job(j["id"], "failed", {"error": f"unknown job kind {j.get('kind')!r}"})
         except Exception as e:
@@ -800,7 +823,7 @@ def settings(req, start):
 
 def connections():
     vantage = bool(os.environ.get("VANTAGE_URL") or os.environ.get("VANTAGE_DIR"))
-    return [
+    base = [
         {"id": "gmail", "name": "Gmail", "connected": False, "what": "Search, read, draft and send mail"},
         {"id": "calendar", "name": "Google Calendar", "connected": False, "what": "See and add events, reminders"},
         {"id": "drive", "name": "Google Drive", "connected": False, "what": "Find and read your files"},
@@ -808,6 +831,11 @@ def connections():
         {"id": "search", "name": "Web search", "connected": bool(os.environ.get("TAVILY_API_KEY")),
          "what": "Live facts, news and prices, with sources"},
     ]
+    try:
+        from . import ext
+        return ext.connections(base)
+    except Exception:  # noqa: BLE001
+        return base
 
 
 def memory_route(req, start):
@@ -863,8 +891,15 @@ def api(req, start):
         if m != "POST":
             raise HTTPError(405, "method not allowed")
         return login(req, start)
+    from . import ext
+    fn = ext.route(p, public=True)
+    if fn:
+        return fn(req, start)  # the feature checks the caller itself (OAuth state, webhook signature)
     if not authed(req):
         raise HTTPError(401, "not signed in")
+    fn = ext.route(p)
+    if fn:
+        return fn(req, start)
     if p == "/api/bots" and m == "GET":
         return respond_json(start, BOTS)
     if p == "/api/messages" and m == "GET":
@@ -899,7 +934,7 @@ def api(req, start):
             raise HTTPError(400, "unknown job state")
         return respond_json(start, {"jobs": fn(state, req.int_arg("limit", 50, 1, 500)) if callable(fn) else []})
     if p == "/api/tick" and m == "POST":
-        jobs_sent = run_jobs()
+        jobs_sent = run_jobs() + run_features()
         res = run_proactive()
         out = {"ok": True, "jobs": [x["id"] for x in jobs_sent]}
         if isinstance(res, list):
@@ -994,6 +1029,7 @@ def start_ticker(interval=TICK_SECONDS, first=20):
                 run_jobs()
             except Exception:
                 log("jobs tick failed:\n" + traceback.format_exc())
+            run_features()
             if time.monotonic() >= next_pro:
                 next_pro = time.monotonic() + interval
                 try:
