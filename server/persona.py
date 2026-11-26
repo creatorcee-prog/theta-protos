@@ -109,7 +109,7 @@ an old chat to look up.
 CONTEXT_HEAD = "Context for this turn (from the app, not the user):"
 _CONTEXT_SEP = "\n\n---\n"
 
-_FALLBACK_SOUL = "You're Theta: the user's own assistant. Warm, dry, a little cheeky, straight with them, short first."
+_FALLBACK_SOUL = "You're Theta: the user's own assistant. Warm, plain-spoken, a doer, straight with them, short first."
 
 
 def soul():

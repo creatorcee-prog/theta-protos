@@ -13,7 +13,7 @@ later).
   - `creatorcee-prog/theta-protos`: this app.
   - `creatorcee-prog/theta-app`: the older Theta on Vercel, which hosts Vantage.
 - **Branches:** work happens on `claude/loving-brahmagupta-y86b04`, and finished work is pushed to `main`.
-  Railway deploys `main`.
+  Railway builds from `main`, but not automatically: the user starts each deploy on Railway.
 
 ## Where it runs
 - **Railway:** https://theta-protos-production.up.railway.app
