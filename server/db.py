@@ -118,6 +118,11 @@ _ADDED = [("turns", "tokens_in", "INTEGER"), ("turns", "tokens_out", "INTEGER"),
           ("turns", "tools", "TEXT NOT NULL DEFAULT '[]'")]
 
 
+def data_dir():
+    """The folder Theta keeps its files in (the database's folder). Features put their files in a subfolder."""
+    return os.path.dirname(_path or _default_path())
+
+
 def _default_path():
     # Railway mounts the service's volume at RAILWAY_VOLUME_MOUNT_PATH; keeping the database there is what makes
     # it survive redeploys
