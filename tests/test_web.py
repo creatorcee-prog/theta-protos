@@ -118,5 +118,16 @@ class WebApp(unittest.TestCase):
         self.assertIn("proactive: true", demo)
 
 
+class VersionInStep(unittest.TestCase):
+    def test_app_and_server_versions_match(self):
+        import re as _re
+        app = open(os.path.join(WEB, "app.js")).read()
+        srv = open(os.path.join(WEB, "..", "server", "__init__.py")).read()
+        a = _re.search(r'APP_VERSION = "([^"]+)"', app).group(1)
+        s = _re.search(r'__version__ = "([^"]+)"', srv).group(1)
+        self.assertEqual(a, s, "bump web/app.js APP_VERSION and server/__init__.py __version__ together")
+        self.assertIn('id="login-ver"', open(os.path.join(WEB, "index.html")).read())
+
+
 if __name__ == "__main__":
     sys.exit(0 if unittest.main(exit=False).result.wasSuccessful() else 1)

@@ -351,3 +351,5 @@ html.kb { --sab: 0px; }
 
 /* pin the document so iOS can't scroll it when the keyboard opens (app.js follows the visible area instead) */
 html, body { position: fixed; inset: 0; width: 100%; }
+
+.login-ver { margin: -6px 0 10px; text-align: center; font-variant-numeric: tabular-nums; }

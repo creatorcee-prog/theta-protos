@@ -9,6 +9,9 @@
   const Q = new URLSearchParams(location.search);
   const REDUCE = matchMedia("(prefers-reduced-motion: reduce)");
   const HOVER = matchMedia("(hover: hover) and (pointer: fine)");
+  // this app's version (the files the phone loaded); the server says its own in /api/health. Keep in step with
+  // server/__init__.py (tests/test_web.py checks).
+  const APP_VERSION = "0.3.0";
   const BOT = "theta", POLL_MS = 20000, PAGE = 50, EARLIER = 30;
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } };
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -39,7 +42,7 @@
       const r = await timeout(realFetch("/api/health", {cache: "no-store", credentials: "same-origin"}), 3500);
       const j = await r.json();
       if (!r.ok || !j || !j.ok) throw new Error("no api");
-      S.version = (j.version || "") + (j.build ? " (" + j.build + ")" : "");
+      S.version = j.version || ""; S.build = j.build || "";
     } catch (e) { S.demo = true; S.demoAuto = true; }
   }
 
@@ -713,7 +716,7 @@
     $("set-dot").value = ThetaOrb.shape;
     $("set-opening").value = store("theta:opening") || "converge";
     $("settings-mode").textContent = S.demo ? "Demo" : "";
-    $("set-about").textContent = `Theta ${S.version ? "v" + S.version : ""}${S.demo ? " · demo mode: nothing leaves this page" : ""} · times in ${st.tz || Intl.DateTimeFormat().resolvedOptions().timeZone}`;
+    $("set-about").textContent = `${versionLine()}${S.demo ? " · demo mode: nothing leaves this page" : ""} · times in ${st.tz || Intl.DateTimeFormat().resolvedOptions().timeZone}`;
   }
   async function loadSettings() {
     if (!setOrb) setOrb = ThetaOrb.mount($("set-orb"), {dots: 520});
@@ -757,10 +760,16 @@
     if (view === "splash") return; // shown when the splash ends
     showLogin();
   }
+  // "Theta 0.3.0 · server 0.3.0 (aaad836)": if the two differ, the phone is on old files
+  function versionLine() {
+    const srv = S.version ? `server ${S.version}${S.build ? " (" + S.build + ")" : ""}` : "server not reached";
+    return `Theta ${APP_VERSION} · ${srv}` + (S.version && S.version !== APP_VERSION ? " · update pending: close and reopen" : "");
+  }
   function showLogin() {
     for (const s of SHEETS) $(s).hidden = true;
     show("login");
     if (!loginOrb) loginOrb = ThetaOrb.mount($("login-orb"), {dots: 420, scale: 1.1});
+    if ($("login-ver")) $("login-ver").textContent = versionLine();
     setTimeout(() => $("login-key").focus(), 300);
   }
   $("login-form").addEventListener("submit", async e => {
