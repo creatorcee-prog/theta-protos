@@ -106,6 +106,10 @@
 .cards-table { border-collapse: separate; border-spacing: 0; font-size: 14px; min-width: 100%; font-variant-numeric: tabular-nums; }
 .cards-table th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; padding: 0 14px 8px 0; white-space: nowrap; }
 .cards-table td { padding: 9px 14px 9px 0; border-top: 1px solid #2e2e2e; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+/* a comparison of 2-3 options fits on screen: cells wrap instead of scrolling sideways */
+.cards-table.fit { table-layout: fixed; width: 100%; }
+.cards-table.fit td, .cards-table.fit th { white-space: normal; overflow-wrap: anywhere; max-width: none; vertical-align: top; }
+.cards-table.fit th { text-transform: none; letter-spacing: 0; font-size: 12.5px; }
 .cards-table td.num, .cards-table th.num { text-align: right; }
 .cards-table tr > :first-child { position: sticky; left: -16px; background: var(--card); padding-left: 0; font-weight: 500; }
 
@@ -446,7 +450,7 @@
   R.table = c => {
     const cols = c.columns || [], rows = c.rows || [];
     const numeric = cols.map((_, j) => rows.length && rows.every(r => typeof r[j] === "number" || /^[-+−$€£]?[\d.,]+%?$/.test(String(r[j] || "").trim()) || r[j] === ""));
-    const tb = el("table", "cards-table"), thead = el("thead"), hr = el("tr");
+    const tb = el("table", "cards-table" + ((c.columns || []).length <= 4 ? " fit" : "")), thead = el("thead"), hr = el("tr");
     cols.forEach((h, j) => hr.append(el("th", numeric[j] && j ? "num" : null, h)));
     thead.append(hr); tb.append(thead);
     const body = el("tbody");

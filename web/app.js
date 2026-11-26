@@ -1103,11 +1103,36 @@
         closeBar(); if (S.streaming) { toast("One sec, Theta's still answering."); return; } startEdit(m);
       }, {aria: "Edit message"}));
     }
-    bar.replaceChildren(acts, modelLine(m));
+    // tapbacks, like iMessage: tap one to put it in the bubble's corner; tap yours again to take it back
+    const tbRow = el("div", "mb-tb"); tbRow.setAttribute("role", "group"); tbRow.setAttribute("aria-label", "React");
+    const mine = ((meta.reactions || {}).user) || "";
+    for (const e of ["❤️", "👍", "👎", "😂", "‼️", "❓"]) {
+      const t = el("button", "mb-tbb" + (mine === e ? " on" : ""), e); t.type = "button";
+      t.setAttribute("aria-label", "React " + e); t.setAttribute("aria-pressed", String(mine === e));
+      t.addEventListener("click", () => { closeBar(); react(m, mine === e ? "" : e); });
+      tbRow.append(t);
+    }
+    bar.replaceChildren(tbRow, acts, modelLine(m));
     bar.hidden = false; b.classList.add("held");
     place();
     if (navigator.vibrate && !from) try { navigator.vibrate(8); } catch (e) {}
     if (from) acts.querySelector("button").focus({preventScroll: true});
+  }
+  async function react(m, emoji) {
+    const row = thread.querySelector(`[data-key="m${m.id}"]`);
+    const apply = (reactions) => {
+      m.meta = Object.assign({}, m.meta || {}, {reactions});
+      if (!row) return;
+      row.querySelectorAll(".tbs").forEach(x => x.remove()); row.classList.remove("has-tb");
+      const tbs = tapbackBadges(m, emoji ? "user" : null), b = row.querySelector(".msg");
+      if (tbs && b) { b.append(tbs); row.classList.add("has-tb"); }
+    };
+    const before = (m.meta || {}).reactions || {};
+    apply(Object.assign({}, before, {user: emoji}));   // show it at once
+    haptic(emoji ? "success" : "light");
+    if (S.demo) return;
+    try { const r = await post("/api/messages/react", {id: m.id, emoji}); if (r && r.reactions) apply(r.reactions); }
+    catch (e) { apply(before); if (!(e instanceof AuthError)) toast("That reaction didn't save. Try again."); }
   }
   function place() {
     const b = barFor != null && thread.querySelector(`.msg[data-id="${barFor}"]`); if (!b) return;

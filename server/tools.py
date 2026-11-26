@@ -578,8 +578,24 @@ _RELEVANT = re.compile(
     re.I)
 
 
+# Small talk stays on the instant path; everything else gets the tools, so Theta can make cards (and check the
+# weather, the calendar...) even when the message never asks for them.
+_SMALLTALK = re.compile(
+    r"^\s*(?:hey+|hi+|hello|yo|sup|hiya|howdy|thanks?|thank you|thx|ty|ok(?:ay)?|k|cool|nice|great|lol|lmao|haha+|"
+    r"good (?:morning|night|evening|afternoon)|gm|gn|night|morning|what'?s up|how are you|how'?s it going|"
+    r"tell me a joke|what'?s \d+\s*[-+*/x]\s*\d+|bye|see ya|love you|you there)\b[\s\w?!.,'~]{0,24}$", re.I)
+
+
 def relevant(text):
-    """True when the message likely needs a tool. Quick chat without one streams straight from the model."""
+    """True when the message should get the tools: everything but small talk (see _SMALLTALK)."""
+    text = (text or "").strip()
+    if not text or _SMALLTALK.match(text):
+        return False
+    return True
+
+
+def _relevant_words(text):
+    """The older keyword test (kept for reference and tests): True when the message names something a tool does."""
     if _RELEVANT.search(text or ""):
         return True
     try:

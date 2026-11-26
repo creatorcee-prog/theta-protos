@@ -411,6 +411,8 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
         rmeta["actions"] = _approval_actions(approvals)
     if info.get("sources"):
         rmeta["sources"] = info["sources"]
+    out, cards = _cards_from_text(out, cards)
+    cards = _card_if_fits(text, out, cards)
     cards = _connect_from_text(out, cards)
     if cards:  # rich cards tools asked for (ctx["cards"]): weather, link, connect...
         rmeta["cards"] = cards
@@ -675,6 +677,32 @@ def _deliver_reminder(job, now):
         except Exception:
             log("reminder push failed:\n" + traceback.format_exc())
     return msg
+
+
+def _cards_from_text(text, cards):
+    """Lists and tables in the reply become cards (code-made, every time): the block moves into the card."""
+    try:
+        from . import cards as C
+        made, rest = C.from_text(text, have={c.get("type") for c in cards})
+    except Exception:  # noqa: BLE001
+        return text, cards
+    if made and rest.strip():
+        return rest, (cards + made)[:6]
+    return text, cards
+
+
+def _card_if_fits(user_text, reply_text, cards):
+    """When the message calls for a card by its shape and the turn made none of that kind, fill one with a quick
+    model call (server/cards.py). Skipped when the turn already has a card the user will see."""
+    try:
+        from . import cards as C, tools as T
+        kind = C.fits(user_text)
+        if not kind or any(c.get("type") in (kind, "connect") for c in cards) or len(cards) >= 2:
+            return cards
+        card = C.cardify(user_text, reply_text, kind, T.local_time(time.time()).isoformat(timespec="minutes"))
+        return cards + [card] if card else cards
+    except Exception:  # noqa: BLE001
+        return cards
 
 
 def _connect_from_text(text, cards):

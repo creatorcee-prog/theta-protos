@@ -253,6 +253,11 @@ def main():
     s, _, j, _ = cl.req("GET", "/api/messages?bot=theta&limit=2", headers=AUTH)
     check("chat persisted", s == 200 and [m["id"] for m in j["messages"]] == [user["id"], done["id"]])
 
+    # These check the plain streaming path (no tools). Since 0.4 every message but small talk gets the tools, so
+    # the plain path is forced here for the think-tier and fallback checks, then restored.
+    from server import tools as _tools
+    _rel = _tools.relevant
+    _tools.relevant = lambda text: False
     # ---- think tier: ack first, as its own message
     s, _, evs = cl.sse({"text": "why should I pick one plan over the other? think it through"}, AUTH)
     names = [e[0] for e in evs]
@@ -287,6 +292,7 @@ def main():
     routes = [e for e in evs if e[0] == "route"]
     check("mid-stream failure after text: no retry", len(routes) <= 2)
     BEHAVIOR.clear()
+    _tools.relevant = _rel
 
     # ---- non-streaming
     s, _, j, _ = cl.req("POST", "/api/chat?stream=0", {"bot": "theta", "text": "hello"}, AUTH)

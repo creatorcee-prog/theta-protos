@@ -267,7 +267,7 @@ def _cell(v):
 
 def _table(d):
     cols = [_s(c, 40) for c in _list(d, "columns", lo=1, hi=8)]
-    if not all(cols):
+    if not all(cols[1:]) or (len(cols) == 1 and not cols[0]):  # the corner (first) header may be blank
         raise _err("every column needs a name")
     rows = []
     for i, r in enumerate(_list(d, "rows", lo=1, hi=60)):
@@ -637,6 +637,165 @@ def _t_weather(args, ctx):
     nxt = ", ".join(f"{h['time']} {h['temp']}°" for h in hrs[:4])
     return (f"{name}: {data['temp']}°{unit} and {data['condition']} now; high {data['hi']}°, low {data['lo']}°. "
             f"Next hours: {nxt}. (Source: Open-Meteo.) A weather card is attached; don't repeat every number.")
+
+
+# ---------------------------------------------------------------- structure in a reply -> cards (code, every time)
+
+_NUM = re.compile(r"^\s*(\d{1,2})[.)]\s+(.+?)\s*$")
+_BUL = re.compile(r"^\s*[-*•]\s+(?:\[[ xX]\]\s*)?(.+?)\s*$")
+_ROW = re.compile(r"^\s*\|.*\|\s*$")
+_SEP = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
+
+
+def _plain_md(s):
+    return re.sub(r"\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`", lambda m: m.group(1) or m.group(2) or m.group(3), s).strip()
+
+
+def _title_before(lines, i):
+    """The line just before a block, when it introduces it ("Here's what to pack:"), as the card's title."""
+    j = i - 1
+    while j >= 0 and not lines[j].strip():
+        j -= 1
+    if j >= 0 and lines[j].rstrip().endswith(":"):
+        head = _plain_md(lines[j].rstrip()[:-1])
+        # a short label ("Packing list:") becomes the title; a sentence stays in the text where it was
+        if len(head) <= 48 and not re.search(r"[.!?]\s", head):
+            return j, head
+    return None, ""
+
+
+def from_text(text, have=()):
+    """Cards for the obvious structure in a reply, made by code so they appear every time:
+    a markdown table -> table card; a numbered list of 3+ -> steps card; a bullet list of 3+ short items
+    (things to do or bring, not explanations) -> checklist. Each block is taken out of the text (the card shows
+    it). One card of each kind at most, and none of a kind the turn already has. Returns (cards, text)."""
+    have = set(have or ())
+    lines = str(text or "").split("\n")
+    out, drop, i = [], set(), 0
+    while i < len(lines):
+        ln = lines[i]
+        # table
+        if "table" not in have and _ROW.match(ln) and i + 1 < len(lines) and _SEP.match(lines[i + 1]):
+            j = i + 2
+            while j < len(lines) and _ROW.match(lines[j]):
+                j += 1
+            cols = [_plain_md(x) or ("Item" if k == 0 else f"Column {k + 1}") for k, x in enumerate(ln.strip().strip("|").split("|"))]
+            rows = [[_plain_md(x) for x in r.strip().strip("|").split("|")] for r in lines[i + 2:j]]
+            ti, title = _title_before(lines, i)
+            card = None
+            try:
+                if rows and all(cols):
+                    card = validate("table", {"columns": cols[:8], "rows": [r[:8] for r in rows[:60]], "title": title})
+            except Exception:  # noqa: BLE001
+                card = None
+            if card:
+                out.append(card); have.add("table"); drop.update(range(i, j))
+                if ti is not None:
+                    drop.add(ti)
+            i = j
+            continue
+        # numbered list -> steps
+        if "steps" not in have and _NUM.match(ln):
+            j, items = i, []
+            while j < len(lines) and (_NUM.match(lines[j]) or (not lines[j].strip() and j + 1 < len(lines) and _NUM.match(lines[j + 1]))):
+                m = _NUM.match(lines[j])
+                if m:
+                    items.append(_plain_md(m.group(2)))
+                j += 1
+            if 3 <= len(items) <= 12 and all(len(x) <= 140 for x in items):
+                ti, title = _title_before(lines, i)
+                try:
+                    card = validate("steps", {"title": title or "Steps", "steps": [{"text": x} for x in items]})
+                except Exception:  # noqa: BLE001
+                    card = None
+                if card:
+                    out.append(card); have.add("steps"); drop.update(range(i, j))
+                    if ti is not None:
+                        drop.add(ti)
+            i = max(j, i + 1)
+            continue
+        # short bullet items -> checklist
+        if "checklist" not in have and _BUL.match(ln):
+            j, items = i, []
+            while j < len(lines) and _BUL.match(lines[j]):
+                items.append(_plain_md(_BUL.match(lines[j]).group(1)))
+                j += 1
+            short = all(len(x) <= 80 for x in items) and sum(x.endswith(".") for x in items) <= len(items) // 3
+            if 3 <= len(items) <= 30 and short:
+                ti, title = _title_before(lines, i)
+                try:
+                    card = validate("checklist", {"title": title, "items": items})
+                except Exception:  # noqa: BLE001
+                    card = None
+                if card:
+                    out.append(card); have.add("checklist"); drop.update(range(i, j))
+                    if ti is not None:
+                        drop.add(ti)
+            i = max(j, i + 1)
+            continue
+        i += 1
+    if not out:
+        return [], text
+    rest = "\n".join(l for k, l in enumerate(lines) if k not in drop)
+    rest = re.sub(r"\n{3,}", "\n\n", rest).strip()
+    return out, rest
+
+
+# ---------------------------------------------------------------- when a card fits but none was made
+
+_DAY = r"(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*|tomorrow|tonight|today"
+_FIT = (
+    ("table", re.compile(r"\b(?:vs\.?|versus|compare|torn between|between (?:the )?\w[\w\s-]{1,30} and|or the)\b", re.I)),
+    ("steps", re.compile(r"\b(?:how (?:do|to|can|should)|recipe|making|make|cook|cooking|bake|baking|fix|replace|install|"
+                         r"set up|change (?:a|the|my))\b", re.I)),
+    ("event", re.compile(r"\b(?:" + _DAY + r")\b[^.\n]{0,40}\b(?:at\s*)?\d{1,2}(?::\d\d)?\s*(?:am|pm)?\b", re.I)),
+    ("checklist", re.compile(r"(?:[^,\n]+,){3,}[^,\n]+|\b(?:to-?do|errands|packing|pack|forget(?:ting)? (?:stuff|something|things))\b", re.I)),
+)
+_FILL = {
+    "table": ("""{"title": "...", "columns": ["", <each option's real name>], "rows": [[<what is compared, """
+              """e.g. "Price">, <a short value for each option>], ...]} with one column per option named in the """
+              """exchange (at least two), 3 to 6 rows, and cells of a few words"""),
+    "steps": '{"title": "...", "steps": [{"text": "..."}, ...]}',
+    "event": '{"title": "...", "start": "YYYY-MM-DDTHH:MM:SS-07:00", "location": "...", "calendar": ""}',
+    "checklist": '{"title": "...", "items": ["...", "..."]}',
+}
+
+
+def fits(user_text):
+    """The card kind the user's message calls for, by its shape (code, not the model): two options weighed ->
+    table, a how-to or a dish -> steps, a day and a time -> event, a run of errands -> checklist. Else None."""
+    for kind, rx in _FIT:
+        if rx.search(user_text or ""):
+            return kind
+    return None
+
+
+def cardify(user_text, reply_text, kind, now_iso=""):
+    """Fill the card `kind` from the conversation with one short, cheap model call (the quick tier), only using
+    what the reply and the message already say. Returns a validated card or None (never raises)."""
+    try:
+        from . import models, router
+        cands = [c for c in router.candidates("quick") if c[0] in models.available()]
+        if not cands:
+            return None
+        prov, model = cands[0]
+        prompt = (f"Make one '{kind}' card for a chat app from this exchange. Use only facts in the reply and "
+                  f"the message; don't add new ones, and use the real names from the exchange, never placeholders. Write the title in sentence case ("This week's errands", not "This Week's Errands"). "
+                  f"Answer with JSON only, shaped like: {_FILL[kind]}\n"
+                  f"Now: {now_iso}\n\nUser: {user_text[:1200]}\n\nAssistant: {reply_text[:2400]}")
+        raw = models.complete(prov, model, [{"role": "user", "content": prompt}], max_tokens=600)
+        m = re.search(r"\{.*\}", raw or "", re.S)
+        if not m:
+            return None
+        data = json.loads(m.group(0))
+        if kind == "table":
+            cols = data.get("columns") if isinstance(data.get("columns"), list) else []
+            # a comparison needs at least two named options, and no template names
+            if len(cols) < 3 or any(re.fullmatch(r"(?i)option [a-z]|item|\.\.\.", str(x).strip()) for x in cols[1:]):
+                return None
+        return validate(kind, data)
+    except Exception:  # noqa: BLE001  no card beats a broken one
+        return None
 
 
 def running(ctx):
