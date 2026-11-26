@@ -353,3 +353,14 @@ html.kb { --sab: 0px; }
 html, body { position: fixed; inset: 0; width: 100%; }
 
 .login-ver { margin: -6px 0 10px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* keyboard up (html.kb, set by app.js): the message box sits right on top of iOS's own keyboard bar (the
+   arrows-and-check capsule), with the same small gap iOS leaves between that bar and the keys, and takes on that
+   bar's look, so the two read as one stack attached to the keyboard */
+html.kb .composer-wrap { padding-top: 14px; padding-bottom: 8px; background: linear-gradient(rgba(20, 20, 20, 0), var(--bg) 45%); }
+html.kb .home-bottom { padding-bottom: 8px; }
+html.kb .composer, html.kb .search-pill {
+  background: rgba(30, 30, 32, .94); border-color: rgba(255, 255, 255, .16);
+  box-shadow: 0 0 0 .5px rgba(255, 255, 255, .06), 0 6px 24px rgba(0, 0, 0, .35);
+}
+html.kb #home .banner { display: none; }
