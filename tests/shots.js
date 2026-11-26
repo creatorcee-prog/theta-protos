@@ -64,6 +64,11 @@ async function waitUp(url) {
     await page.waitForSelector("#chat:not([hidden])");
     await sleep(400);
     check((await page.$$("#thread .msg")).length >= 4, "history loaded");
+    { // the message box is one row: [+] [text] [mic] [send] (a 0.4 change once wrapped them onto separate lines)
+      const r = await page.evaluate(() => ["c-plus", "c-text", "c-mic", "c-send"].map(id => document.getElementById(id).getBoundingClientRect()).map(b => ({bottom: b.bottom, left: b.left})));
+      const sameRow = r.every(b => Math.abs(b.bottom - r[3].bottom) < 14), ordered = r[0].left < r[1].left && r[1].left < r[2].left && r[2].left < r[3].left;
+      check(sameRow && ordered, "message box: +, text, mic and send sit on one row");
+    }
     const usage0 = (await page.$$("#thread .usage .u-txt")).length;
     check(usage0 >= 2, "history replies show their token use");
     await page.fill("#c-text", "Should I buy the new camera now or wait? Compare it for me");
