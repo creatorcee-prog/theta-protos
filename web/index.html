@@ -35,6 +35,12 @@
     <symbol id="i-pin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 21s-6.5-6.1-6.5-11a6.5 6.5 0 0113 0c0 4.9-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></g></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 004 0"/></g></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="11" rx="2.4"/><path d="M15.5 8.5V6.4a2 2 0 00-2-2h-7a2 2 0 00-2 2v7a2 2 0 002 2h2"/></g></symbol>
+    <symbol id="i-copy2" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5.5h9.5a2 2 0 012 2V10"/><path d="M5 5.5v5a2 2 0 002 2h1.5v2.5l3-2.5"/><rect x="11" y="12.5" width="9" height="7" rx="2"/></g></symbol>
+    <symbol id="i-like" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M7.5 10.5v9H4.5v-9z"/><path d="M7.5 10.5l3.6-6.3c1.4 0 2.4 1.1 2.1 2.5l-.7 3.3h5.6a2 2 0 012 2.3l-1.1 5.6a2 2 0 01-2 1.6H7.5"/></g></symbol>
+    <symbol id="i-dislike" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" transform="rotate(180 12 12)"><path d="M7.5 10.5v9H4.5v-9z"/><path d="M7.5 10.5l3.6-6.3c1.4 0 2.4 1.1 2.1 2.5l-.7 3.3h5.6a2 2 0 012 2.3l-1.1 5.6a2 2 0 01-2 1.6H7.5"/></g></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/></g></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 19.5l1-4.2L15.8 5a2 2 0 012.8 0l.4.4a2 2 0 010 2.8L8.7 18.5z"/><path d="M13.5 7.3l3.2 3.2"/></g></symbol>
     <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   </defs>
 </svg>
@@ -104,6 +110,7 @@
     <footer class="composer-wrap">
       <div class="dock" id="dock" aria-live="polite"></div>
       <div class="attach-chip" id="attach-chip" hidden></div>
+      <div class="attach-chip edit-chip" id="edit-chip" role="status" hidden></div>
       <form class="composer" id="composer">
         <button type="button" class="c-btn plus" id="c-plus" aria-label="Attach"><svg><use href="#i-plus"/></svg></button>
         <textarea id="c-text" rows="1" placeholder="Ask Theta" aria-label="Message Theta" enterkeyhint="send"></textarea>
@@ -164,6 +171,17 @@
           <label class="switch"><input type="checkbox" id="set-loc" aria-label="Share my location"><i></i></label>
         </div>
       </div>
+      <h3 class="sec">Chat</h3>
+      <div class="group">
+        <div class="row-set">
+          <div class="txt"><b>Show token use</b><span>A quiet line under each reply: tokens in and out, and about what it cost.</span></div>
+          <label class="switch"><input type="checkbox" id="set-usage" aria-label="Show token use" checked><i></i></label>
+        </div>
+      </div>
+      <h3 class="sec">What Theta learned from your feedback</h3>
+      <div class="group" id="set-lessons" aria-live="polite"></div>
+      <p class="fine set-fine">Your likes and dislikes become short notes in Theta's instructions. Remove any you don't agree with.
+        <a id="set-export" href="/api/feedback/export" download="feedback.jsonl" hidden>Export liked replies</a></p>
       <h3 class="sec">Theta's look</h3>
       <div class="group">
         <div class="row-set">
@@ -209,7 +227,7 @@
     <button class="round lg" id="voice-close" aria-label="End voice mode"><svg><use href="#i-close"/></svg></button>
   </section>
 
-  <div class="hint" id="hint" role="status" hidden></div>
+  <div class="msgbar" id="msgbar" role="dialog" aria-label="Message actions" hidden></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </div>
 

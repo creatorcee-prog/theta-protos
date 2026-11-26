@@ -13,9 +13,9 @@
   const H = now() - 3600 * 20;
   const seed = [
     ["user", "Morning. What's on today?"],
-    ["assistant", "Morning. Light day:\n\n- **10:30** dentist (leave by 10:05, there's roadwork on Colfax)\n- **2:00** call with Sam about the hub\n- Trash goes out tonight\n\nThe dentist is the only thing with a hard edge.", {model: "deepseek-chat", tier: "quick"}],
+    ["assistant", "Morning. Light day:\n\n- **10:30** dentist (leave by 10:05, there's roadwork on Colfax)\n- **2:00** call with Sam about the hub\n- Trash goes out tonight\n\nThe dentist is the only thing with a hard edge.", {model: "deepseek-chat", tier: "quick", usage: {in: 2841, out: 64, cached: 2304, cost_usd: 0.0003, model: "deepseek-chat"}}],
     ["user", "Remind me what I spent on groceries this month"],
-    ["assistant", "**$412** so far in November, about $60 under where you usually are by the 24th. Biggest single run was King Soopers on the 9th ($96).", {model: "deepseek-reasoner", tier: "think"}],
+    ["assistant", "**$412** so far in November, about $60 under where you usually are by the 24th. Biggest single run was King Soopers on the 9th ($96).", {model: "deepseek-reasoner", tier: "think", usage: {in: 3120, out: 418, cached: 2816, cost_usd: 0.0011, model: "deepseek-reasoner"}}],
     ["assistant", "Sorted your newsletters", {task: {title: "Sorted 214 newsletters into Later", state: "done"}}],
     ["assistant", "Evening brief: nothing urgent. Your package from the camera shop lands tomorrow before noon, and it's going down to **14°F** tonight, so the hose bib might want a cover.", {proactive: true, source: "brief", level: 3}],
   ];
@@ -45,7 +45,10 @@
         text: "Looks like the loop runs one past the end. Change the bound to `i < items.length` and it stops throwing.\n\nIf it still fails, paste the **full** traceback and I'll go line by line."};
     if (/\b(news|today|price|weather|score|latest)\b/.test(t))
       return {route: {model: "deepseek-chat", tier: "search", why: "live facts"},
-        text: "Here's the short version from this morning:\n\n1. **Weather:** 31°F now, sunny, high of 44.\n2. **Roads:** I-25 is clear; Colfax still has the lane closure.\n3. **Markets:** flat so far.\n\nSources: [National Weather Service](https://www.weather.gov) and CDOT."};
+        text: "Here's the short version from this morning:\n\n1. **Weather:** 31°F now, sunny, high of 44 [1].\n2. **Roads:** I-25 is clear; Colfax still has the lane closure [2].\n3. **Markets:** flat so far [3].",
+        sources: [{title: "Denver forecast - National Weather Service", url: "https://www.weather.gov/bou/"},
+          {title: "COtrip traveler information", url: "https://www.cotrip.org/"},
+          {title: "Stocks open flat ahead of data", url: "https://www.reuters.com/markets/"}]};
     if (/\b(plan|should i|compare|why|vs|decide|budget)\b/.test(t))
       return {route: {model: "deepseek-reasoner", tier: "think", why: "a decision with trade-offs"},
         text: "Short answer: **wait a week**.\n\nWhy:\n- The price usually drops on the 1st.\n- You've got $412 into groceries already, so the month is tighter than it looks.\n- Nothing you need it for happens before the 5th.\n\nWant me to remind you on the 1st?"};
@@ -60,13 +63,30 @@
   const json = (obj, status) => new Response(JSON.stringify(obj), {status: status || 200, headers: {"content-type": "application/json"}});
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  function chatStream(body) {
-    const enc = new TextEncoder(), user = add("user", String(body.text || ""), {client_id: body.client_id});
+  // made-up but plausible token use, like the server's meta.usage
+  function usage(r) {
+    const prior = msgs.reduce((n, m) => n + m.text.length, 0), tin = 2600 + Math.round(prior / 4) + (r.sources ? 900 : 0);
+    const out = Math.max(12, Math.round(r.text.length / 3.6)), cached = Math.round(tin * 0.82 / 64) * 64;
+    const reasoner = r.route.model === "deepseek-reasoner", pin = reasoner ? 0.55 : 0.27, pc = 0.07, pout = reasoner ? 2.19 : 1.1;
+    const cost = ((tin - cached) * pin + cached * pc + out * pout) / 1e6;
+    return {in: tin, out, cached, cost_usd: Math.round(cost * 1e6) / 1e6, model: r.route.model};
+  }
+  function chatStream(body, edit) {
+    const enc = new TextEncoder();
+    let user, deleted = [];
+    if (edit) { // like POST /api/messages/edit: rewrite the latest user message, drop the replies after it
+      user = edit; user.text = String(body.text || ""); user.meta = Object.assign({}, user.meta, {edited: now()});
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i]; if (m.id <= user.id) break;
+        if (m.role === "assistant" && (!m.meta.proactive || m.meta.reply_to === user.id)) { deleted.push(m.id); msgs.splice(i, 1); }
+      }
+    } else user = add("user", String(body.text || ""), {client_id: body.client_id});
     const r = reply(user.text);
     let cancelled = false;
     const stream = new ReadableStream({
       async start(ctl) {
         const send = (ev, data) => { if (!cancelled) ctl.enqueue(enc.encode(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`)); };
+        if (edit) send("deleted", {ids: deleted, user_id: user.id});
         send("user", user);
         await sleep(250);
         send("route", r.route);
@@ -77,7 +97,10 @@
           send("delta", {text: parts.slice(i, i + 2).join("")});
           await sleep(45 + Math.random() * 70);
         }
-        const done = add("assistant", r.text, {model: r.route.model, tier: r.route.tier, why: r.route.why});
+        const meta = {model: r.route.model, tier: r.route.tier, why: r.route.why, reply_to: user.id, usage: usage(r)};
+        if (r.sources) meta.sources = r.sources;
+        if (edit) meta.edited = true;
+        const done = add("assistant", r.text, meta);
         send("done", done);
         if (!cancelled) ctl.close();
       },
@@ -107,6 +130,29 @@
       return json({messages: list.slice(Math.max(0, list.length - limit))});
     }
     if (p === "/api/chat" && method === "POST") return chatStream(body);
+    if (p === "/api/messages/edit" && method === "POST") {
+      const lastUser = [...msgs].reverse().find(m => m.role === "user");
+      if (!lastUser || lastUser.id !== Number(body.id)) return json({error: "only your latest message can be edited"}, 409);
+      return chatStream(body, lastUser);
+    }
+    if (p === "/api/feedback" && method === "POST") {
+      const m = msgs.find(x => x.id === Number(body.message_id) && x.role === "assistant");
+      if (!m) return json({error: "no such reply"}, 404);
+      const v = Number(body.vote);
+      if (v) feedback.set(m.id, {id: m.id, vote: v, reason: v < 0 ? String(body.reason || "") : "", tier: m.meta.tier, reply: m.text, t: Date.now(), dismissed: false});
+      else feedback.delete(m.id);
+      if (v) m.meta.vote = v; else delete m.meta.vote;
+      return json({ok: true, message_id: m.id, vote: v, lessons: lessons()});
+    }
+    if (p === "/api/feedback/summary") {
+      if (method === "DELETE") {
+        const l = lessons().find(x => x.id === u.searchParams.get("id"));
+        if (!l) return json({error: "no such lesson"}, 404);
+        for (const id of l.rows) { const f = feedback.get(id); if (f) f.dismissed = true; }
+      }
+      const all = [...feedback.values()];
+      return json({lessons: lessons(), likes: all.filter(f => f.vote > 0).length, dislikes: all.filter(f => f.vote < 0).length});
+    }
     if (p === "/api/inbox") { const since = Number(u.searchParams.get("since")) || 0; return json({messages: msgs.filter(m => m.id > since)}); }
     if (p === "/api/push/key") return json({key: ""});
     if (p === "/api/push/subscribe" || p === "/api/push/test") return json({ok: true, demo: true});
@@ -116,6 +162,24 @@
     }
     if (p === "/api/settings") { if (method === "POST") { Object.assign(settings, body); saveSettings(); } return json(settings); }
     return json({error: "not found"}, 404);
+  }
+
+  // feedback -> lessons, the same rules as server/persona.py lessons() (simplified)
+  const feedback = new Map();
+  const REASONS = [["too long", "too-long", "Disliked: too long \u2192 keep replies shorter"], ["wrong", "wrong", "Disliked: wrong \u2192 check facts, and say plainly when unsure"],
+    ["not what i asked", "off-target", "Disliked: not what I asked \u2192 answer the exact question first"], ["tone", "tone", "Disliked: the tone \u2192 plainer and more direct, match their tone"]];
+  function lessons() {
+    const found = new Map(), likes = new Map();
+    const put = (id, text, f) => { const l = found.get(id) || {id, text, t: 0, n: 0, rows: []}; l.n++; l.rows.push(f.id); l.t = Math.max(l.t, f.t); found.set(id, l); };
+    for (const f of feedback.values()) {
+      if (f.dismissed) continue;
+      if (f.vote < 0 && f.reason) {
+        const low = f.reason.toLowerCase(), hit = REASONS.find(r => low === r[0] || low.startsWith(r[0] + ":"));
+        if (hit) put("d:" + hit[1], hit[2], f); else put("d:x:" + low.slice(0, 60), `Disliked: "${f.reason.slice(0, 80)}" \u2192 avoid that`, f);
+      } else if (f.vote > 0) { const k = (f.tier || "quick") + ":" + (f.reply.length <= 320 ? "short" : "detailed"); likes.set(k, (likes.get(k) || []).concat([f])); }
+    }
+    for (const [k, fs] of likes) if (fs.length >= 3) for (const f of fs) put("l:" + k, `Liked: ${k.split(":")[0]} replies ${k.endsWith("short") ? "that are short" : "that go into detail"} \u2192 keep doing that`, f);
+    return [...found.values()].sort((a, b) => b.t - a.t).slice(0, 6);
   }
 
   window.ThetaDemo = {fetch: demoFetch};

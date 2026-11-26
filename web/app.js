@@ -77,10 +77,32 @@
 
   // ---------------------------------------------------------------- markdown subset, built as DOM (never innerHTML)
   // **bold**, *italic*, `code`, [links](https://...) and bare https links, bullets, numbered lists, headings, ``` blocks.
-  const INLINE = /(`[^`\n]+`)|(\*\*[^\n]+?\*\*)|(\[[^\]\n]+\]\([^)\s]+\))|(https:\/\/[^\s<>()"']+[^\s<>()"'.,;:!?])|(\*[^*\s](?:[^*\n]*[^*\s])?\*)|(\n)/g;
+  // [n] (or [1, 2]) right after a claim is a citation of meta.sources[n-1]: a small pill with the site's domain
+  const INLINE = /(`[^`\n]+`)|(\*\*[^\n]+?\*\*)|(\[[^\]\n]+\]\([^)\s]+\))|(https:\/\/[^\s<>()"']+[^\s<>()"'.,;:!?])|(\*[^*\s](?:[^*\n]*[^*\s])?\*)|(\n)|(\[\d{1,2}(?:\s*,\s*\d{1,2})*\](?!\())/g;
   function safeHref(href) {
     try { const u = new URL(href); return u.protocol === "https:" ? u.href : null; } catch (e) { return null; }
   }
+  // ---- cite: start (pure; tests/test_message_actions.py runs this block in node)
+  function domain(href) {
+    try { const u = new URL(String(href)); return u.protocol === "https:" && u.hostname ? u.hostname.replace(/^www\./, "") : null; } catch (e) { return null; }
+  }
+  // "[1]" or "[1, 2]" -> [{n, url, label, title}] when every number has an https source; else null (stays text)
+  function citeParts(tok, sources) {
+    if (!Array.isArray(sources) || !sources.length) return null;
+    const out = [];
+    for (const part of tok.slice(1, -1).split(",")) {
+      const n = Number(part.trim()), s = sources[n - 1], d = s && typeof s.url === "string" ? domain(s.url) : null;
+      if (!d) return null;
+      out.push({n, url: new URL(s.url).href, label: d, title: String(s.title || d)});
+    }
+    return out.length ? out : null;
+  }
+  // ---- cite: end
+  function pill(c) {
+    const a = el("a", "cite", c.label); a.href = c.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.title = c.title; a.setAttribute("aria-label", `Source ${c.n}: ${c.title} (${c.label})`); return a;
+  }
+  let mdSources = null; // the sources of the message md() is building
   function inline(parent, text, depth) {
     depth = depth || 0;
     let last = 0, m;
@@ -100,11 +122,13 @@
         else parent.append(tok);
       } else if (m[5]) { const i = el("em"); if (depth < 2) inline(i, tok.slice(1, -1), depth + 1); else i.textContent = tok.slice(1, -1); parent.append(i); }
       else if (m[6]) parent.append(el("br"));
+      else if (m[7]) { const cs = citeParts(tok, mdSources); if (cs) cs.forEach(c => parent.append(pill(c))); else parent.append(tok); }
       last = re.lastIndex;
     }
     if (last < text.length) parent.append(text.slice(last));
   }
-  function md(src, streaming) {
+  function md(src, streaming, sources) {
+    mdSources = Array.isArray(sources) ? sources : null;
     src = String(src || "").replace(/\r\n?/g, "\n");
     if (streaming) { // close what's still open, so half-streamed **bold or `code` doesn't flash its markers
       if ((src.match(/\*\*/g) || []).length % 2) src += "**";
@@ -132,6 +156,7 @@
       list = null; para.push(line);
     }
     flush();
+    mdSources = null;
     return frag;
   }
 
@@ -208,9 +233,34 @@
 
   function bubble(m, streaming) {
     const b = el("div", "msg " + (m.role === "user" ? "u" : "a"));
-    if (m.role === "user") b.textContent = m.text; else b.append(md(m.text, streaming));
-    if (m.id != null) b.dataset.id = m.id;
+    if (m.role === "user") b.textContent = m.text; else b.append(md(m.text, streaming, (m.meta || {}).sources));
+    if (m.id != null) {
+      b.dataset.id = m.id;
+      // on a mouse, a small "..." beside the bubble opens the same bar a long-press does
+      if (!streaming) { const mb = el("button", "more-btn"); mb.type = "button"; mb.setAttribute("aria-label", "Message actions"); mb.setAttribute("aria-haspopup", "dialog"); mb.append(svg("i-more")); b.append(mb); }
+    }
     return b;
+  }
+  // "1,234 in · 210 out · $0.0004": the finished reply's token use (meta.usage), never while streaming
+  const fmtN = n => Number(n || 0).toLocaleString();
+  const fmtUsd = c => c >= 1 ? c.toFixed(2) : c >= 0.01 ? c.toFixed(3) : c.toFixed(4);
+  function usageLine(u) {
+    const parts = [`${fmtN(u.in)} in`, `${fmtN(u.out)} out`];
+    if (Number(u.cost_usd) > 0) parts.push("$" + fmtUsd(Number(u.cost_usd)));
+    const d = el("div", "usage"), t = el("span", "u-txt", parts.join(" · ")); d.append(t);
+    const full = `${fmtN(u.in)} tokens in${u.cached ? ` (${fmtN(u.cached)} cached)` : ""}, ${fmtN(u.out)} out` + (Number(u.cost_usd) > 0 ? `, about $${fmtUsd(Number(u.cost_usd))}` : "") + (u.model ? ` · ${u.model}` : "");
+    t.title = full; t.setAttribute("aria-label", "Token use: " + full);
+    return d;
+  }
+  function voteMark(v) {
+    const i = el("span", "voted " + (v > 0 ? "up" : "down")); i.setAttribute("role", "img");
+    i.setAttribute("aria-label", v > 0 ? "You liked this" : "You disliked this"); i.append(svg(v > 0 ? "i-like" : "i-dislike")); return i;
+  }
+  function sourcesRow(sources) {
+    const seen = new Set(), row = el("div", "srcs"); row.setAttribute("role", "group"); row.setAttribute("aria-label", "Sources");
+    row.append(el("span", "srcs-h", "Sources"));
+    sources.forEach((s, i) => { const c = s && citeParts(`[${i + 1}]`, sources); if (c && !seen.has(c[0].url)) { seen.add(c[0].url); row.append(pill(c[0])); } });
+    return seen.size ? row : null;
   }
   function taskCard(m) {
     const t = m.meta.task, state = t.state || "working", c = el("div", "task " + state);
@@ -237,6 +287,18 @@
     else if (opts.anim) main.classList.add("new");
     row.append(main);
     if (Array.isArray(meta.actions) && meta.actions.length && m.role === "assistant") row.append(actionChips(meta.actions, m));
+    if (m.role === "assistant" && !meta.ack && !meta.task) {
+      const src = Array.isArray(meta.sources) && meta.sources.length ? sourcesRow(meta.sources) : null;
+      if (src) row.append(src);
+      if (meta.note) row.append(el("div", "note", String(meta.note)));
+      const hasUse = meta.usage && typeof meta.usage === "object" && (meta.usage.in || meta.usage.out);
+      if (hasUse || meta.vote) {
+        const u = hasUse ? usageLine(meta.usage) : el("div", "usage bare");
+        if (meta.vote) u.prepend(voteMark(meta.vote));
+        row.append(u);
+      }
+    }
+    if (m.role === "user" && meta.edited) row.append(el("div", "usage edited", "Edited"));
     for (const d of decorators) { try { d(m, row, main); } catch (err) { console.error(err); } }
     return row;
   }
@@ -348,9 +410,16 @@
     const w = thread.querySelector('[data-key="welcome"]'); if (w) w.remove();
     dock("retry", null);
     const cid = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    const local = {id: null, cid, role: "user", text: opts.show || text, t: Date.now() / 1000, meta: {}};
-    const row = item(local, {pending: true, anim: true}); thread.append(row);
-    const ub = row.querySelector(".msg");
+    const editId = opts.edit != null ? Number(opts.edit) : null, before = editId != null ? S.msgs.get(editId) : null;
+    let row = editId != null ? thread.querySelector(`[data-key="m${editId}"]`) : null, userMsg = null;
+    if (editId != null && !row) { toast("That message isn't on screen anymore."); return null; }
+    if (row) { // editing: the same bubble takes the new words; the replies under it go when the server says so
+      const ub0 = row.querySelector(".msg"); ub0.textContent = text; ub0.classList.add("pending");
+    } else {
+      const local = {id: null, cid, role: "user", text: opts.show || text, t: Date.now() / 1000, meta: {}};
+      row = item(local, {pending: true, anim: true}); thread.append(row);
+    }
+    let ub = row.querySelector(".msg");
     toBottom(true);
     S.streaming = true;
     // acknowledged: one pulse; then working: the swirl, also where the reply will appear
@@ -370,13 +439,17 @@
       setStatus("speaking"); draw();
     };
     try {
-      const r = await http("/api/chat", {method: "POST", headers: {"content-type": "application/json", accept: "text/event-stream"},
-        body: JSON.stringify({bot: BOT, text, client_id: cid})});
+      const r = await http(editId != null ? "/api/messages/edit" : "/api/chat", {method: "POST", headers: {"content-type": "application/json", accept: "text/event-stream"},
+        body: JSON.stringify(editId != null ? {bot: BOT, id: editId, text} : {bot: BOT, text, client_id: cid})});
       if (r.status === 401) { needLogin(); throw new AuthError("sign in"); }
+      if (r.status === 409 && editId != null) throw Object.assign(new Error("Only your latest message can be edited."), {status: 409, edit409: true});
       if (!r.ok || !r.body) throw Object.assign(new Error(`HTTP ${r.status}`), {status: r.status});
       await readSSE(r.body, (ev, data) => {
         if (ev === "user" && data && data.id != null) {
-          remember(data); row.dataset.key = "m" + data.id; ub.dataset.id = data.id; ub.classList.remove("pending");
+          remember(data); userMsg = data; row.dataset.key = "m" + data.id; ub.dataset.id = data.id; ub.classList.remove("pending");
+        } else if (ev === "deleted" && data && Array.isArray(data.ids)) {
+          // an edit: Theta's earlier replies to this message go (other texts stay)
+          for (const id of data.ids) { S.msgs.delete(id); const n = thread.querySelector(`[data-key="m${id}"]`); if (n) n.replaceWith(); }
         } else if (ev === "route") route = data;
         else if (ev === "ack" && data && data.id != null) {
           // "On it." is its own message, above the working globe and the reply that follows
@@ -403,6 +476,7 @@
       remember(reply);
       const final = item(reply, {anim: !shown});
       if (shown) shown.replaceWith(final); else thread.append(final);
+      if (userMsg && row.isConnected) { const nr = item(userMsg); row.replaceWith(nr); row = nr; ub = nr.querySelector(".msg"); } // its "..." and "Edited"
       orbs.head.done(); orbs.home.done();
       if (Array.isArray(reply.meta.actions) || /\?\s*$/.test(reply.text || "")) setTimeout(() => { if (!S.streaming) setStatus("waiting"); }, 600);
       follow(true);
@@ -413,11 +487,15 @@
       if (shown) { shown.classList.remove("streaming"); if (!buf) shown.remove(); }
       setStatus("idle");
       if (e instanceof AuthError) return null;
+      if (e.edit409) { // a newer message came in (another device): put the old words back
+        if (before) { const nr = item(before); row.replaceWith(nr); } else ub.classList.remove("pending");
+        toast(e.message, 3600); return null;
+      }
       ub.classList.remove("pending"); ub.classList.add("failed");
       const offline = !navigator.onLine || !e.status;
       dock("retry", {err: true, icon: "i-bell", title: offline && !e.message.startsWith("HTTP") ? "Theta didn't answer" : "Theta couldn't answer just now",
         text: e.message && !/^HTTP|fetch|network/i.test(e.message) ? e.message : "The message didn't go through. Nothing was lost.",
-        actions: [["Dismiss", () => dock("retry", null)], ["Try again", () => { row.remove(); dock("retry", null); send(text, opts); }, true]]});
+        actions: [["Dismiss", () => dock("retry", null)], ["Try again", () => { if (editId == null) row.replaceWith(); dock("retry", null); send(text, opts); }, true]]});
       return null;
     } finally { S.streaming = false; if (S.pollAfter) { S.pollAfter = false; setTimeout(poll, 300); } }
   }
@@ -433,8 +511,19 @@
     const text = ta.value.trim();
     if (!text) { voiceMode(); return; }
     if (S.streaming) { toast("One sec, Theta's still answering."); return; }
-    stopMic(); ta.value = ""; sizeTa(); send(text);
+    const editing = S.editing; endEdit(false);
+    stopMic(); ta.value = ""; sizeTa(); send(text, editing != null ? {edit: editing} : undefined);
   });
+  // editing your last message: the composer holds its words, with an "Editing" chip to cancel
+  function startEdit(m) {
+    S.editing = m.id; ta.value = m.text; sizeTa();
+    const chip = $("edit-chip"); chip.replaceChildren(svg("i-edit"), el("b", null, "Editing"), el("span", null, "Sending replaces your message and Theta answers again."));
+    const x = el("button"); x.type = "button"; x.setAttribute("aria-label", "Cancel editing"); x.append(svg("i-close"));
+    x.addEventListener("click", () => endEdit(true)); chip.append(x); chip.hidden = false;
+    setTimeout(() => { ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {} }, 30);
+  }
+  function endEdit(clear) { if (S.editing == null) return; S.editing = null; $("edit-chip").hidden = true; if (clear) { ta.value = ""; sizeTa(); } }
+  ta.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing != null) { e.preventDefault(); endEdit(true); } });
 
   // mic: the Web Speech API, when the browser has it
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -488,37 +577,155 @@
     if (window.speechSynthesis) speechSynthesis.cancel();
   });
 
-  // ---------------------------------------------------------------- the route hint: long-press a reply (quiet, small)
-  let pressT = 0, pressAt = null, hintT = 0;
-  function hideHint() { $("hint").hidden = true; clearTimeout(hintT); thread.querySelectorAll(".msg.held").forEach(b => b.classList.remove("held")); }
-  function showHint(b) {
-    const m = S.msgs.get(Number(b.dataset.id)); if (!m) return;
-    const meta = m.meta || {}, r = S.routes.get(m.id) || {}, h = $("hint"); h.replaceChildren();
-    if (meta.proactive) {
-      h.append("Theta texted first, from ", el("b", null, SOURCES[meta.source] || "something it noticed"), ".");
-    } else if (meta.model || r.model) {
-      const why = meta.why || r.why;
-      h.append("Answered by ", el("b", null, meta.model || r.model), (meta.tier || r.tier) ? ` · ${meta.tier || r.tier}` : "", why ? ` · ${why}` : "");
-    } else h.append("Answered by Theta.");
-    h.append(el("br"), fmtTime(m.t || 0));
-    b.classList.add("held");
-    h.hidden = false;
-    const rb = b.getBoundingClientRect(), ra = $("app").getBoundingClientRect(), hw = Math.min(260, ra.width - 32);
-    h.style.left = Math.max(16, Math.min(ra.width - hw - 16, rb.left - ra.left + 8)) + "px";
-    const above = rb.top - ra.top - h.offsetHeight - 8;
-    h.style.top = (above > 70 ? above : rb.bottom - ra.top + 8) + "px";
-    if (navigator.vibrate) try { navigator.vibrate(8); } catch (e) {}
-    hintT = setTimeout(hideHint, 3200);
+  // ---------------------------------------------------------------- message actions: long-press (or "..." on a mouse)
+  // A compact bar: Copy; on replies Copy with prompt, Like, Dislike, Sources; on your latest message Edit. Its small
+  // "Model" line is the old route hint (which model answered), so long-press stays one gesture.
+  let pressT = 0, pressAt = null, barFor = null, barFrom = null;
+  const bar = $("msgbar");
+  const cleanCopy = t => String(t || "").replace(/\n*\[image:[^\]]+\]/g, "").trim();
+  function copyText(text) {
+    const fallback = () => {
+      const t = el("textarea"); t.value = text; t.setAttribute("readonly", ""); t.setAttribute("aria-hidden", "true");
+      t.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none";
+      document.body.append(t); t.select(); try { t.setSelectionRange(0, text.length); } catch (e) {}
+      let ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+      t.replaceWith(); return ok;
+    };
+    const done = ok => toast(ok ? "Copied" : "Couldn't copy. Select the text instead.", 1600);
+    // called straight from the tap, so the browser counts it as the user's action
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => done(true), () => done(fallback()));
+    } else done(fallback());
   }
+  function promptBefore(m) {
+    let best = null;
+    for (const x of S.msgs.values()) if (x.role === "user" && x.id < m.id && (!best || x.id > best.id)) best = x;
+    return best;
+  }
+  const latestUser = () => { let best = null; for (const x of S.msgs.values()) if (x.role === "user" && (!best || x.id > best.id)) best = x; return best; };
+  function modelLine(m) {
+    const meta = m.meta || {}, r = S.routes.get(m.id) || {}, line = el("div", "mb-model");
+    if (m.role === "user") line.append(meta.edited ? "You · edited · " : "You · ", fmtTime(m.t || 0));
+    else if (meta.proactive) line.append("Theta texted first, from ", el("b", null, SOURCES[meta.source] || "something it noticed"), " · " + fmtTime(m.t || 0));
+    else if (meta.model || r.model) {
+      const why = meta.why || r.why, tier = meta.tier || r.tier;
+      line.append("Model: ", el("b", null, meta.model || r.model), tier ? ` · ${tier}` : "", why ? ` · ${why}` : "", " · " + fmtTime(m.t || 0));
+    } else line.append("Theta · " + fmtTime(m.t || 0));
+    return line;
+  }
+  function barBtn(label, icon, fn, opts) {
+    const b = el("button", "mb-btn"); b.type = "button"; b.append(svg(icon), el("span", null, label));
+    b.setAttribute("aria-label", (opts && opts.aria) || label);
+    if (opts && opts.pressed != null) b.setAttribute("aria-pressed", String(!!opts.pressed));
+    b.addEventListener("click", e => { e.stopPropagation(); fn(b); }); return b;
+  }
+  function refreshRow(m) {
+    const old = thread.querySelector(`[data-key="m${m.id}"]`); if (old) old.replaceWith(item(m));
+  }
+  async function vote(m, v, reason) {
+    const prev = (m.meta || {}).vote;
+    m.meta = Object.assign({}, m.meta || {}, {vote: v || undefined}); refreshRow(m);
+    try { await post("/api/feedback", {message_id: m.id, vote: v, reason: reason || ""}); return true; }
+    catch (e) { m.meta.vote = prev; refreshRow(m); if (!(e instanceof AuthError)) toast("Couldn't save that. Try again in a moment."); return false; }
+  }
+  const REASONS = ["Too long", "Wrong", "Not what I asked", "Tone"];
+  function askWhy(m) {
+    bar.replaceChildren();
+    const h = el("div", "mb-head"); h.append(el("b", null, "What was off?"), el("span", null, "Theta learns from this."));
+    const chips = el("div", "mb-chips"); chips.setAttribute("role", "group"); chips.setAttribute("aria-label", "What was off");
+    for (const r of REASONS) {
+      const c = el("button", "mb-chip", r); c.type = "button";
+      c.addEventListener("click", async e => { e.stopPropagation(); closeBar(); if (await vote(m, -1, r)) toast("Thanks. Theta will keep that in mind."); });
+      chips.append(c);
+    }
+    const f = el("form", "mb-why"), inp = el("input"); inp.type = "text"; inp.maxLength = 280; inp.placeholder = "Something else (optional)"; inp.setAttribute("aria-label", "What was off, in your words");
+    const go = el("button", "mb-send"); go.type = "submit"; go.setAttribute("aria-label", "Send feedback"); go.append(svg("i-up"));
+    f.append(inp, go);
+    f.addEventListener("submit", async e => { e.preventDefault(); const t = inp.value.trim(); closeBar(); if (!t) return; if (await vote(m, -1, t)) toast("Thanks. Theta will keep that in mind."); });
+    bar.append(h, chips, f);
+    place();
+    const first = chips.querySelector("button"); if (first) first.focus({preventScroll: true});
+  }
+  function showSources(m) {
+    const list = el("div", "mb-srcs"); list.setAttribute("role", "list");
+    for (const [i, s] of (m.meta.sources || []).entries()) {
+      const c = citeParts(`[${i + 1}]`, m.meta.sources); if (!c) continue;
+      const a = el("a", "mb-src"); a.href = c[0].url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.setAttribute("role", "listitem");
+      a.append(el("span", "n", String(i + 1)), el("b", null, c[0].title), el("small", null, c[0].label)); list.append(a);
+    }
+    const old = bar.querySelector(".mb-srcs"); if (old) { old.replaceWith(); place(); return; }
+    bar.insertBefore(list, bar.querySelector(".mb-model")); place();
+  }
+  function openBar(b, from) {
+    const m = S.msgs.get(Number(b.dataset.id)); if (!m) return;
+    if (barFor === m.id && !bar.hidden) return;
+    closeBar(); barFor = m.id; barFrom = from || null;
+    const meta = m.meta || {}, acts = el("div", "mb-acts");
+    acts.setAttribute("role", "toolbar"); acts.setAttribute("aria-label", "Message actions");
+    acts.append(barBtn("Copy", "i-copy", () => { closeBar(); copyText(cleanCopy(m.text)); }));
+    if (m.role === "assistant" && !meta.ack && !meta.task) {
+      acts.append(barBtn("With prompt", "i-copy2", () => {
+        closeBar(); const u = promptBefore(m);
+        copyText((u ? `You: ${cleanCopy(u.text)}\n\n` : "") + `Theta: ${cleanCopy(m.text)}`);
+      }, {aria: "Copy with prompt"}));
+      acts.append(barBtn(meta.vote > 0 ? "Liked" : "Like", "i-like", async () => {
+        const on = meta.vote > 0; closeBar(); if (await vote(m, on ? 0 : 1)) toast(on ? "Like removed." : "Thanks. Theta will do more like this.");
+      }, {pressed: meta.vote > 0, aria: "Like"}));
+      acts.append(barBtn(meta.vote < 0 ? "Disliked" : "Dislike", "i-dislike", async () => {
+        if (meta.vote < 0) { closeBar(); if (await vote(m, 0)) toast("Dislike removed."); return; }
+        vote(m, -1); askWhy(m); // the tap is the vote; a reason is one more (optional) tap
+      }, {pressed: meta.vote < 0, aria: "Dislike"}));
+      if (Array.isArray(meta.sources) && meta.sources.length) acts.append(barBtn("Sources", "i-link", () => showSources(m), {aria: `Sources (${meta.sources.length})`}));
+    }
+    const lu = latestUser();
+    if (m.role === "user" && lu && lu.id === m.id && !meta.tap && !meta.images) {
+      acts.append(barBtn("Edit", "i-edit", () => {
+        closeBar(); if (S.streaming) { toast("One sec, Theta's still answering."); return; } startEdit(m);
+      }, {aria: "Edit message"}));
+    }
+    bar.replaceChildren(acts, modelLine(m));
+    bar.hidden = false; b.classList.add("held");
+    place();
+    if (navigator.vibrate && !from) try { navigator.vibrate(8); } catch (e) {}
+    if (from) acts.querySelector("button").focus({preventScroll: true});
+  }
+  function place() {
+    const b = barFor != null && thread.querySelector(`.msg[data-id="${barFor}"]`); if (!b) return;
+    const rb = b.getBoundingClientRect(), ra = $("app").getBoundingClientRect(), w = Math.min(344, ra.width - 32);
+    bar.style.width = w + "px";
+    const left = b.classList.contains("u") ? rb.right - ra.left - w : rb.left - ra.left;
+    bar.style.left = Math.max(16, Math.min(ra.width - w - 16, left)) + "px";
+    const above = rb.top - ra.top - bar.offsetHeight - 8, below = rb.bottom - ra.top + 8;
+    bar.style.top = (above > 64 || below + bar.offsetHeight > ra.height - 80 ? Math.max(64, above) : below) + "px";
+  }
+  function closeBar(restore) {
+    if (bar.hidden) return;
+    bar.hidden = true; bar.replaceChildren();
+    thread.querySelectorAll(".msg.held").forEach(x => x.classList.remove("held"));
+    const from = barFrom; barFor = null; barFrom = null;
+    if (restore && from && from.isConnected) from.focus({preventScroll: true});
+  }
+  const hideHint = () => closeBar(); // scrolling closes it
   thread.addEventListener("pointerdown", e => {
-    const b = e.target.closest(".msg.a"); if (!b || !b.dataset.id) return;
+    if (e.target.closest(".more-btn, a, button")) return;
+    const b = e.target.closest(".msg"); if (!b || !b.dataset.id) return;
     pressAt = [e.clientX, e.clientY]; clearTimeout(pressT);
-    pressT = setTimeout(() => { pressAt = null; showHint(b); }, 480);
+    pressT = setTimeout(() => { pressAt = null; openBar(b); }, 480);
   });
   const cancelPress = e => { if (pressAt && (!e || e.type !== "pointermove" || Math.hypot(e.clientX - pressAt[0], e.clientY - pressAt[1]) > 8)) { clearTimeout(pressT); pressAt = null; } };
   for (const ev of ["pointerup", "pointercancel", "pointermove"]) thread.addEventListener(ev, cancelPress);
-  thread.addEventListener("contextmenu", e => { const b = e.target.closest(".msg.a"); if (b && b.dataset.id) { e.preventDefault(); clearTimeout(pressT); showHint(b); } });
-  document.addEventListener("pointerdown", e => { if (!e.target.closest(".msg.a")) hideHint(); }, true);
+  thread.addEventListener("contextmenu", e => {
+    const b = e.target.closest(".msg"); if (!b || !b.dataset.id || e.target.closest("a")) return;
+    e.preventDefault(); clearTimeout(pressT); openBar(b);
+  });
+  thread.addEventListener("click", e => {
+    const mb = e.target.closest(".more-btn"); if (!mb) return;
+    e.stopPropagation(); const b = mb.closest(".msg");
+    if (barFor != null && barFor === Number(b.dataset.id)) closeBar(); else openBar(b, mb);
+  });
+  document.addEventListener("pointerdown", e => { if (!e.target.closest("#msgbar") && !e.target.closest(".more-btn")) closeBar(); }, true);
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !bar.hidden) { e.preventDefault(); e.stopPropagation(); closeBar(true); } }, true);
+  addEventListener("resize", () => closeBar());
 
   // ---------------------------------------------------------------- home
   function markRead() { S.unread = 0; renderHome(); }
@@ -715,13 +922,43 @@
     $("set-loc-note").textContent = st.loc ? `Shared, rounded to about 10 km (${st.loc.lat}, ${st.loc.lon}). Used only for alerts near you.` : "Rounded to about 10 km. Used only for alerts near you.";
     $("set-dot").value = ThetaOrb.shape;
     $("set-opening").value = store("theta:opening") || "converge";
+    $("set-usage").checked = showUsage();
     $("settings-mode").textContent = S.demo ? "Demo" : "";
     $("set-about").textContent = `${versionLine()}${S.demo ? " · demo mode: nothing leaves this page" : ""} · times in ${st.tz || Intl.DateTimeFormat().resolvedOptions().timeZone}`;
   }
   async function loadSettings() {
     if (!setOrb) setOrb = ThetaOrb.mount($("set-orb"), {dots: 520});
     syncSettingsUi();
+    loadLessons();
     try { S.settings = await api("/api/settings"); syncSettingsUi(); } catch (e) {}
+  }
+  // token use under replies: a per-phone choice, default on
+  const showUsage = () => store("protos:show-usage") !== "0";
+  const applyUsage = () => document.documentElement.classList.toggle("no-usage", !showUsage());
+  applyUsage();
+  $("set-usage").addEventListener("change", e => { store("protos:show-usage", e.target.checked ? "1" : "0"); applyUsage(); });
+  // what Theta learned from your likes and dislikes (it's in Theta's instructions; remove any you disagree with)
+  function renderLessons(list) {
+    const box = $("set-lessons"); box.replaceChildren();
+    if (!list.length) {
+      const r = el("div", "row-set"), t = el("div", "txt"); t.append(el("b", null, "Nothing yet"), el("span", null, "Long-press a reply and tap Like or Dislike. What Theta takes from it shows up here."));
+      r.append(t); box.append(r); return;
+    }
+    for (const l of list) {
+      const r = el("div", "row-set lesson"), t = el("div", "txt"); t.append(el("b", null, l.text));
+      if (l.n > 1) t.append(el("span", null, `From ${l.n} replies`));
+      const x = el("button", "btn-dark", "Remove"); x.type = "button"; x.setAttribute("aria-label", "Remove lesson: " + l.text);
+      x.addEventListener("click", async () => {
+        x.disabled = true;
+        try { const j = await api("/api/feedback/summary?id=" + encodeURIComponent(l.id), {method: "DELETE"}); renderLessons(j.lessons || []); toast("Removed. Theta won't use that one."); }
+        catch (e) { x.disabled = false; if (!(e instanceof AuthError)) toast("Couldn't remove that. Try again in a moment."); }
+      });
+      r.append(t, x); box.append(r);
+    }
+  }
+  async function loadLessons() {
+    try { const j = await api("/api/feedback/summary"); renderLessons(j.lessons || []); $("set-export").hidden = !(j.likes > 0) || S.demo; }
+    catch (e) { if (!(e instanceof AuthError)) $("set-lessons").replaceChildren(el("p", "fine", "Couldn't load these right now.")); }
   }
   async function saveSetting(patch) {
     S.settings = Object.assign({}, S.settings || {}, patch);

@@ -1,8 +1,9 @@
 // Screenshots and smoke checks for the phone app (web/), in demo mode, at iPhone 14 size.
 //   node tests/shots.js                     # shots go to $SHOTS_DIR, default <tmp>/protos-shots
 // Serves web/ with `python3 -m http.server`, opens /?demo=1, walks splash -> home -> chat (working, mid-stream, done,
-// a proactive text) -> Connect apps -> Settings, then the login screen (a 401 from a mocked API) and a markdown
-// safety check. Exits 1 on any console error, page error or failed check.
+// a proactive text) -> message actions (the action bar, copy, dislike reasons, source pills, editing) -> Connect apps
+// -> Settings, then the login screen (a 401 from a mocked API), a markdown safety check and the "..." button on a
+// desktop-sized page. Exits 1 on any console error, page error or failed check.
 const {chromium, devices} = require("playwright");
 const {spawn} = require("child_process");
 const path = require("path");
@@ -33,6 +34,7 @@ async function waitUp(url) {
     await waitUp(base + "/");
     browser = await chromium.launch();
     const ctx = await browser.newContext({...devices["iPhone 14"], serviceWorkers: "allow"});
+    await ctx.grantPermissions(["clipboard-read", "clipboard-write"], {origin: base});
     const page = await ctx.newPage();
     const errors = [];
     page.on("console", m => { if (m.type() === "error") errors.push(m.text()); });
@@ -62,6 +64,8 @@ async function waitUp(url) {
     await page.waitForSelector("#chat:not([hidden])");
     await sleep(400);
     check((await page.$$("#thread .msg")).length >= 4, "history loaded");
+    const usage0 = (await page.$$("#thread .usage .u-txt")).length;
+    check(usage0 >= 2, "history replies show their token use");
     await page.fill("#c-text", "Should I buy the new camera now or wait? Compare it for me");
     await page.click("#c-send");
     await page.waitForSelector("#thread .pending-orb", {timeout: 2000});
@@ -70,6 +74,8 @@ async function waitUp(url) {
     await sleep(500);
     await shot("03-chat-working");
     await page.waitForSelector("#thread .msg.a.streaming", {timeout: 6000});
+    const usageMid = await page.evaluate(() => { const s = document.querySelector("#thread .msg.a.streaming"); return s ? {streaming: true, line: !!(s.nextElementSibling && s.nextElementSibling.matches(".usage")) || !!s.querySelector(".usage")} : {streaming: false}; });
+    check(usageMid.streaming && !usageMid.line, "no token line while the reply streams");
     await sleep(500);
     await shot("04-chat-mid-stream");
     await page.waitForFunction(() => !window.ThetaApp.state.streaming, null, {timeout: 15000});
@@ -79,6 +85,11 @@ async function waitUp(url) {
       return e ? {bold: !!e.querySelector("strong"), list: !!e.querySelector("ul li"), id: e.dataset.id} : {}; });
     check(last.bold && last.list, "reply renders bold and bullets");
     check(!!last.id, "reply reconciled with the stored message id");
+    const useLine = await page.evaluate(id => { const r = document.querySelector(`[data-key="m${id}"] .usage .u-txt`); return r ? r.textContent : ""; }, last.id);
+    check(/^[\d,]+ in · [\d,]+ out · \$0\.\d{4}$/.test(useLine), "token line under the finished reply: " + useLine);
+    await page.evaluate(id => document.querySelector(`[data-key="m${id}"] .usage`).scrollIntoView({block: "center"}), last.id);
+    await sleep(200);
+    await shot("05b-token-line");
 
     // a short reply lands whole (never streams)
     await page.fill("#c-text", "hey");
@@ -93,15 +104,82 @@ async function waitUp(url) {
     await shot("06-chat-proactive");
     check((await page.$$("#thread .actions .act")).length >= 2, "proactive offer shows choice chips");
 
-    // the route hint (long-press; right-click in a desktop browser)
-    const hey = await page.evaluateHandle(() => { const m = [...document.querySelectorAll("#thread .msg.a[data-id]")].find(e => e.textContent.startsWith("Hey.")); m.scrollIntoView({block: "center"}); return m; });
+    // the action bar (long-press; right-click in a desktop browser): Copy, Copy with prompt, Like, Dislike + the Model line
+    const openBarOn = async pred => {
+      const h = await page.evaluateHandle(pred); await sleep(250);
+      const bb = await h.asElement().boundingBox();
+      await h.asElement().click({button: "right", position: {x: 8, y: bb.height / 2}}); await sleep(250); // the padding, not a link
+      return page.$eval("#msgbar", e => (e.hidden ? null : {text: e.textContent, labels: [...e.querySelectorAll(".mb-acts button")].map(b => b.getAttribute("aria-label"))}));
+    };
+    const heyReply = () => { const m = [...document.querySelectorAll("#thread .msg.a[data-id]")].find(e => e.textContent.startsWith("Hey.")); m.scrollIntoView({block: "center"}); return m; };
+    let barNow = await openBarOn(heyReply);
+    check(!!barNow && ["Copy", "Copy with prompt", "Like", "Dislike"].every(l => barNow.labels.includes(l)), "action bar on a reply: " + (barNow ? barNow.labels.join(", ") : "not shown"));
+    check(!!barNow && /Model: deepseek-chat/.test(barNow.text), "the bar's Model line says which model answered: " + (barNow ? barNow.text.replace(/\s+/g, " ").slice(-70) : ""));
+    await shot("07-chat-action-bar");
+    await page.click('#msgbar [aria-label="Copy with prompt"]');
+    await page.waitForFunction(() => !document.getElementById("toast").hidden && document.getElementById("toast").textContent === "Copied", null, {timeout: 2000});
+    const clip = await page.evaluate(() => navigator.clipboard.readText());
+    check(clip === "You: hey\n\nTheta: Hey. Quiet day so far. What are we working on?", "Copy with prompt puts You/Theta on the clipboard: " + JSON.stringify(clip).slice(0, 80));
+    check(await page.$eval("#msgbar", e => e.hidden), "the bar closes after Copy");
+    barNow = await openBarOn(heyReply);
+    await page.keyboard.press("Escape");
+    check(await page.$eval("#msgbar", e => e.hidden), "Escape closes the action bar");
+
+    // dislike: one tap records it, then "What was off?" chips
+    await openBarOn(heyReply);
+    await page.click('#msgbar [aria-label="Dislike"]');
+    await page.waitForSelector("#msgbar .mb-chip");
+    const chips = await page.$$eval("#msgbar .mb-chip", e => e.map(x => x.textContent));
+    check(chips.join("|") === "Too long|Wrong|Not what I asked|Tone", "dislike asks what was off: " + chips.join(", "));
+    await shot("08-dislike-reasons");
+    await page.click("#msgbar .mb-chip >> text=Too long");
+    await sleep(500);
+    check(await page.evaluate(() => [...document.querySelectorAll("#thread .msg.a")].find(e => e.textContent.startsWith("Hey.")).closest(".item").querySelector(".voted.down") !== null), "the reply shows it was disliked");
+
+    // sources: [n] citations become domain pills, plus a Sources row
+    await page.fill("#c-text", "What's the latest news today?");
+    await page.click("#c-send");
+    await page.waitForFunction(() => !window.ThetaApp.state.streaming, null, {timeout: 15000});
+    await sleep(600);
+    const cites = await page.evaluate(() => {
+      const it = [...document.querySelectorAll("#thread .item")].pop(), a = [...it.querySelectorAll(".msg a.cite")];
+      return {inline: a.map(x => x.textContent), ok: a.every(x => x.href.startsWith("https://") && x.target === "_blank" && /noopener/.test(x.rel)),
+        row: [...it.querySelectorAll(".srcs a.cite")].map(x => x.textContent), raw: /\[\d\]/.test(it.querySelector(".msg").textContent)};
+    });
+    check(cites.inline.join(",") === "weather.gov,cotrip.org,reuters.com" && cites.ok && !cites.raw, "citations render as https pills by the claim: " + cites.inline.join(", "));
+    check(cites.row.length === 3, "a Sources row under the reply");
+    await shot("09-source-pills");
+    barNow = await openBarOn(() => { const m = [...document.querySelectorAll("#thread .msg.a[data-id]")].pop(); m.scrollIntoView({block: "center"}); return m; });
+    check(!!barNow && barNow.labels.some(l => /^Sources/.test(l)), "the bar offers Sources when there are some");
+    await page.click('#msgbar [aria-label^="Sources"]');
+    await sleep(200);
+    check((await page.$$("#msgbar .mb-src")).length === 3, "Sources lists every source");
+    await shot("09b-sources-in-bar");
+    await page.keyboard.press("Escape");
+
+    // edit your last message: only the latest one offers Edit
+    barNow = await openBarOn(() => { const m = [...document.querySelectorAll("#thread .msg.u[data-id]")][0]; m.scrollIntoView({block: "center"}); return m; });
+    check(!!barNow && !barNow.labels.includes("Edit message"), "an older message has no Edit");
+    await page.keyboard.press("Escape");
+    barNow = await openBarOn(() => { const m = [...document.querySelectorAll("#thread .msg.u[data-id]")].pop(); m.scrollIntoView({block: "center"}); return m; });
+    check(!!barNow && barNow.labels.includes("Edit message"), "your latest message offers Edit: " + JSON.stringify(barNow) + JSON.stringify(await page.evaluate(() => [...window.ThetaApp.state.msgs.values()].filter(m => m.role === "user").map(m => [m.id, m.text]))));
+    await page.click('#msgbar [aria-label="Edit message"]');
     await sleep(300);
-    await hey.asElement().click({button: "right"});
-    await sleep(250);
-    const hint = await page.$eval("#hint", e => (e.hidden ? "" : e.textContent));
-    check(/Answered by|texted first/.test(hint), "long-press shows which model answered: " + hint.replace(/\s+/g, " ").slice(0, 60));
-    await shot("07-chat-route-hint");
-    await page.mouse.click(5, 400);
+    check(await page.inputValue("#c-text") === "What's the latest news today?" && await page.isVisible("#edit-chip"), "Edit fills the composer and shows the Editing chip");
+    await shot("10-editing");
+    await page.fill("#c-text", "hey again");
+    const before = await page.$$eval("#thread .msg", e => e.length);
+    await page.click("#c-send");
+    await page.waitForFunction(() => !window.ThetaApp.state.streaming, null, {timeout: 15000});
+    await sleep(600);
+    const after = await page.evaluate(() => {
+      const us = [...document.querySelectorAll("#thread .msg.u")], last = us.pop();
+      return {n: document.querySelectorAll("#thread .msg").length, text: last.textContent, edited: !!last.closest(".item").querySelector(".edited"),
+        cites: document.querySelectorAll("#thread .msg a.cite").length, reply: [...document.querySelectorAll("#thread .msg.a")].pop().textContent, chip: document.getElementById("edit-chip").hidden};
+    });
+    check(after.text === "hey again" && after.edited && after.chip, "the edited message keeps its place, marked Edited");
+    check(after.cites === 0 && after.reply.startsWith("Hey.") && after.n === before, "the old reply is replaced by a new one: " + after.reply.slice(0, 40));
+    await shot("10b-edited");
 
     // Connect apps
     await page.click("#chat-more");
@@ -121,6 +199,19 @@ async function waitUp(url) {
     await sleep(500);
     await shot("09-settings");
     check((await page.textContent("#set-loc-note")).includes("10 km"), "location note says rounded to about 10 km");
+    check(await page.isChecked("#set-usage"), "Show token use is on by default");
+    await page.waitForSelector("#set-lessons .lesson", {timeout: 3000}).catch(() => {});
+    const les = await page.$$eval("#set-lessons .lesson b", e => e.map(x => x.textContent));
+    check(les.some(t => /too long/.test(t)), "Settings lists what Theta learned: " + les.join(" | "));
+    await page.evaluate(() => document.getElementById("set-lessons").scrollIntoView({block: "center"}));
+    await sleep(300);
+    await shot("09c-settings-lessons");
+    await page.click("#set-usage");
+    check(await page.evaluate(() => document.documentElement.classList.contains("no-usage") && localStorage.getItem("protos:show-usage") === "0"), "turning token use off hides it (stored on the phone)");
+    await page.click("#set-usage");
+    await page.click("#set-lessons .lesson button");
+    await sleep(400);
+    check(!(await page.$$eval("#set-lessons .lesson b", e => e.map(x => x.textContent))).some(t => /too long/.test(t)), "a lesson can be removed");
 
     // markdown is built safely
     const safe = await page.evaluate(() => {
@@ -149,6 +240,27 @@ async function waitUp(url) {
     await p2.waitForFunction(() => document.getElementById("login-err").textContent.length > 0);
     const f = path.join(OUT, "10-login.png"); await p2.screenshot({path: f}); console.log("shot " + f);
     check(e2.length === 0, "login page has no errors" + (e2.length ? ": " + e2.join(" | ") : ""));
+
+    // a mouse: the "..." beside a bubble opens the bar, Escape closes it and gives focus back
+    const dctx = await browser.newContext({viewport: {width: 1100, height: 800}});
+    const p3 = await dctx.newPage();
+    const e3 = []; p3.on("pageerror", e => e3.push(String(e)));
+    await p3.goto(base + "/?demo=1");
+    await p3.waitForSelector("#home:not([hidden])", {timeout: 8000});
+    await p3.click("#home-bot");
+    await p3.waitForSelector("#thread .msg.a[data-id]");
+    await sleep(500);
+    const reply1 = (await p3.$$("#thread .msg.a[data-id]"))[0];
+    await reply1.hover();
+    const more = await reply1.$(".more-btn");
+    check(!!more && await more.isVisible(), "a mouse gets a ... button beside the bubble");
+    await more.click();
+    await sleep(200);
+    check(await p3.evaluate(() => !document.getElementById("msgbar").hidden && document.activeElement.closest("#msgbar") !== null), "... opens the bar with focus in it");
+    await p3.keyboard.press("Escape");
+    check(await p3.evaluate(() => document.getElementById("msgbar").hidden && document.activeElement.classList.contains("more-btn")), "Escape closes it and returns focus");
+    check(e3.length === 0, "desktop page has no errors" + (e3.length ? ": " + e3.join(" | ") : ""));
+    await dctx.close();
   } catch (e) {
     problems.push(String(e && e.stack || e));
     console.error(e);

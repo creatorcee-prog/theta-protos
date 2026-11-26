@@ -50,6 +50,12 @@ POST /api/chat                  {"bot": "theta", "text": "...", "client_id": "..
                                    event: done     data: Message (the stored reply, full text)
                                    event: error    data: {"error": "..."}
                                 POST /api/chat?stream=0 returns {"user": Message, "reply": Message}
+POST /api/messages/edit         {"id", "text"}: rewrite your latest user message (else 409), delete Theta's replies to it
+                                (not other proactive texts) and answer again; streams like /api/chat, starting with
+                                event: deleted data: {"ids": [...]}. Tool effects stay done; meta.note says so.
+POST /api/feedback              {"message_id", "vote": 1|-1|0, "reason"?}  like / dislike a reply (0 removes it)
+GET  /api/feedback/summary      {"lessons": [{"id", "text", "n"}], "likes", "dislikes"}; DELETE ?id=<lesson id> drops one
+GET  /api/feedback/export       liked replies as JSONL {prompt, reply, tier, model}: save as evals/feedback.jsonl
 GET  /api/inbox?since=<id>      {"messages": [Message...]}  new messages since id (incl. proactive ones); the app polls every 20 s while open
 GET  /api/push/key              {"key": "<VAPID public key, base64url>"}
 POST /api/push/subscribe        {"subscription": {...}}  -> {"ok": true}
@@ -60,7 +66,9 @@ GET  /api/settings / POST /api/settings   {"proactive": true, "quiet": [22, 7], 
 
 Message = `{"id": int, "bot": "theta", "role": "user"|"assistant", "text": str, "t": unix seconds, "meta": {...}}`.
 The meta keys are:
-- `model`, `tier`: assistant replies.
+- `model`, `tier`: assistant replies. `usage: {in, out, cached, cost_usd, model}` (the turn's tokens; research
+  helpers included), `sources: [{title, url}]` (the reply cites them as [n]), `reply_to` (the user message it
+  answers), `vote` (1 / -1 after feedback), `note` (after an edit, tool effects that weren't undone).
 - `proactive: true`, `source: "vantage"|"brief"|"reminder"`, `level: 3|4`: messages Theta sent first.
 
 ## db.py interface (owned by the backend; others call only these)

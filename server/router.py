@@ -330,8 +330,9 @@ def search_context(text, max_results=5, timeout=12):
     results = [x for x in (data.get("results") or []) if isinstance(x, dict) and x.get("url")][:max_results]
     if not results:
         return no_live, []
-    lines = ["Live web results (fetched just now). Use them, and cite the ones you use as [n] with the link "
-             "at the end. Don't invent sources beyond these."]
+    lines = ["Live web results (fetched just now). Use them, and cite each one you use as [n] right after the "
+             "claim it supports (the app turns [n] into a link). No list of links at the end. Don't invent sources "
+             "beyond these."]
     sources = []
     for i, x in enumerate(results, 1):
         title = (x.get("title") or x["url"]).strip()
