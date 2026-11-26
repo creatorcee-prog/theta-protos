@@ -299,10 +299,19 @@
       }
     }
     if (m.role === "user" && meta.edited) row.append(el("div", "usage edited", "Edited"));
+    if (Array.isArray(meta.cards) && m.role === "assistant") {
+      for (const c of meta.cards) {
+        const fn = c && cardKinds[c.type];
+        if (!fn) continue;
+        try { const node = fn(c, m); if (node) { node.classList.add("card"); row.append(node); } } catch (err) { console.error(err); }
+      }
+    }
     for (const d of decorators) { try { d(m, row, main); } catch (err) { console.error(err); } }
     return row;
   }
   const decorators = []; // features add things to a message (images, call transcripts): Theta.decorate(fn)
+  const cardKinds = {};  // meta.cards [{type, ...}] -> Theta.card(type, fn(card, message) -> element)
+  const listeners = {};  // live chat stream events (user, route, ack, tool, activity, delta, done...): Theta.on(ev, fn)
   function actionChips(actions, m) {
     const wrap = el("div", "actions"); wrap.setAttribute("role", "group"); wrap.setAttribute("aria-label", "Reply options");
     const usedKey = "protos:acted:" + m.id, used = store(usedKey);
@@ -445,6 +454,7 @@
       if (r.status === 409 && editId != null) throw Object.assign(new Error("Only your latest message can be edited."), {status: 409, edit409: true});
       if (!r.ok || !r.body) throw Object.assign(new Error(`HTTP ${r.status}`), {status: r.status});
       await readSSE(r.body, (ev, data) => {
+        for (const fn of (listeners[ev] || [])) { try { fn(data, {text, reply: () => reply}); } catch (err) { console.error(err); } }
         if (ev === "user" && data && data.id != null) {
           remember(data); userMsg = data; row.dataset.key = "m" + data.id; ub.dataset.id = data.id; ub.classList.remove("pending");
         } else if (ev === "deleted" && data && Array.isArray(data.ids)) {
@@ -1108,6 +1118,10 @@
     open(id) { go(Object.assign({}, cur(), {sheet: id})); },
     // fn(message, rowEl, bubbleEl) runs for every message shown; add to rowEl, build DOM nodes only (no innerHTML)
     decorate(fn) { decorators.push(fn); },
+    // a renderer for one kind of card in meta.cards (weather, link, event, connect...): fn(card, msg) -> element
+    card(type, fn) { cardKinds[type] = fn; },
+    // listen to the reply stream while Theta answers: fn(data, {text}) for "tool", "activity", "delta", "done"...
+    on(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
     close() { if (history.state && history.state.sheet) history.back(); else render({v: view}); },
     // a full-screen sheet like Settings: returns {root, body, foot}; onOpen(root) runs each time it opens
     sheet(id, title, onOpen) {

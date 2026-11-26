@@ -387,6 +387,7 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
             log_row["ttft_ms"] = int((info["ttft"] - t0) * 1000)
     out = (final or "").strip()
     # images a tool made (generate_image, a browser screenshot) always show, even if the model left out the marker
+    cards = [c for c in (tctx.get("cards") or []) if isinstance(c, dict) and c.get("type")][:6]
     for image_id in tctx.get("images") or []:
         if f"[image:{image_id}]" not in out:
             add = ("\n\n" if out else "") + f"[image:{image_id}]"
@@ -410,6 +411,8 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
         rmeta["actions"] = _approval_actions(approvals)
     if info.get("sources"):
         rmeta["sources"] = info["sources"]
+    if cards:  # rich cards tools asked for (ctx["cards"]): weather, link, connect...
+        rmeta["cards"] = cards
     usage = _usage_meta(info.get("usage"), log_row["provider"], log_row["model"], tctx.get("research_usage") or ())
     if usage:
         rmeta["usage"] = usage
