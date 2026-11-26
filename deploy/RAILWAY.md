@@ -14,8 +14,7 @@ give each one a spending limit on its own site, and revoke any key you stop usin
 1. Go to railway.com and sign in with GitHub.
 2. Start a **New Project**, choose **Deploy from GitHub repo**, and pick **theta-protos**. If it isn't listed,
    tap the option to configure the GitHub app and give Railway access to that repo.
-3. In the new service's **Settings > Source**, set the branch to `claude/loving-brahmagupta-y86b04`, or `main`
-   once the work is merged.
+3. The service deploys from `main`, which has everything.
 
 Railway reads `railway.json` in the repo: it starts `python -m server`, checks `/api/health`, and restarts the
 server if it ever stops.
@@ -45,8 +44,9 @@ VANTAGE_URL=https://<your Theta>/vantage
 VANTAGE_KEY=<Theta's dashboard key>
 ```
 
-To keep the notification keys Theta already uses, copy `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` from your
-Vercel project. If you leave them out, a new pair is made once and kept on the volume.
+Leave `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` out. They are a matched pair of encryption keys, not passwords:
+on first start the server makes a valid pair and keeps it on the volume. Copying Theta's pair from Vercel doesn't
+help, because Vercel won't show sensitive values, and the phone signs up again for a new address anyway.
 
 The server **won't start** on Railway without `PROTOS_KEY`, because its address is public. After 20 wrong
 passwords in 10 minutes, it refuses every sign-in for 10 minutes.
