@@ -9,7 +9,7 @@
   FEATURES.push("approvals"); // approval cards, Settings > Security > Approvals
   FEATURES.push("models"); // Settings > General > Models
   FEATURES.push("bank"); // Settings > Apps > Bank accounts
-  FEATURES.push("account", "chips", "look", "home"); // home: the smart stack, finds, chips and top stories // look: theme color, the globe's dots, the opening, on every device // Settings: profile, personalization, memory, usage, data; chips (skills)
+  FEATURES.push("account", "chips", "look", "home", "chiphub"); // home: the smart stack, finds, chips and top stories // look: theme color, the globe's dots, the opening, on every device // Settings: profile, personalization, memory, usage, data; chips (skills)
   for (const f of FEATURES) {
     const s = document.createElement("script");
     s.src = "/static/features/" + f + ".js"; s.async = false;

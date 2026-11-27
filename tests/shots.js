@@ -237,6 +237,16 @@ async function waitUp(url) {
       await page.waitForSelector(sel, {timeout: 4000});
       await sleep(300);
       await shot(name);
+      if (pg === "chips") { // Suggested: skills from other agents, adapted; nothing is added until you tap Add
+        await page.waitForSelector("#tab-chips .chh-item", {timeout: 4000}).catch(() => {});
+        check(await page.$("#tab-chips .chh-item .chh-tx") !== null, "chips: suggested chips adapted from other agents' skills show");
+        await page.click("#tab-chips .chh-item .chh-tx"); await sleep(200);
+        await page.evaluate(() => document.querySelector("#tab-chips .chh").scrollIntoView());
+        await shot("09h2-chips-suggested");
+        const before = await page.$$eval("#tab-chips .chp-item", n => n.length);
+        await page.click("#tab-chips .chh-btns .btn-dark"); await sleep(300);
+        check(!await page.$("#tab-chips .chh-item") && before >= 1, "chips: Add takes the suggestion off the list");
+      }
       await page.click("#settings-back");
       await page.waitForSelector("#tab-root:not([hidden])");
     }

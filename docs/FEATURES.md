@@ -164,3 +164,8 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   event found in tick, Theta's latest text, a storage warning). home_post (write, a core tool) saves a find (deal,
   news, watch, place, idea, update) to Found for you; deals fade after 7 days, news after 3. Top stories come from
   public RSS feeds (NPR, BBC, PBS, CBS) every 30 min, the ones matching Profile "Into:" lines first.
+- Suggested chips (`server/chiphub.py`, `web/features/chiphub.js`): once a week (and on "Look for more") Theta reads
+  the skill collections in its sources (GitHub repos with `.claude-plugin/marketplace.json`; default
+  anthropics/skills), frames each SKILL.md as outside content, and has the quick model rewrite it into a chip that
+  uses only Theta's tools, or skip it (needs code, developer-only). Suggestions show in Settings > Chips with their
+  full steps and source; only Add makes one a chip. GET/POST /api/chips/suggested.

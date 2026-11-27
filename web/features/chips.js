@@ -140,6 +140,7 @@
     const kids = [el("p", "acc-note", "Chips are Theta's playbooks for things you ask often. Theta opens the right one by itself when a request fits, and the ones that are on sit above the chat box for a one-tap run. You can also say “make that a chip” after Theta does something."), g, nb];
     if (open === "new") { const ng = el("div", "group acc-form"); ng.style.marginTop = "10px"; ng.style.paddingTop = "12px"; ng.append(editor({icon: "✨"}, true)); kids.push(ng); }
     page.replaceChildren(...kids);
+    T.emit("chips-painted", {page, reload: async () => { if (!demo()) chips = null; await load(); paintPage(); paintRow(); }});
   }
 
   T.on("settings-page", async d => {
