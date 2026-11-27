@@ -15,8 +15,10 @@ and whether Theta uses its memory. prompt_block() turns both into a stable part 
 Storage: Theta lives in one SQLite file. On Railway it survives a deploy only on a volume; storage() says whether
 it is on one, how far back Theta's memory goes and how often the server started, so a wipe is visible in Settings
 instead of silent. Backups leave out the secrets (Google and bank sign-ins, the push key): a restored copy needs
-those apps connected again. With full Google Drive access, a backup goes to "Theta backups" in Drive once a day
-(the newest BACKUPS_KEPT are kept), and Settings can restore from it.
+those apps connected again. With full Google Drive access, a backup goes to "Theta backups" in Drive every 3 hours,
+named with the date and time ("Theta backup 2026-11-27 21.30.db"); the newest BACKUPS_KEPT are kept, plus one a day
+for KEEP_DAILY days. Settings can restore any of them, and drivesync.py loads the newest one by itself on a fresh
+start.
 """
 import json
 import os
@@ -32,8 +34,9 @@ PROFILE_FIELDS = {"name": 60, "nickname": 40, "photo": 80, "email": 120, "phone"
 STYLES = ("default", "concise", "detailed", "casual", "professional")
 LEVELS = ("less", "default", "more")
 SECRET_SETTINGS = ("google", "google_oauth_states", "bank_simplefin", "bank_cache", "vapid", "telnyx_account_sid")
-BACKUP_EVERY = 86400
-BACKUPS_KEPT = 7
+BACKUP_EVERY = 3 * 3600   # a backup to Drive this often
+BACKUPS_KEPT = 16          # the newest kept, plus one a day for KEEP_DAILY days
+KEEP_DAILY = 14
 DRIVE_FOLDER = "Theta backups"
 MAX_RESTORE = 512 * 1024 * 1024
 
@@ -309,7 +312,11 @@ def backup_to_drive(now=None):
     g = google
     now = now or time.time()
     fid = _drive_folder(g)
-    name = time.strftime("Theta backup %Y-%m-%d %H.%M.db", time.localtime(now))
+    try:
+        from . import persona
+        name = persona.local_now(now).strftime("Theta backup %Y-%m-%d %H.%M.db")  # the user's time zone
+    except Exception:  # noqa: BLE001
+        name = time.strftime("Theta backup %Y-%m-%d %H.%M.db", time.localtime(now))
     blob = snapshot()
     boundary = "thetabackup" + str(int(now * 1000))
     meta = {"name": name, "parents": [fid]}
@@ -317,7 +324,7 @@ def backup_to_drive(now=None):
             f"--{boundary}\r\nContent-Type: application/x-sqlite3\r\n\r\n").encode() + blob + f"\r\n--{boundary}--".encode()
     g.api("POST", "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name", body,
           headers={"Content-Type": f"multipart/related; boundary={boundary}"})
-    for old in drive_backups()[BACKUPS_KEPT:]:
+    for old in prune(drive_backups()):
         try:
             g.api("PATCH", f"https://www.googleapis.com/drive/v3/files/{old['id']}", json.dumps({"trashed": True}).encode(),
                   headers={"Content-Type": "application/json"})
@@ -325,6 +332,19 @@ def backup_to_drive(now=None):
             pass
     db.set_setting("backup_last", {"t": now, "where": "drive", "name": name})
     return name
+
+
+def prune(backups):
+    """The backups to trash: all but the newest BACKUPS_KEPT and the newest one of each of the last KEEP_DAILY
+    days (so a problem nobody noticed for a few days doesn't push every good copy out)."""
+    keep = {b["id"] for b in backups[:BACKUPS_KEPT]}
+    days = []
+    for b in backups:  # newest first
+        day = (b.get("created") or "")[:10]
+        if day and day not in days and len(days) < KEEP_DAILY:
+            days.append(day)
+            keep.add(b["id"])
+    return [b for b in backups if b["id"] not in keep]
 
 
 def restore_from_drive(file_id):
@@ -346,7 +366,7 @@ def tick(now):
         return []
     try:
         backup_to_drive(now)
-    except Exception as e:  # noqa: BLE001  try again tomorrow; say why in Settings
+    except Exception as e:  # noqa: BLE001  try again next time; say why in Settings
         db.set_setting("backup_last", {"t": now, "where": "drive", "error": f"{type(e).__name__}: {str(e)[:120]}"})
     return []
 

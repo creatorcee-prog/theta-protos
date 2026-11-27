@@ -267,13 +267,13 @@
       el("p", "acc-note", lb ? `Last backup: ${ago(lb.t)} (${lb.where === "drive" ? "Google Drive" : "downloaded"})${lb.error ? ". The last Drive try failed: " + lb.error : ""}.` : "No backup yet."));
     if (!st.drive_backup) {
       const c = el("button", "btn-dark", "Connect"); c.type = "button"; c.addEventListener("click", () => T.open("settings", "connections"));
-      const r = el("div", "row-set"), t = el("div", "txt"); t.append(el("b", null, "Daily backups to Drive"), el("span", null, "Connect Google with full Drive access and Theta saves a backup to a “Theta backups” folder every day, keeping the last 7.")); r.append(t, c); dg.append(r);
+      const r = el("div", "row-set"), t = el("div", "txt"); t.append(el("b", null, "Backups to Drive"), el("span", null, "Connect Google with full Drive access and Theta saves a dated backup to a “Theta backups” folder every 3 hours. After a reset, connecting Google brings everything back by itself.")); r.append(t, c); dg.append(r);
       return;
     }
     const r = el("div", "row-set"), t = el("div", "txt"), lab = el("label", "switch"), sw = el("input");
-    sw.type = "checkbox"; sw.setAttribute("switch", ""); sw.checked = st.drive_backup_on; sw.setAttribute("aria-label", "Daily backups to Drive");
-    sw.addEventListener("change", async () => { if (demo()) return; try { acc = await T.post("/api/account", {drive_backup: sw.checked}); T.toast(sw.checked ? "Daily Drive backups are on." : "Drive backups are off."); } catch (e) { sw.checked = !sw.checked; } });
-    t.append(el("b", null, "Daily backups to Drive"), el("span", null, "In your Drive's “Theta backups” folder; the last 7 are kept.")); lab.append(sw, el("i")); r.append(t, lab); dg.append(r);
+    sw.type = "checkbox"; sw.setAttribute("switch", ""); sw.checked = st.drive_backup_on; sw.setAttribute("aria-label", "Backups to Drive");
+    sw.addEventListener("change", async () => { if (demo()) return; try { acc = await T.post("/api/account", {drive_backup: sw.checked}); T.toast(sw.checked ? "Drive backups are on." : "Drive backups are off."); } catch (e) { sw.checked = !sw.checked; } });
+    t.append(el("b", null, "Backups to Drive"), el("span", null, "Every 3 hours, in your Drive's “Theta backups” folder: the newest 16, plus one a day for 2 weeks. After a reset, Theta loads the newest one by itself.")); lab.append(sw, el("i")); r.append(t, lab); dg.append(r);
     const now = el("button", "btn-dark", "Back up now"); now.type = "button";
     const list = el("div");
     const paintList = bs => list.replaceChildren(...bs.slice(0, 7).map(b => {

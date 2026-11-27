@@ -1,7 +1,7 @@
 """Your account (server/account.py): the profile and personalization feeding the system prompt, the memory switch,
 whether storage survives a deploy (Railway volume or not), backups that leave secrets out, restores that keep the
 current connections and a safety copy, Drive backups (faked Google), usage from the turns table, and the routes."""
-import io, json, os, sqlite3, sys, tempfile, time
+import re, io, json, os, sqlite3, sys, tempfile, time
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 DATA = tempfile.mkdtemp()
@@ -118,7 +118,9 @@ FILES = []
 
 def fake_api(method, url, body=None, params=None, raw=False, headers=None):
     if "upload/drive" in url:
-        FILES.insert(0, {"id": f"file{len(FILES):04d}abcdef", "name": f"b{len(FILES)}", "createdTime": str(time.time()),
+        nm = re.search(rb'"name": "(Theta backup (\d{4}-\d\d-\d\d) (\d\d)\.(\d\d)\.db)"', body)
+        FILES.insert(0, {"id": f"file{len(FILES):04d}abcdef", "name": nm.group(1).decode(),
+                         "createdTime": f"{nm.group(2).decode()}T{nm.group(3).decode()}:{nm.group(4).decode()}:00Z",
                          "blob": body})
         return {"id": FILES[0]["id"], "name": FILES[0]["name"]}
     if method == "GET" and params and "alt" in params:
@@ -142,12 +144,19 @@ google.api = fake_api
 google.connected = lambda service=None: True
 now = time.time()
 account.tick(now)
-check("with full Drive access, a daily backup goes to Drive", len(FILES) == 1 and (db.get_setting("backup_last") or {}).get("where") == "drive")
+check("with full Drive access, a backup goes to Drive, named with its date and time", len(FILES) == 1
+      and (db.get_setting("backup_last") or {}).get("where") == "drive" and re.fullmatch(r"Theta backup \d{4}-\d\d-\d\d \d\d\.\d\d\.db", FILES[0]["name"]))
 account.tick(now + 3600)
-check("not again within a day", len(FILES) == 1)
-for i in range(9):
-    account.backup_to_drive(now + 86400 * (i + 1))
-check("only the newest 7 are kept (older ones go to Drive's trash)", len([f for f in FILES if not f.get("trashed")]) == 7)
+check("not again within 3 hours", len(FILES) == 1)
+account.tick(now + 3 * 3600 + 5)
+check("again after 3 hours", len(FILES) == 2)
+for i in range(60):  # 7.5 days of backups every 3 hours
+    account.backup_to_drive(now + 3 * 3600 * (i + 2))
+live = [f for f in FILES if not f.get("trashed")]
+days = {f["createdTime"][:10] for f in FILES}
+check("the newest 16 are kept, plus one from each earlier day", len(live) < len(FILES)
+      and all(not f.get("trashed") for f in FILES[:account.BACKUPS_KEPT])
+      and {f["createdTime"][:10] for f in live} == days)
 db.add_message("theta", "user", "only in the live db")
 res = account.restore_from_drive(FILES[0]["id"])
 check("restore from a Drive backup", res["ok"] and db._conn().execute(
@@ -159,7 +168,7 @@ except ValueError:
 check("only files in the Theta backups folder", ok)
 db.set_setting("backup_drive", False)
 account.tick(now + 86400 * 30)
-check("Drive backups can be turned off", len(FILES) == 10)
+check("Drive backups can be turned off", len(FILES) == 62)
 
 # ---------------------------------------------------------------- usage
 c = db._conn()

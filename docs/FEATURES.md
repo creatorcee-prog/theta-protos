@@ -176,3 +176,9 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   first; a like clears the flags on that reply, and two likes on flagged replies mute that cause. improve.py judges
   every lesson on self-reviews plus ratings, over the latest 8 replies, so a relapse shows. Capped at 200 reviews a
   day; PROTOS_SELFCHECK=0 turns it off. Live experiment: `evals/selfimprove.py`.
+- Drive backups (`server/account.py`, `server/drivesync.py`): with full Drive access, a backup goes to "Theta
+  backups" every 3 hours, named with the date and time in the user's time zone; the newest 16 are kept, plus one a
+  day for 14 days. When Drive becomes reachable (at start, or connecting Google after a wipe), drivesync loads the
+  newest backup if this copy is a fresh start (fewer messages, nothing older than the backup), keeps messages
+  written since and the current sign-ins, says so in the chat, and loads a backup only once. PROTOS_AUTO_RESTORE=0
+  turns it off.
