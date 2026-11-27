@@ -124,6 +124,10 @@ later).
   volume), with downloads, restores and daily Google Drive backups. Chips are skills: five built-ins, your own,
   "make that a chip", and a one-tap row above the chat box.
 
+- **A longer intro with a get-to-know-you quiz (Nov 27):** the intro now asks how Theta should talk, then offers an
+  optional 14-question quiz (warning first if Theta's data won't survive a deploy). Answers fill Settings > Profile
+  and Personalization; the end suggests chips built from the answers. Settings > Profile has "Take the quiz".
+
 ## In the middle of (paused, saved, not running)
 - **Theta's screen (the live view) is done and live**, rebuilt from the paused `75eb145` work: a floating live
   picture while a turn browses, a full screen the user can drive, the last picture on the reply, and lasting

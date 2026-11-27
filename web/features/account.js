@@ -145,9 +145,14 @@
       a.addEventListener("change", async () => { if (await save("profile", {[k]: a.value})) T.toast("Saved."); });
       return [h, a, el("p", "acc-note", hint)];
     };
+    const quiz = el("div", "group"); quiz.style.marginTop = "18px";
+    { const r = el("div", "row-set"), t = el("div", "txt"), b = el("button", "btn-dark", "Take it"); b.type = "button";
+      t.append(el("b", null, "Get-to-know-you quiz"), el("span", null, "A few minutes of questions in the chat; Theta fills this page in and suggests chips. Skip any."));
+      b.addEventListener("click", () => (T.startQuiz ? T.startQuiz() : T.toast("The quiz isn't loaded yet. Try again.")));
+      r.append(t, b); quiz.append(r); }
     page.replaceChildren(top, g, note,
       ...area("about", "More about you", "Anything Theta should keep in mind: what you do, who's who, what you care about.", "e.g., I'm a student, I live with my sister Ana, I'm training for a half marathon"),
-      ...area("instructions", "Instructions", "These apply to every conversation, within Theta's rules (sending and spending still ask).", "e.g., Disagree with me when I'm wrong. Keep answers short."));
+      ...area("instructions", "Instructions", "These apply to every conversation, within Theta's rules (sending and spending still ask).", "e.g., Disagree with me when I'm wrong. Keep answers short."), quiz);
   }
 
   // ---------------------------------------------------------------- Personalization

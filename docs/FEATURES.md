@@ -122,6 +122,12 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   prompt. storage() says whether the data dir is on the Railway volume (wipes are shown, not silent); backups via
   SQLite's backup API with SECRET_SETTINGS removed; restore keeps current secrets and a safety copy; daily Drive
   backups (last 7) with full Drive access; usage from the turns table; /api/logout.
+- Intro and quiz (`server/onboarding.py`, `server/quiz.py`): hello, Theta's name, style (Personalization),
+  notifications, Gmail, then an optional 14-question quiz (tap, pick several, or type; skip any; "stop" ends it).
+  Answers go to the Profile (occupation, home, "More about you" lines keyed by topic) and Personalization; then a
+  summary and chip ideas from the answers (built-ins to switch on, a tailored Morning brief, Meal plan, News digest,
+  Catch me up on <interest>, Goal check-in, Keep in touch, Find a time) added with a tap. POST /api/onboarding
+  {quiz: true} runs the quiz alone (Settings > Profile or General). While a question is open the model is told so.
 - Chips (`server/chips.py`, `web/features/chips.js`): skills. Built-ins (Morning brief, Inbox sweep, Plan my day,
   Best price, Money check) plus the user's own; the ones on are listed in the turn context, chip_open loads one,
   chip_save makes one. A row of chips sits above the empty chat box. Settings > Chips edits them.

@@ -36,6 +36,25 @@
 .thread .card.onb-ev { background: none; align-self: center; width: auto; max-width: 100%; margin: 6px 0; }
 .onb-ev-in { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 14px; }
 .onb-ev-in svg { width: 15px; height: 15px; }
+.onb-count { color: var(--muted); font-size: 12.5px; letter-spacing: .02em; margin: 0 0 4px; }
+.onb-opt.multi .k { border-radius: 50%; }
+.onb-opt.on .k { background: var(--accent); border-color: var(--accent); color: #fff; }
+.onb-foot { display: flex; gap: 14px; align-items: center; padding: 8px 0 6px; }
+.onb-foot button { font-size: 15px; color: var(--muted); }
+.onb-foot .onb-done { margin-left: auto; color: #111; background: #fff; border-radius: 999px; padding: 7px 16px; font-weight: 500; }
+.onb-foot .onb-done:disabled { opacity: .4; }
+.onb-box.used .onb-foot { display: none; }
+.chi-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 0; text-align: left; color: var(--text); border-top: 1px solid #2a2a2a; }
+.chi-row:first-of-type { border-top: 0; }
+.chi-ic { width: 36px; height: 36px; border-radius: 11px; background: #262628; display: grid; place-items: center; font-size: 19px; flex: none; }
+.chi-tx { flex: 1; min-width: 0; }
+.chi-tx b { display: block; font-size: 16px; font-weight: 500; }
+.chi-tx span { display: block; font-size: 13px; color: var(--muted); line-height: 1.3; }
+.chi-dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #555; flex: none; display: grid; place-items: center; }
+.chi-row.on .chi-dot { background: var(--accent); border-color: var(--accent); }
+.chi-row.on .chi-dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+.onb-box.used .chi-row { pointer-events: none; }
+.onb-box.used .chi-row:not(.on) { opacity: .45; }
 .cards-added { display: flex; align-items: center; gap: 6px; color: #4cd07d; font-size: 15px; font-weight: 500; }
 .cards-added svg { width: 16px; height: 16px; }
 `;
@@ -94,27 +113,53 @@
     const key = "onb:" + (m && m.id) + ":" + c.step;
     const picked = c.answered || T.store(key);
     if (picked) box.classList.add("used");
-    if (!c.question && !opts.length) box.classList.add("nobox");
+    if (!c.question && !opts.length && !c.stop) box.classList.add("nobox");
+    if (c.count) box.append(el("div", "onb-count", c.count));
     if (c.question) box.append(el("div", "onb-q", c.question));
     const answer = async (o, b) => {
       if (box.classList.contains("used") || T.state.streaming) return;
-      box.classList.add("used"); b.classList.add("picked"); T.store(key, o.label);
+      box.classList.add("used"); if (b) b.classList.add("picked"); T.store(key, o.label);
       try {
         if (o.chat) { T.send(o.chat, {show: o.label}); return; }
         let ans = o.answer;
         if (o.do && DO[o.do]) ans = await DO[o.do]();
-        await call({step: c.step, answer: ans});
+        await call(Object.assign({step: c.step, answer: ans}, c.q ? {q: c.q} : {}));
       } catch (e) {
-        box.classList.remove("used"); b.classList.remove("picked"); T.store(key, "");
+        box.classList.remove("used"); if (b) b.classList.remove("picked"); T.store(key, "");
         T.toast((e && e.message) || "That didn't go through. Try again.", 3600);
       }
     };
+    const chosen = new Set();
+    let doneBtn = null;
     opts.forEach((o, i) => {
-      const b = el("button", "onb-opt" + (picked && (picked === o.label || picked === o.answer) ? " picked" : "")); b.type = "button";
+      const b = el("button", "onb-opt" + (c.multi ? " multi" : "") + (picked && (picked === o.label || picked === o.answer || String(picked).includes(o.label)) ? " picked" : "")); b.type = "button";
       b.append(el("span", "k", String.fromCharCode(65 + i)), el("span", null, o.label));
-      b.addEventListener("click", () => answer(o, b));
+      if (c.multi) {
+        b.setAttribute("aria-pressed", "false");
+        b.addEventListener("click", () => {
+          if (box.classList.contains("used")) return;
+          if (chosen.has(o.answer)) chosen.delete(o.answer); else chosen.add(o.answer);
+          b.classList.toggle("on", chosen.has(o.answer)); b.setAttribute("aria-pressed", String(chosen.has(o.answer)));
+          if (doneBtn) doneBtn.disabled = !chosen.size;
+        });
+      } else b.addEventListener("click", () => answer(o, b));
       box.append(b);
     });
+    // the quiz's footer: Done (for pick-several), Skip (for typed questions), and Stop quiz
+    if (c.stop || c.multi) {
+      const foot = el("div", "onb-foot");
+      if (!opts.length) { const sk = el("button", null, "Skip"); sk.type = "button"; sk.addEventListener("click", () => answer({label: "Skipped", answer: "skip"})); foot.append(sk); }
+      if (c.stop) { const st = el("button", null, "Stop quiz"); st.type = "button"; st.addEventListener("click", () => answer({label: "Stopped", answer: "stop"})); foot.append(st); }
+      if (c.multi) {
+        doneBtn = el("button", "onb-done", "Done"); doneBtn.type = "button"; doneBtn.disabled = true;
+        doneBtn.addEventListener("click", () => {
+          const labels = opts.filter(o => chosen.has(o.answer)).map(o => o.label).join(", ");
+          answer({label: labels, answer: [...chosen]});
+        });
+        foot.append(doneBtn);
+      }
+      box.append(foot);
+    }
     if (c.dismiss && (c.question || opts.length)) {
       const x = el("button", "onb-x"); x.type = "button"; x.setAttribute("aria-label", "Skip this question"); x.append(I.x());
       x.addEventListener("click", () => answer({label: "Skipped", answer: "skip"}, x));
@@ -134,6 +179,39 @@
     inner.append(c.icon === "pencil" ? I.pencil() : I.check(), el("span", null, c.text || ""));
     n.append(inner);
     return n;
+  });
+
+  // chip ideas after the quiz: all picked to start; tap to leave one out, then add them
+  T.card("chip_ideas", (c, m) => {
+    const outer = el("div", "onb"), box = el("div", "onb-box");
+    const ideas = Array.isArray(c.ideas) ? c.ideas : [];
+    const key = "onb:" + (m && m.id) + ":chips", picked = c.answered || T.store(key);
+    const on = new Set(ideas.map(i => i.id));
+    if (picked) box.classList.add("used");
+    box.append(el("div", "onb-q", "Chips for you"));
+    const add = el("button", "onb-done");
+    const paint = () => { add.textContent = on.size ? `Add ${on.size} chip${on.size === 1 ? "" : "s"}` : "Add none"; };
+    for (const i of ideas) {
+      const r = el("button", "chi-row on"); r.type = "button"; r.setAttribute("aria-pressed", "true");
+      const tx = el("div", "chi-tx"); tx.append(el("b", null, i.name), el("span", null, i.when || ""));
+      r.append(el("span", "chi-ic", i.icon || "✨"), tx, el("span", "chi-dot"));
+      r.addEventListener("click", () => {
+        if (on.has(i.id)) on.delete(i.id); else on.add(i.id);
+        r.classList.toggle("on", on.has(i.id)); r.setAttribute("aria-pressed", String(on.has(i.id))); paint();
+      });
+      box.append(r);
+    }
+    const foot = el("div", "onb-foot"), skip = el("button", null, "Not now"); skip.type = add.type = "button";
+    const go = async ids => {
+      if (box.classList.contains("used")) return;
+      box.classList.add("used"); T.store(key, String(ids.length));
+      try { await call({step: "chips", answer: ids}); }
+      catch (e) { box.classList.remove("used"); T.store(key, ""); T.toast((e && e.message) || "That didn't go through. Try again.", 3600); }
+    };
+    add.addEventListener("click", () => go([...on]));
+    skip.addEventListener("click", () => go([]));
+    paint(); foot.append(skip, add); box.append(foot); outer.append(box);
+    return outer;
   });
 
   // a connect card that's done says Added (the intro marks its Gmail card once Google is connected)
@@ -172,7 +250,24 @@
     catch (e) { T.toast("Couldn't start the intro. Try again.", 3200); }
   });
   introRow.append(introTxt, again);
-  g.append(nameRow, introRow);
+  g.append(nameRow, introRow, quizRow());
+
+  // the get-to-know-you quiz on its own (also on Settings > Profile)
+  function quizRow() {
+    const r = el("div", "row-set"), t = el("div", "txt");
+    t.append(el("b", null, "Get-to-know-you quiz"), el("span", null, "A few minutes of questions so Theta knows you better, then chip ideas for you. Skip any."));
+    const b = el("button", "btn-dark", "Take it"); b.type = "button";
+    b.addEventListener("click", startQuiz);
+    r.append(t, b); return r;
+  }
+  async function startQuiz() {
+    if (T.state.demo) { T.toast("Demo mode: the quiz runs on the real server."); return; }
+    try {
+      await call({quiz: true});
+      T.close(); setTimeout(() => { const h = $("home-bot"); if (h && !$("home").hidden) h.click(); }, 300);
+    } catch (e) { T.toast("Couldn't start the quiz. Try again.", 3200); }
+  }
+  T.startQuiz = startQuiz; // Settings > Profile draws its own button for it (web/features/account.js)
 
   // ---------------------------------------------------------------- start or resume, once signed in
   let begun = false;

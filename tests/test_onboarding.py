@@ -63,14 +63,21 @@ done = [d for e, d in ev if e == "done"][-1]
 check("a typed name for Theta renames it", db.get_setting("bot_name") == "Pip" and onboarding.bot_name() == "Pip")
 check("'Pip it is!' with a Renamed to line", acks and acks[0]["text"].startswith("Pip it is!")
       and acks[0]["meta"]["cards"][0] == {"type": "onboarding_event", "text": "Renamed to Pip", "icon": "pencil"}, acks[:1])
-check("then a little about me, with the notifications question in its card", "A little about me" in done["text"]
-      and done["meta"]["cards"][0]["step"] == "notify" and "notification" in done["meta"]["cards"][0]["question"],
+check("then how Theta should talk, with style options", "How should I talk to you?" in done["text"]
+      and done["meta"]["cards"][0]["step"] == "style" and len(done["meta"]["cards"][0]["options"]) == 4,
       [a["text"][:30] for a in acks] + [done["text"][:40]])
+st, msgs = onboarding.answer("style", "concise")
+check("the style is saved to Personalization", __import__("server.account", fromlist=["x"]).personalize()["style"] == "concise")
+check("then a little about me, with the notifications question in its card", "A little about me" in msgs[-1]["text"]
+      and msgs[-1]["meta"]["cards"][0]["step"] == "notify" and "notification" in msgs[-1]["meta"]["cards"][0]["question"])
 check("the system prompt uses the new name", "named you Pip" in persona.system_prompt())
 check("the question card shows what was picked", "answered" in db.get_message(onboarding.state()["cards"]["me"])["meta"]["cards"][0])
 
 st, msgs = onboarding.answer("notify", "skip")
-check("no Google sign-in on the server: the Gmail step is skipped", st["done"] and msgs and msgs[-1]["meta"]["cards"][0]["question"] == "Where should we start?",
+check("no Google sign-in on the server: the Gmail step is skipped, and the quiz is offered", st["step"] == "quiz_offer"
+      and "quick quiz" in msgs[-1]["text"] and msgs[-1]["meta"]["cards"][0]["step"] == "quiz_offer", [m["text"][:40] for m in msgs])
+st, msgs = onboarding.answer("quiz_offer", "skip")
+check("'Maybe later' goes straight to the first task", st["done"] and msgs and msgs[-1]["meta"]["cards"][0]["question"] == "Where should we start?",
       [m["text"][:40] for m in msgs])
 opts = msgs[-1]["meta"]["cards"][0]["options"]
 check("the first-task options send real chat prompts", len(opts) == 3 and all(o.get("chat") for o in opts), opts)
@@ -90,7 +97,8 @@ check("Run the intro again starts over", st["needed"] and st["step"] == "hello" 
 check("a question typed mid-intro goes to the model", onboarding.typed("what can you do?", None) is None)
 onboarding.answer("hello", "Cee")
 st, msgs = onboarding.answer("me", "skip")
-check("skipping the name keeps the current one", onboarding.bot_name() == "Pip" and st["step"] == "notify")
+check("skipping the name keeps the current one", onboarding.bot_name() == "Pip" and st["step"] == "style")
+onboarding.answer("style", "skip")
 st, msgs = onboarding.answer("notify", "on")
 card = msgs[-1]["meta"].get("cards", [{}])[0]
 check("with Google sign-in set up: connect Gmail, with its card", st["step"] == "google" and "Connect Gmail" in msgs[-1]["text"]
