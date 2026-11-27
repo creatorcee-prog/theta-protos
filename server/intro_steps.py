@@ -21,7 +21,8 @@ DOTS = [("Circles", "circle"), ("Stars", "star"), ("Diamonds", "diamond"), ("Hex
         ("Squares", "square"), ("Pentagons", "pentagon")]
 OPENINGS = [("Converge", "converge"), ("Signal", "signal")]
 STYLES = [("Urchin", "urchin"), ("Precision", "precision"), ("Lumen", "lumen"), ("Flow", "flow"), ("Signal", "signal"),
-          ("Rings", "rings")]  # theta-app's avatar styles (web/orb.js draws them)
+          ("Rings", "rings"), ("Ribbons", "ribbons"), ("Horizon", "horizon"), ("Plasma", "plasma"), ("Liquid", "liquid"),
+          ("Nebula", "nebula")]  # theta-app's avatar styles (web/orb.js draws them)
 _LOOK = (("accent", ACCENTS), ("style", STYLES), ("dot", DOTS), ("opening", OPENINGS))
 LEVELS = [("Less", "less"), ("Default", "default"), ("More", "more")]
 RULES = [("Disagree with me when I'm wrong", "Disagree with me when I'm wrong, and say why."),

@@ -10,7 +10,8 @@
   const {el} = T;
   const OPTS = {
     accent: [["Sky", "#4fd3ff"], ["Violet", "#a78bfa"], ["Mint", "#4ade80"], ["Amber", "#fbbf24"], ["Rose", "#fb7185"], ["White", "#f4f4f5"]],
-    style: [["Urchin", "urchin"], ["Precision", "precision"], ["Lumen", "lumen"], ["Flow", "flow"], ["Signal", "signal"], ["Rings", "rings"]],
+    style: [["Urchin", "urchin"], ["Precision", "precision"], ["Lumen", "lumen"], ["Flow", "flow"], ["Signal", "signal"], ["Rings", "rings"],
+      ["Ribbons", "ribbons"], ["Horizon", "horizon"], ["Plasma", "plasma"], ["Liquid", "liquid"], ["Nebula", "nebula"]],  // the last five: light in glass (orb8.js)
     dot: [["Circles", "circle"], ["Stars", "star"], ["Diamonds", "diamond"], ["Hexagons", "hexagon"], ["Triangles", "triangle"], ["Squares", "square"], ["Pentagons", "pentagon"]],
     opening: [["Converge", "converge"], ["Signal", "signal"]],
   };

@@ -1032,8 +1032,15 @@ def _lesson_list():
     except Exception:  # noqa: BLE001
         st = {}
     keep = ("root_cause", "rationale", "predicted", "observed", "models", "domains")  # the log, in the owner's layout
-    return [{"id": x["id"], "text": x["text"], "n": x["n"], "t": x["t"], "status": (st.get(x["id"]) or {}).get("status"),
-             "sim": {k: (st.get(x["id"]) or {}).get(k) for k in keep}} for x in les]
+    out = [{"id": x["id"], "text": x["text"], "n": x["n"], "t": x["t"], "status": (st.get(x["id"]) or {}).get("status"),
+            "sim": {k: (st.get(x["id"]) or {}).get(k) for k in keep}} for x in les]
+    try:  # lessons Theta proposed about itself that a review hasn't adopted (yet): shown, not used
+        from . import selfcheck
+        have = {x["id"] for x in out}
+        out += [dict(p, proposed=True) for p in selfcheck.proposals() if p["id"] not in have]
+    except Exception:  # noqa: BLE001
+        pass
+    return out
 
 
 def feedback_route(req, start):
@@ -1063,6 +1070,9 @@ def feedback_route(req, start):
         if m == "DELETE":
             key = req.query.get("id") or ""
             les = next((x for x in persona.lessons() if x["id"] == key), None)
+            if les is None and key.startswith("s:"):  # a proposed one not in use yet: removing it mutes it too
+                from . import selfcheck
+                les = next((x for x in selfcheck.candidates() if x["id"] == key), None)
             if les is None:
                 raise HTTPError(404, "no such lesson")
             if key.startswith("s:"):  # one Theta made itself: there are no ratings to dismiss, so mute the cause

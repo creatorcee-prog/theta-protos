@@ -1553,7 +1553,9 @@
     for (const l of list) {
       const r = el("div", "row-set lesson"), t = el("div", "txt"); t.append(el("b", null, l.text));
       const STATUS = {helping: "Working: you've flagged this less since", "not helping": "Not sticking yet: Theta now applies it more strictly",
-        early: "Too early to tell", recheck: "Learned with another model: Theta is checking it still holds"};
+        early: "Too early to tell", recheck: "Learned with another model: Theta is checking it still holds",
+        "waiting for review": "Proposed by Theta's self-check. Not used until Claude reviews it",
+        "not adopted": "Proposed by Theta's self-check. Claude's review turned it down" + (l.why ? `: ${l.why}` : "")};
       const sub = [l.n > 1 ? `From ${l.n} replies` : "", STATUS[l.status] || ""].filter(Boolean).join(" · ");
       if (sub) t.append(el("span", null, sub));
       const sim = l.sim || {};

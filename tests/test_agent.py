@@ -154,7 +154,7 @@ def test_models():
         check("gemini: thoughtSignature sent back", g["contents"][1]["parts"][0].get("thoughtSignature") == "sig1", g)
         check("cost estimate", models.cost("deepseek-chat", {"tokens_in": 1_000_000, "cache_read": 0,
                                                               "tokens_out": 0}) == 0.28
-              and models.cost("claude-sonnet-5-5", {"tokens_in": 1_000_000, "cache_read": 1_000_000}) == 0.3)
+              and models.cost("claude-sonnet-5-5", {"tokens_in": 1_000_000, "cache_read": 1_000_000}) == 0.1)
     finally:
         models._post = real_post
 

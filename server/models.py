@@ -57,8 +57,9 @@ _adopt_aliases()
 PRICES = {
     "deepseek-chat": (0.28, 0.028, 0.28, 0.42),
     "deepseek-reasoner": (0.28, 0.028, 0.28, 0.42),
-    "claude-sonnet-5-5": (3.0, 0.30, 3.75, 15.0),
-    "claude-haiku-5-5": (1.0, 0.10, 1.25, 5.0),
+    "claude-opus-5-5": (4.0, 0.20, 5.0, 20.0),     # Anthropic's published prices (Nov 2026); cache write 1.25x input
+    "claude-sonnet-5-5": (2.0, 0.10, 2.5, 10.0),
+    "claude-haiku-5-5": (0.10, 0.01, 0.125, 0.50),
     "gemini-3.8-flash": (0.30, 0.03, 0.30, 2.50),
     "llama-3.3-70b-versatile": (0.59, 0.59, 0.59, 0.79),
     "openai/gpt-oss-120b": (0.15, 0.15, 0.15, 0.60),

@@ -191,3 +191,13 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   the latest 8 replies, the models behind that evidence (%), and the domains (kind of task, from the reply's tools and
   route) with the problem rate in each. Settings > General > What Theta learned shows it under Details. Removing a
   lesson Theta made itself mutes that cause.
+- Lesson review (`server/selfcheck.py`): a lesson Theta proposes about itself (a problem its self-check found in 3 of
+  20 replies) is not used until a stronger model reviews it: Claude Opus (`claude-opus-5-5`, THETA_REVIEW_MODEL to
+  change) reads the flagged replies, the self-check's notes, clean replies for contrast and the user's settings, and
+  adopts it (in its own wording, optionally only for one kind of task) or turns it down. It is reviewed again when the
+  log says an adopted one isn't helping (and can be retired), or when the evidence doubles after a no. At most 10
+  reviews a day; with no Anthropic key, proposals wait. Settings shows proposals and the reviewer's reason. The
+  user's own ratings still make lessons at once.
+- Glass avatars (`web/orb8.js`): Generation 8 from the Avatar Lab (Ribbons, Horizon, Plasma, Liquid, Nebula) as
+  globe styles; ThetaOrb draws them through ThetaOrb8 with its eased states and the theme color; they fade in for the
+  opening. The source of truth is docs/avatar-lab/avatar-lab.html.

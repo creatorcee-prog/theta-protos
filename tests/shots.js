@@ -275,7 +275,12 @@ async function waitUp(url) {
     { // Theta's look: live globes to swipe through for color, style, dots and opening (not menus of names)
       await page.waitForSelector("#tab-general .lk-row .lk-tile canvas", {timeout: 4000}).catch(() => {});
       const n = await page.$$eval("#tab-general .lk-row", rs => rs.map(r => r.querySelectorAll(".lk-tile canvas").length));
-      check(n.join(",") === "6,6,7,2", "look: color, style, dots and opening each show live previews: " + n.join(","));
+      check(n.join(",") === "6,11,7,2", "look: color, style (11, with the glass ones), dots and opening each show live previews: " + n.join(","));
+      { // a glass style (Generation 8) draws light in its preview tile
+        const lit = await page.evaluate(() => { const cv = [...document.querySelectorAll("#tab-general .lk-row")][1].querySelectorAll("canvas")[6];
+          const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data; let s = 0; for (let i = 3; i < d.length; i += 4) s += d[i]; return s / (d.length / 4); });
+        check(lit > 8, "the Ribbons preview draws light (mean alpha " + Math.round(lit) + ")");
+      }
       await page.click("#tab-general .lk-row:nth-of-type(2) .lk-tile:nth-child(3)");
       check(await page.evaluate(() => ThetaOrb.style === "lumen" && localStorage.getItem("theta:style") === "lumen"), "tapping a style applies it");
       await page.evaluate(() => document.querySelector("#tab-general .lk-row").scrollIntoView({block: "start"})); await sleep(700);

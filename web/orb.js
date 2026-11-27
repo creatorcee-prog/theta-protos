@@ -37,7 +37,9 @@
   if (SHAPES.indexOf(shape) < 0) shape = "circle";
   // ---- styles: how the globe is built and moves
   const STYLES = {urchin: {}, precision: {n: 2, dotK: 0.62, glow: 0.7}, lumen: {inner: true, rim: true, glow: 1.2},
-                  flow: {flow: true, inner: true}, signal: {rays: true, rim: true}, rings: {rings: true}};
+                  flow: {flow: true, inner: true}, signal: {rays: true, rim: true}, rings: {rings: true},
+                  // Generation 8 (light in glass): drawn by web/orb8.js
+                  ribbons: {g8: true}, horizon: {g8: true}, plasma: {g8: true}, liquid: {g8: true}, nebula: {g8: true}};
   let style = store("theta:style") || "urchin";
   if (!STYLES[style]) style = "urchin";
   // ---- color: the theme color's hue, kept for the next open
@@ -117,6 +119,7 @@
     // ---- openings
     opening(kind, done, speed) {
       kind = kind === "signal" ? "signal" : "converge";
+      if (this._st().g8) { this.fade = 0; this.open = {kind: "fade", t0: performance.now(), done, speed: speed > 0 ? speed : 1}; kick(); return; } // glass styles fade in
       speed = speed > 0 ? speed : 1;
       if (reduceQ.matches) { this.fade = 0; this.open = {kind: "fade", t0: performance.now(), done, speed}; kick(); return; }
       this.open = {kind, t0: performance.now(), done, sky: [], speed};
@@ -188,6 +191,9 @@
         if (ot > end + 0.45) { const d = op.done; this.open = null; op = null; this.fade = 1; if (d) setTimeout(d, 0); }
       }
       const fadeA = this.fade;
+      if (st.g8 && window.ThetaOrb8) { // a Generation 8 style: light in glass (web/orb8.js)
+        g.save(); g.globalAlpha = fadeA; ThetaOrb8.draw(this, g, o.style && STYLES[o.style] ? o.style : style, t, lv); g.restore(); return;
+      }
       // halo: cyan in the middle, blue at the edge; brighter while it talks
       if (glow) {
         const hr = Math.min(R * (2.3 + 0.5 * lv), S / 2), gr = g.createRadialGradient(cx, cy, R * 0.1, cx, cy, hr), k = Math.min(1.4, glow) * fadeA * (op ? out * 0.8 + 0.2 : 1);

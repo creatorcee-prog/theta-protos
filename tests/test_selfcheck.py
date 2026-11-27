@@ -1,7 +1,7 @@
 """Theta checks its own work (server/selfcheck.py): each reply is graded, a problem that keeps coming back becomes a
 lesson without the user rating anything, the user's ratings override the self-check, and the lesson log
 (server/improve.py) judges lessons on the self-reviews too, so a verdict comes quickly. The grader is faked."""
-import os, sys, tempfile, time
+import json, os, sys, tempfile, time
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 os.environ.update(PROTOS_KEY="k", PROTOS_TICK="0", PROTOS_QUIET="1", PROTOS_DATA=tempfile.mkdtemp())
@@ -44,15 +44,39 @@ check("one bad reply isn't a pattern", not selfcheck.lessons())
 review(reply(), grader("too-long"))
 v0 = db.feedback_version()
 review(reply(), grader("too-long"))
+check("the same problem 3 times in the last 20 proposes a lesson, no rating needed",
+      any(x["id"] == "s:too-long" for x in selfcheck.candidates()) and db.feedback_version() > v0)
+check("but a proposed lesson isn't used until a stronger model has reviewed it",
+      not any(x["id"] == "s:too-long" for x in persona.lessons())
+      and any(p["id"] == "s:too-long" and p["status"] == "waiting for review" for p in selfcheck.proposals()))
+SEEN_REVIEW = []
+
+
+def reviewer(adopt, lesson="", only_for=""):
+    def f(msgs):
+        SEEN_REVIEW.append(msgs[0]["content"])
+        return json.dumps({"adopt": adopt, "why": "real and the fix is safe" if adopt else "the self-check misread these",
+                           "lesson": lesson, "only_for": only_for})
+    return f
+
+
+done = selfcheck.review_pending(call=reviewer(True, "Lead with the answer; cut the preamble.", "research replies"))
 les = persona.lessons()
-check("the same problem 3 times in the last 20 makes a lesson, no rating needed",
-      any(x["id"] == "s:too-long" for x in les) and db.feedback_version() > v0)
-check("and it reaches the prompt", "keep replies shorter" in persona.feedback_block())
+check("the reviewer reads the flagged replies, the self-check's notes and the user's settings",
+      SEEN_REVIEW and "what's 2+2?" in SEEN_REVIEW[0] and "Self-check's note" in SEEN_REVIEW[0])
+check("an adopted lesson reaches the prompt, in the reviewer's words and scope",
+      any(x["id"] == "s:too-long" and "Lead with the answer" in x["text"] and "research replies" in x["text"] for x in les)
+      and "Lead with the answer" in persona.feedback_block())
+check("reviewed once: it isn't asked again", not any(c == "too-long" for c, _ in selfcheck.pending()))
 
 # the user steers: a like clears the flags on that reply; two likes mute the cause
 r1, r2 = reply(), reply()
 review(r1, grader("asked-instead")); review(r2, grader("asked-instead")); review(reply(), grader("asked-instead"))
-check("asked-instead found 3 times becomes a lesson", any(x["id"] == "s:asked-instead" for x in selfcheck.lessons()))
+check("asked-instead found 3 times is proposed", any(x["id"] == "s:asked-instead" for x in selfcheck.candidates()))
+selfcheck.review_pending(call=reviewer(False))
+check("a lesson the reviewer turns down stays out, with its reason shown",
+      not any(x["id"] == "s:asked-instead" for x in selfcheck.lessons())
+      and any(p["id"] == "s:asked-instead" and p["status"] == "not adopted" and p["why"] for p in selfcheck.proposals()))
 db.set_feedback(r1["id"], 1); db.set_feedback(r2["id"], 1)
 check("the user liked replies flagged for it: their word wins, the lesson goes",
       "asked-instead" in selfcheck.muted() and not any(x["id"] == "s:asked-instead" for x in selfcheck.lessons()))
@@ -76,6 +100,9 @@ for _ in range(improve.CHECK_AFTER):
     review(reply(), grader("too-long"))
 check("if the problem keeps happening, it says not helping", improve.check()["s:too-long"] == "not helping")
 check("and the prompt states it strictly", "apply it strictly" in persona.feedback_block())
+check("not helping sends it back to the reviewer, who can retire it", any(c == "too-long" for c, _ in selfcheck.pending()))
+selfcheck.review_pending(call=reviewer(False))
+check("retired: it leaves the prompt", not any(x["id"] == "s:too-long" for x in persona.lessons()))
 
 stats = selfcheck.stats()
 check("stats: reviews, average score and problems found", stats["reviews"] == selfcheck.SELF_WINDOW and stats["avg_score"]
