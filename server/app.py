@@ -1242,7 +1242,12 @@ BUILD = (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or os.environ.get("PROTOS_BUIL
 def api(req, start):
     p, m = req.path, req.method
     if p == "/api/health":
-        return respond_json(start, {"ok": True, "version": __version__, "build": BUILD})
+        try:  # public: only yes/no, never the path
+            from . import account
+            saved = account.storage()["persistent"]
+        except Exception:  # noqa: BLE001
+            saved = None
+        return respond_json(start, {"ok": True, "version": __version__, "build": BUILD, "storage_persistent": saved})
     if p == "/api/login":
         if m != "POST":
             raise HTTPError(405, "method not allowed")
@@ -1429,6 +1434,12 @@ def serve():
             log("PROTOS_KEY is not set. Set it in the service's variables, then redeploy. Not starting.")
             raise SystemExit(2)
         log("WARNING: PROTOS_KEY is not set, so the API has no auth. Local dev only.")
+    try:  # say it loudly when Theta's memory won't survive the next deploy (no Railway volume)
+        from . import account
+        st = account.storage()
+        log(("storage: " if st["persistent"] else "WARNING storage: ") + st["why"])
+    except Exception as e:  # noqa: BLE001
+        log(f"storage: couldn't check ({type(e).__name__})")
     avail = models.available()
     log(f"models available: {', '.join(avail) or 'none (set DEEPSEEK_API_KEY or another key)'}")
     start_ticker()

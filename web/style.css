@@ -284,6 +284,28 @@ svg { width: 22px; height: 22px; display: block; flex: none; }
 .seg button { flex: 1 1 0; min-width: 0; padding: 8px 4px; border-radius: 11px; font-size: 14px; color: #bbb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .seg button[aria-selected="true"] { background: #3a3a3a; color: #fff; font-weight: 500; }
 .tab-panel > .sec:first-child { margin-top: 12px; }
+/* Settings root: a profile card and grouped rows that open pages */
+.set-me { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; background: #1b1b1b; border-radius: 22px; padding: 14px 16px; margin: 10px 0 4px; color: var(--text); }
+.set-avatar { width: 56px; height: 56px; border-radius: 50%; flex: none; display: grid; place-items: center; background: #0b0b0b; border: 1px solid #2c2c2c;
+  font-size: 24px; font-weight: 600; color: #fff; background-size: cover; background-position: center; overflow: hidden; }
+.set-me-txt { flex: 1; min-width: 0; }
+.set-me-txt b { display: block; font-size: 19px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.set-me-txt span { display: block; color: var(--muted); font-size: 14px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chev { width: 18px; height: 18px; color: #77777c; flex: none; }
+.nav-group { padding: 0 0 0 16px !important; }
+.nav-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 0 16px 0 0; color: var(--text); text-align: left; position: relative; }
+.nav-row + .nav-row::before { content: ""; position: absolute; top: 0; left: 40px; right: 0; border-top: 1px solid #2a2a2a; }
+.nav-row > svg:first-child { width: 24px; height: 24px; flex: none; color: #d0d0d4; }
+.nav-row span { flex: 1; font-size: 17px; }
+.nav-row em { font-style: normal; color: var(--muted); font-size: 15px; white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+.nav-row.danger, .nav-row.danger > svg:first-child { color: #ff8a80; }
+.set-out { margin-top: 22px; }
+.set-warn { background: #3a1616; border: 1px solid #6b2525; color: #ffd7d2; border-radius: 18px; padding: 12px 14px; margin: 10px 0 4px; font-size: 14.5px; line-height: 1.4; }
+.set-warn b { display: block; color: #fff; font-size: 16px; margin-bottom: 3px; }
+.set-warn button { margin-top: 8px; }
+#settings-back[hidden] { display: none; }
+#settings .sheet-head.paged #settings-x { order: 3; margin-left: auto; }
+#settings .sheet-head.paged .count-pill { display: none; }
 .tab-panel:empty::after { content: "Nothing here yet."; display: block; color: var(--muted); text-align: center; padding: 40px 0; }
 /* Connections tab */
 .conn-top { display: flex; align-items: center; gap: 10px; margin-top: 10px; }

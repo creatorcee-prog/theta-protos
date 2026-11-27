@@ -116,6 +116,17 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   (OP_SERVICE_ACCOUNT_TOKEN), Bitwarden through the `bw` CLI (`server/bitwarden.py`: BW_CLIENTID/BW_CLIENTSECRET
   log in, BW_PASSWORD unlocks, BW_FOLDER limits it; TOTP codes computed from the seed, RFC 6238). Logins are used
   only on a page whose host matches the item's saved website; values never reach the model.
+- Account (`server/account.py`, `web/features/account.js`): profile (name, nickname, photo, email, phone,
+  occupation, home, time zone, about, instructions; name/phone/tz share the call_name/phone/tz settings) and
+  personalization (style, warmth, enthusiasm, emoji, memory on/off), turned into account.prompt_block() in the system
+  prompt. storage() says whether the data dir is on the Railway volume (wipes are shown, not silent); backups via
+  SQLite's backup API with SECRET_SETTINGS removed; restore keeps current secrets and a safety copy; daily Drive
+  backups (last 7) with full Drive access; usage from the turns table; /api/logout.
+- Chips (`server/chips.py`, `web/features/chips.js`): skills. Built-ins (Morning brief, Inbox sweep, Plan my day,
+  Best price, Money check) plus the user's own; the ones on are listed in the turn context, chip_open loads one,
+  chip_save makes one. A row of chips sits above the empty chat box. Settings > Chips edits them.
+- Settings is a list of pages (root, profile, personalize, memory, chips, notifications, usage, data, security,
+  connections, general); Theta.settings(title, page) adds a section to a page; Theta.emit("settings-page").
 - Web search (`router.search_context`): Tavily, else a Bing search read in a private tab of Theta's browser
   (`browser.web_results`, its own session: not on Theta's screen, never saved as sign-ins). `router.search_live()`
   says whether either can run.

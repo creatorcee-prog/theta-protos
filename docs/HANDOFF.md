@@ -117,6 +117,13 @@ later).
   now drives real Chromium through cookie walls, popups, iframes, shadow DOM, forms, autocomplete, infinite scroll,
   dialogs, uploads and a two-step sign-in with a code.
 
+- **Accounts, Chips and the new Settings (Nov 27):** Settings is a list of pages like Claude's and ChatGPT's
+  (profile card; Customize Theta: Personalization, Memory, Chips; Account: Profile, Notifications, Usage, Data and
+  storage, Privacy and security; App: Apps, General; Log out). The profile and personalization shape every reply.
+  Data and storage shows whether Theta's data survives deploys (the likely cause of the lost memory: no Railway
+  volume), with downloads, restores and daily Google Drive backups. Chips are skills: five built-ins, your own,
+  "make that a chip", and a one-tap row above the chat box.
+
 ## In the middle of (paused, saved, not running)
 - **Theta's screen (the live view) is done and live**, rebuilt from the paused `75eb145` work: a floating live
   picture while a turn browses, a full screen the user can drive, the last picture on the reply, and lasting

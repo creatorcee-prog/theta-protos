@@ -227,6 +227,10 @@ def describe(name, args=None, ctx=None):
             return (f"Getting the call to {n} ready" if n else "Getting the call ready"), "call"
         if name == "send_text":
             return (f"Texting {who(a.get('to'))}" if a.get("to") else "Writing the text"), "send"
+        if name == "chip_open":
+            return f"Opening your {_q(a.get('name'))} chip".replace("your  chip", "a chip"), "read"
+        if name == "chip_save":
+            return f"Saving the {_q(a.get('name'))} chip".replace("the  chip", "a chip"), "write"
         if name == "find_contact":
             return f"Looking up {_q(a.get('query'))} in your contacts", "read"
         if name == "save_contact":

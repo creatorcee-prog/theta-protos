@@ -43,6 +43,14 @@
     <symbol id="i-edit" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 19.5l1-4.2L15.8 5a2 2 0 012.8 0l.4.4a2 2 0 010 2.8L8.7 18.5z"/><path d="M13.5 7.3l3.2 3.2"/></g></symbol>
     <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-gif" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 10.2a2 2 0 00-1.6-.7c-1.3 0-2.1 1-2.1 2.5s.8 2.5 2.1 2.5c.9 0 1.6-.5 1.6-1.6V12.4H8.6M12.6 9.6v4.8M15.4 14.4V9.6h2.6M15.4 12h2.1"/></g></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></g></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 6.5c-2-1.6-4.6-2-7.5-1.5v13c2.9-.5 5.5-.1 7.5 1.5 2-1.6 4.6-2 7.5-1.5V5c-2.9-.5-5.5-.1-7.5 1.5z"/><path d="M12 6.5V19.5"/></g></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3.5" y="7" width="17" height="10" rx="5"/><path d="M8 12h4.5M14.5 10l1.8 2-1.8 2" stroke-linecap="round"/></g></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4.5 17a8 8 0 1115 0"/><path d="M12 13l3.5-3.5"/><circle cx="12" cy="13.5" r="1.2" fill="currentColor"/></g></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V6M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8"/></g></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.5l7 2.8v5.4c0 4.3-2.9 7.6-7 8.8-4.1-1.2-7-4.5-7-8.8V6.3z"/><rect x="9.5" y="10.5" width="5" height="4.5" rx="1"/><path d="M10.5 10.5V9.3a1.5 1.5 0 013 0v1.2"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3.5l1.6 2.3 2.7-.6.6 2.7 2.3 1.6-1.4 2.5 1.4 2.5-2.3 1.6-.6 2.7-2.7-.6L12 20.5l-1.6-2.3-2.7.6-.6-2.7-2.3-1.6L6.2 12 4.8 9.5l2.3-1.6.6-2.7 2.7.6z"/></g></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4.5H6.5v15H14"/><path d="M10.5 12H20M16.5 8.5L20 12l-3.5 3.5"/></g></symbol>
     <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="currentColor"/></symbol>
   </defs>
 </svg>
@@ -130,18 +138,49 @@
   <!-- Settings (full-screen sheet) -->
   <section id="settings" class="sheet full" hidden aria-labelledby="settings-title" role="dialog" aria-modal="true">
     <header class="sheet-head">
-      <button class="round" data-close aria-label="Close"><svg><use href="#i-close"/></svg></button>
+      <button class="round" id="settings-back" aria-label="Back to Settings" hidden><svg><use href="#i-back"/></svg></button>
+      <button class="round" id="settings-x" data-close aria-label="Close"><svg><use href="#i-close"/></svg></button>
       <h2 id="settings-title">Settings</h2>
       <span class="count-pill" id="settings-mode"></span>
     </header>
-    <div class="seg" id="settings-tabs" role="tablist" aria-label="Settings sections">
-      <button type="button" role="tab" id="tabbtn-general" data-tab="general" aria-controls="tab-general" aria-selected="true">General</button>
-      <button type="button" role="tab" id="tabbtn-notifications" data-tab="notifications" aria-controls="tab-notifications" aria-selected="false">Alerts</button>
-      <button type="button" role="tab" id="tabbtn-connections" data-tab="connections" aria-controls="tab-connections" aria-selected="false">Apps</button>
-      <button type="button" role="tab" id="tabbtn-security" data-tab="security" aria-controls="tab-security" aria-selected="false">Security</button>
-    </div>
     <div class="sheet-body settings-body">
-      <div class="tab-panel" id="tab-general" role="tabpanel" aria-labelledby="tabbtn-general">
+      <div class="tab-panel" id="tab-root" aria-label="Settings">
+        <div class="set-warn" id="set-storage-warn" role="alert" hidden></div>
+        <button type="button" class="set-me" data-go="profile" aria-label="Your profile">
+          <span class="set-avatar" id="set-avatar" aria-hidden="true">?</span>
+          <span class="set-me-txt"><b id="set-me-name">Your profile</b><span id="set-me-sub">Name, photo, how Theta talks to you</span></span>
+          <svg class="chev"><use href="#i-chev"/></svg>
+        </button>
+        <h3 class="sec">Customize Theta</h3>
+        <div class="group nav-group">
+          <button type="button" class="nav-row" data-go="personalize"><svg><use href="#i-sliders"/></svg><span>Personalization</span><em id="nav-v-personalize"></em><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button type="button" class="nav-row" data-go="memory"><svg><use href="#i-book"/></svg><span>Memory</span><em id="nav-v-memory"></em><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button type="button" class="nav-row" data-go="chips"><svg><use href="#i-chip"/></svg><span>Chips</span><em id="nav-v-chips"></em><svg class="chev"><use href="#i-chev"/></svg></button>
+        </div>
+        <h3 class="sec">Account</h3>
+        <div class="group nav-group">
+          <button type="button" class="nav-row" data-go="profile"><svg><use href="#i-person"/></svg><span>Profile</span><em></em><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button type="button" class="nav-row" data-go="notifications"><svg><use href="#i-bell"/></svg><span>Notifications</span><em></em><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button type="button" class="nav-row" data-go="usage"><svg><use href="#i-gauge"/></svg><span>Usage</span><em id="nav-v-usage"></em><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button type="button" class="nav-row" data-go="data"><svg><use href="#i-db"/></svg><span>Data and storage</span><em id="nav-v-data"></em><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button type="button" class="nav-row" data-go="security"><svg><use href="#i-shield"/></svg><span>Privacy and security</span><em></em><svg class="chev"><use href="#i-chev"/></svg></button>
+        </div>
+        <h3 class="sec">App</h3>
+        <div class="group nav-group">
+          <button type="button" class="nav-row" data-go="connections"><svg><use href="#i-grid"/></svg><span>Apps</span><em id="nav-v-apps"></em><svg class="chev"><use href="#i-chev"/></svg></button>
+          <button type="button" class="nav-row" data-go="general"><svg><use href="#i-gear"/></svg><span>General</span><em></em><svg class="chev"><use href="#i-chev"/></svg></button>
+        </div>
+        <div class="group nav-group set-out">
+          <button type="button" class="nav-row danger" id="set-logout"><svg><use href="#i-logout"/></svg><span>Log out</span><em></em></button>
+        </div>
+      </div>
+      <div class="tab-panel" id="tab-profile" hidden></div>
+      <div class="tab-panel" id="tab-personalize" hidden></div>
+      <div class="tab-panel" id="tab-memory" hidden></div>
+      <div class="tab-panel" id="tab-chips" hidden></div>
+      <div class="tab-panel" id="tab-usage" hidden></div>
+      <div class="tab-panel" id="tab-data" hidden></div>
+      <div class="tab-panel" id="tab-general" hidden>
         <h3 class="sec">Chat</h3>
         <div class="group">
           <div class="row-set">
@@ -169,7 +208,7 @@
           <div class="dot-preview"><canvas id="set-orb" aria-hidden="true"></canvas></div>
         </div>
       </div>
-      <div class="tab-panel" id="tab-notifications" role="tabpanel" aria-labelledby="tabbtn-notifications" hidden>
+      <div class="tab-panel" id="tab-notifications" hidden>
         <h3 class="sec">Theta texting you</h3>
         <div class="group">
           <div class="row-set">
@@ -199,7 +238,7 @@
           </div>
         </div>
       </div>
-      <div class="tab-panel" id="tab-connections" role="tabpanel" aria-labelledby="tabbtn-connections" hidden>
+      <div class="tab-panel" id="tab-connections" hidden>
         <div class="conn-top">
           <label class="search-pill"><svg><use href="#i-search"/></svg>
             <input id="connect-search" type="search" placeholder="Search apps" aria-label="Search apps" autocomplete="off"></label>
@@ -208,7 +247,7 @@
         <div class="chips" id="connect-chips" role="tablist" aria-label="Filter apps"></div>
         <div id="connect-list"></div>
       </div>
-      <div class="tab-panel" id="tab-security" role="tabpanel" aria-labelledby="tabbtn-security" hidden></div>
+      <div class="tab-panel" id="tab-security" hidden></div>
       <p class="fine" id="set-about"></p>
     </div>
   </section>

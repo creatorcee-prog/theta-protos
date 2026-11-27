@@ -190,7 +190,7 @@
     // "connect" was its own sheet; it's now the Connections tab of Settings, and old links still land there
     const sheet = st.sheet === "connect" ? "settings" : st.sheet, tab = st.sheet === "connect" ? "connections" : st.tab;
     for (const s of SHEETS) { const open = sheet === s, e = $(s); if (open && e.hidden) openSheet(s); else if (!open && !e.hidden) closeSheetEl(e); }
-    if (sheet === "settings") setTab(tab || "general");
+    if (sheet === "settings") setTab(tab || "root");
   }
   const go = st => { history.pushState(st, "", location.href); render(st); };
   const cur = () => history.state || {v: view === "chat" ? "chat" : "home"};
@@ -875,7 +875,12 @@
   // the newest message always scrolls clear of it
   const cwrap = document.querySelector(".composer-wrap");
   if (cwrap && window.ResizeObserver) {
-    new ResizeObserver(() => document.documentElement.style.setProperty("--composer-h", Math.ceil(cwrap.getBoundingClientRect().height) + "px")).observe(cwrap);
+    new ResizeObserver(() => {
+      const h = Math.ceil(cwrap.getBoundingClientRect().height);
+      if (!h) return; // hidden (another screen): keep the last real height
+      document.documentElement.style.setProperty("--composer-h", h + "px");
+      if (stick) requestAnimationFrame(() => toBottom(false)); // the newest message stays in view as the box grows
+    }).observe(cwrap);
   }
   function renderQueue() {
     const chip = $("attach-chip"); chip.replaceChildren();
@@ -1271,7 +1276,8 @@
     e.classList.add("closing"); setTimeout(() => { e.hidden = true; e.classList.remove("closing"); }, 250);
   }
   document.querySelectorAll(".sheet.full [data-close]").forEach(b => b.addEventListener("click", () => {
-    if (history.state && history.state.sheet) history.back(); else render({v: view});
+    // a Settings page opened from the list is two steps deep: close goes back past both
+    if (history.state && history.state.sheet) history.go(history.state.fromRoot ? -2 : -1); else render({v: view});
   }));
 
   // attach (bottom sheet): photos are stubbed in v0
@@ -1288,28 +1294,37 @@
     chip.append(x); chip.hidden = false; e.target.value = "";
   });
 
-  // ---------------------------------------------------------------- Settings tabs
-  const TABS = ["general", "notifications", "connections", "security"];
-  let settingsTab = "general";
+  // ---------------------------------------------------------------- Settings: a list of pages (like iOS Settings)
+  // "root" is the list; each row opens a page (tab-<id>). Features fill pages with Theta.settings(title, page).
+  const TABS = ["root", "profile", "personalize", "memory", "chips", "notifications", "usage", "data", "security", "connections", "general"];
+  const TAB_TITLE = {root: "Settings", profile: "Profile", personalize: "Personalization", memory: "Memory", chips: "Chips",
+    notifications: "Notifications", usage: "Usage", data: "Data and storage", security: "Privacy and security", connections: "Apps", general: "General"};
+  let settingsTab = "root";
   function setTab(tab) {
-    if (!TABS.includes(tab)) tab = "general";
+    if (!TABS.includes(tab)) tab = "root";
     const changed = tab !== settingsTab || !$("tab-" + tab).dataset.shown;
     settingsTab = tab;
-    for (const t of TABS) { const on = t === tab; $("tab-" + t).hidden = !on; $("tabbtn-" + t).setAttribute("aria-selected", String(on)); $("tabbtn-" + t).tabIndex = on ? 0 : -1; }
+    for (const t of TABS) $("tab-" + t).hidden = t !== tab;
     $("tab-" + tab).dataset.shown = "1";
+    $("settings-title").textContent = TAB_TITLE[tab];
+    $("settings-back").hidden = tab === "root"; $("settings").querySelector(".sheet-head").classList.toggle("paged", tab !== "root");
+    $("set-about").hidden = tab !== "root";
     if (tab === "connections" && changed) loadConnections();
-    if (changed) $("settings").querySelector(".settings-body").scrollTop = 0;
+    if (changed) { $("settings").querySelector(".settings-body").scrollTop = 0; Theta.emit("settings-page", {page: tab}); }
   }
-  $("settings-tabs").addEventListener("click", e => {
-    const b = e.target.closest("[data-tab]"); if (!b) return;
-    history.replaceState(Object.assign({}, cur(), {sheet: "settings", tab: b.dataset.tab}), "", location.href);
-    setTab(b.dataset.tab);
+  $("tab-root").addEventListener("click", e => {
+    const b = e.target.closest("[data-go]"); if (!b) return;
+    go(Object.assign({}, cur(), {sheet: "settings", tab: b.dataset.go, fromRoot: true}));
   });
-  $("settings-tabs").addEventListener("keydown", e => {
-    const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0; if (!d) return;
-    const t = TABS[(TABS.indexOf(settingsTab) + d + TABS.length) % TABS.length];
-    history.replaceState(Object.assign({}, cur(), {sheet: "settings", tab: t}), "", location.href);
-    setTab(t); $("tabbtn-" + t).focus();
+  $("settings-back").addEventListener("click", () => {
+    if (history.state && history.state.fromRoot) history.back();
+    else { history.replaceState(Object.assign({}, cur(), {sheet: "settings", tab: "root"}), "", location.href); setTab("root"); }
+  });
+  $("set-logout").addEventListener("click", async () => {
+    if (S.demo) { toast("Demo mode: there's no sign-in to leave."); return; }
+    if (!confirm("Log out of Theta on this device? Your chats and memory stay on Theta.")) return;
+    try { await post("/api/logout", {}); } catch (e) {}
+    location.replace(location.pathname);
   });
 
   // ---------------------------------------------------------------- Connections (a Settings tab)
@@ -1631,6 +1646,8 @@
     card(type, fn) { cardKinds[type] = fn; },
     // listen to the reply stream while Theta answers: fn(data, {text}) for "tool", "activity", "delta", "done"...
     on(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+    // tell features about something that isn't a stream event ("settings-page" when a Settings page opens)
+    emit(ev, data) { for (const fn of (listeners[ev] || [])) { try { fn(data, {}); } catch (err) { console.error(err); } } },
     close() { if (history.state && history.state.sheet) history.back(); else render({v: view}); },
     // a full-screen sheet like Settings: returns {root, body, foot}; onOpen(root) runs each time it opens
     sheet(id, title, onOpen) {
@@ -1656,9 +1673,10 @@
       $("menu").append(b); return b;
     },
     // a section in Settings, above the "about" line: returns the group element to fill with .row-set rows
-    // tab: "general" | "notifications" | "connections" | "security" (defaults by title, else general)
+    // page: "profile" | "personalize" | "memory" | "chips" | "notifications" | "usage" | "data" | "security" |
+    // "connections" | "general" (defaults by title, else general)
     settings(title, tab) {
-      const panel = $("tab-" + (TABS.includes(tab) ? tab : (SETTINGS_TAB[title] || "general")));
+      const panel = $("tab-" + (TABS.includes(tab) && tab !== "root" ? tab : (SETTINGS_TAB[title] || "general")));
       const h = el("h3", "sec", title), g = el("div", "group"); panel.append(h, g); return g;
     },
   };

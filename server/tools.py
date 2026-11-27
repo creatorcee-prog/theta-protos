@@ -135,6 +135,13 @@ def _memory():
 
 
 def _memory_edit(args, ctx):
+    try:
+        from . import account
+        if not account.memory_on():
+            return ("Memory is off in Settings > Memory, so nothing was saved. Don't mention saving; if it matters, "
+                    "say they can turn memory on there.")
+    except ImportError:
+        pass
     mem = _memory()
     res = mem.edit(args["op"], args.get("text") or "", args.get("old"))
     if not res.get("ok"):

@@ -21,7 +21,10 @@ server if it ever stops.
 
 ## 2. Add a volume (where Theta's memory lives)
 Add a **Volume** to the service and mount it at `/data`. Without a volume, every redeploy would wipe your chats,
-reminders and memory. The server finds the volume on its own.
+reminders and memory. The server finds the volume on its own. Don't set `PROTOS_DATA` unless it points inside the
+volume. To check: Settings > Data and storage in the app says whether Theta's data survives deploys (a red banner on
+the Settings list means it doesn't), and the deploy log prints a `storage:` line. Backups: Settings > Data and storage
+(download, restore, or daily to Google Drive).
 
 ## 3. Add your keys
 Open the service's **Variables** tab, switch to the raw editor, and paste:

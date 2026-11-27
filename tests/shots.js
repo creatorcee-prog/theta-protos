@@ -44,7 +44,7 @@ async function waitUp(url) {
       const f = path.join(OUT, name + ".png"); await page.screenshot({path: f}); console.log("shot " + f);
       // nothing may stick out sideways (the filter chips scroll on purpose)
       const wide = await page.evaluate(() => [...document.querySelectorAll("#app *")].filter(e => {
-        if (e.closest(".chips") || !e.getClientRects().length) return false;
+        if (e.closest(".chips, .chp-row") || !e.getClientRects().length) return false;
         const r = e.getBoundingClientRect(); return r.width && (r.right > innerWidth + 1 || r.left < -1);
       }).map(e => e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + (e.className && e.className.baseVal === undefined ? "." + String(e.className).split(" ")[0] : "")).slice(0, 5));
       check(wide.length === 0, name + ": no horizontal overflow" + (wide.length ? ": " + wide.join(", ") : ""));
@@ -69,9 +69,13 @@ async function waitUp(url) {
       const sameRow = r.every(b => Math.abs(b.bottom - r[3].bottom) < 14), ordered = r[0].left < r[1].left && r[1].left < r[2].left && r[2].left < r[3].left;
       check(sameRow && ordered, "message box: +, text, mic and send sit on one row");
     }
+    await page.waitForSelector(".chp-row .chp-pill", {timeout: 12000}).catch(() => {});
+    check((await page.$$(".chp-row .chp-pill")).length >= 5 && await page.isVisible(".chp-row"), "the chips row shows above the empty chat box");
+    await shot("02b-chat-chips");
     const usage0 = (await page.$$("#thread .usage .u-txt")).length;
     check(usage0 >= 2, "history replies show their token use");
     await page.fill("#c-text", "Should I buy the new camera now or wait? Compare it for me");
+    check(await page.isHidden(".chp-row"), "the chips row hides while you type");
     await page.click("#c-send");
     await page.waitForSelector("#thread .pending-orb", {timeout: 2000});
     check(await page.$("#thread .typing") === null, "no three-dot typing indicator");
@@ -194,7 +198,7 @@ async function waitUp(url) {
     await sleep(450);
     await shot("08-connections");
     check(/\d+ connected/.test(await page.textContent("#connect-count")), "Connections shows the connected count");
-    check(await page.getAttribute("#tabbtn-connections", "aria-selected") === "true", "the Connections tab is selected");
+    check(await page.textContent("#settings-title") === "Apps" && await page.isVisible("#settings-back"), "the Apps page opens, with a back button");
     const conn = await page.evaluate(() => ({
       logos: document.querySelectorAll("#connect-list .app-ic.logo svg path").length,
       soon: [...document.querySelectorAll("#connect-list .app-row.soon button")].map(b => b.textContent),
@@ -207,8 +211,11 @@ async function waitUp(url) {
     await page.evaluate(() => document.querySelector("#connect-list .app-row.soon").scrollIntoView({block: "center"}));
     await sleep(200);
     await shot("08b-connections-soon");
-    await page.click("#tabbtn-security");
-    check(!(await page.isHidden("#tab-security")) && await page.isHidden("#tab-connections"), "tabs switch panels");
+    await page.click("#settings-back");
+    await page.waitForSelector("#tab-root:not([hidden])");
+    check(await page.isHidden("#tab-connections") && await page.textContent("#settings-title") === "Settings", "back goes to the Settings list");
+    await page.click('#tab-root [data-go="security"]');
+    check(!(await page.isHidden("#tab-security")) && await page.isHidden("#tab-root"), "a row opens its page");
     await shot("08c-settings-security");
     await page.click("#settings [data-close]");
     await page.waitForSelector("#settings", {state: "hidden"});
@@ -220,7 +227,25 @@ async function waitUp(url) {
     await page.waitForSelector("#settings:not([hidden])");
     await sleep(500);
     await shot("09-settings");
-    check(await page.getAttribute("#tabbtn-general", "aria-selected") === "true", "Settings opens on General from the avatar button");
+    check(!(await page.isHidden("#tab-root")) && (await page.textContent("#set-me-name")).length > 0, "Settings opens on the list, with the profile card");
+    const rows = await page.$$eval("#tab-root .nav-row span", e => e.map(x => x.textContent));
+    check(["Personalization", "Memory", "Chips", "Profile", "Usage", "Data and storage", "Apps", "General", "Log out"].every(r => rows.includes(r)), "the list has every page: " + rows.join(", "));
+    for (const [pg, sel, name] of [["profile", "#acc-name", "09e-profile"], ["personalize", "#tab-personalize select", "09f-personalization"],
+      ["memory", "#tab-memory .mem-line", "09g-memory"], ["chips", "#tab-chips .chp-item", "09h-chips"], ["usage", "#tab-usage .use-card", "09i-usage"],
+      ["data", "#tab-data .dat-state", "09j-data"]]) {
+      await page.click(`#tab-root [data-go="${pg}"]`);
+      await page.waitForSelector(sel, {timeout: 4000});
+      await sleep(300);
+      await shot(name);
+      await page.click("#settings-back");
+      await page.waitForSelector("#tab-root:not([hidden])");
+    }
+    await page.click('#tab-root [data-go="chips"]');
+    await page.click("#tab-chips .chp-item .chp-txt");
+    await page.waitForSelector("#tab-chips .chp-edit textarea");
+    check((await page.inputValue("#tab-chips .chp-edit textarea")).length > 0, "a chip opens to its steps");
+    await page.click("#settings-back");
+    await page.click('#tab-root [data-go="general"]');
     check((await page.textContent("#set-loc-note")).includes("10 km"), "location note says rounded to about 10 km");
     check(await page.isChecked("#set-usage"), "Show token use is on by default");
     await page.waitForSelector("#set-lessons .lesson", {timeout: 3000}).catch(() => {});
@@ -235,7 +260,8 @@ async function waitUp(url) {
     await page.click("#set-lessons .lesson button");
     await sleep(400);
     check(!(await page.$$eval("#set-lessons .lesson b", e => e.map(x => x.textContent))).some(t => /too long/.test(t)), "a lesson can be removed");
-    await page.click("#tabbtn-notifications");
+    await page.click("#settings-back");
+    await page.click('#tab-root [data-go="notifications"]');
     await sleep(200);
     await shot("09d-settings-alerts");
     check(await page.isVisible("#set-push") || await page.isVisible("#set-proactive"), "the Alerts tab has the notification settings");

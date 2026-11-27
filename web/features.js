@@ -9,6 +9,7 @@
   FEATURES.push("approvals"); // approval cards, Settings > Security > Approvals
   FEATURES.push("models"); // Settings > General > Models
   FEATURES.push("bank"); // Settings > Apps > Bank accounts
+  FEATURES.push("account", "chips"); // Settings: profile, personalization, memory, usage, data; chips (skills)
   for (const f of FEATURES) {
     const s = document.createElement("script");
     s.src = "/static/features/" + f + ".js"; s.async = false;

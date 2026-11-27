@@ -37,6 +37,7 @@ check("bulk mail actions count what they touch", D("gmail_archive", {"message_id
       and D("gmail_trash", {"query": "from:promo"})[0] == "Trashing emails matching “from:promo”")
 check("calendar and Drive in words", D("calendar_add", {"title": "Dentist"})[0] == "Adding “Dentist” to your calendar"
       and D("drive_make_folder", {"name": "Taxes 2026"})[0] == "Making the folder “Taxes 2026”")
+check("chips in words", D("chip_open", {"name": "Plan my day"})[0] == "Opening your “Plan my day” chip")
 check("an unknown tool still says something true", D("mystery_tool", {})[0] == "Using mystery tool")
 
 # browser steps use the labels from the page Theta has open

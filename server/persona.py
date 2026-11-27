@@ -189,7 +189,15 @@ def system_prompt(bot="theta", now=None, extra=None, tools=True):
                         "wherever these instructions say Theta.")
     if tools:
         parts.append(TOOL_GUIDE)
-    mem = memory.block()
+    try:
+        from . import account
+        about = account.prompt_block()
+        mem_on = account.memory_on()
+    except Exception:  # noqa: BLE001
+        about, mem_on = "", True
+    if about:
+        parts.append(about)
+    mem = memory.block() if mem_on else ""
     if mem:
         parts.append("What you remember about them (use naturally, don't recite):\n" + mem)
     fb = feedback_block()
