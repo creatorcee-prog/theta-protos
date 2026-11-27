@@ -184,3 +184,17 @@ Theta keeps its dot-globe avatar, dot themes, name and SOUL.md voice (`docs/SPEC
     - "Suggested because …" reasons.
     - Inline "Connect X" cards when a request needs a missing connection.
 13. **Limit and status banners docked above the composer.** For example, a provider outage or quota reached. Write them in Theta's voice, never as a blocking modal, and never place them inside the transcript.
+
+## 6. Testing self-improvement (for evals/selfimprove.py and server/selfcheck.py)
+
+Read Nov 2026, from the arXiv abstracts unless noted. What each changed in the test:
+
+- **Huang et al., "Large Language Models Cannot Self-Correct Reasoning Yet"** ([arXiv 2310.01798](https://arxiv.org/abs/2310.01798), ICLR 2024): without outside feedback, models struggle to fix their own reasoning and sometimes get worse. So the self-check grades with a *different* model and with what it can verify (tool steps, the profile); the user's ratings stay the outside signal.
+- **Panickssery, Bowman & Feng, "LLM Evaluators Recognize and Favor Their Own Generations"** ([arXiv 2404.13076](https://arxiv.org/abs/2404.13076), NeurIPS 2024), and **Pombal, Rei & Martins** ([arXiv 2604.06996](https://arxiv.org/abs/2604.06996)): judges rate their own output higher; on failed rubrics a judge can be "more than 50% more likely" to pass its own output. So the outcome judge should be another model family (`JUDGE=`), and checks that need no judge come first.
+- **Zheng et al., "Judging LLM-as-a-Judge"** ([arXiv 2306.05685](https://arxiv.org/abs/2306.05685), NeurIPS 2023): position, verbosity and self-enhancement bias. So pairwise judging is asked in both orders, and the prompt says length isn't quality.
+- **Yagubyan, "The Coin Flip Judge?"** ([arXiv 2606.13685](https://arxiv.org/abs/2606.13685)): pairwise preferences "flip on average 13.6% of the time"; cross-judge agreement "only 76% (κ = 0.51)". So a verdict that flips with the order counts as a tie, and flips are reported.
+- **Miller, "Adding Error Bars to Evals"** ([arXiv 2411.00640](https://arxiv.org/abs/2411.00640)): compare on the same questions with paired differences, and report intervals. So learned-on and learned-off answer every task at the same time, and results carry 95% intervals over tasks.
+- **Zhao et al., "Self-Evolving Agents Can Repair Failures but Struggle to Generalize from Them"** ([arXiv 2610.22984](https://arxiv.org/abs/2610.22984)): lessons from failures fix the seen tasks "but rarely yield sustained improvements on unseen tasks", and agents "often misinterpret failures". So seen and unseen tasks are reported apart, and the lessons are listed to be read for correctness.
+- **S3Gym** ([arXiv 2608.31100](https://arxiv.org/abs/2608.31100)) and **SelfImprove-Bench** ([arXiv 2611.02797](https://arxiv.org/abs/2611.02797)): self-improvement is "neither automatic nor uniform", with negative transfer on some tasks; separate learning from held-out testing. So losses are reported per task, not hidden in an average.
+
+Still open: the judge here is DeepSeek, the same family as the answering model and the self-grader; a Claude or Gemini judge (needs its key) is the next run.
