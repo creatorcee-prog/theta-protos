@@ -235,7 +235,8 @@ def ideas(ans):
                     "prompt": "What's the news today?",
                     "steps": (f"1. Search the last 24 hours of news, weighted to {topic}.\n2. Pick the 5 stories "
                               "that matter most, one or two lines each, with sources cited.\n3. Skip celebrity "
-                              "gossip and repeats of yesterday's stories.")})
+                              "gossip and repeats of yesterday's stories.\n4. Save the one that matters most to "
+                              "them to Home with home_post (kind news).")})
     if teams or (isinstance(iv, list) and "sports" in iv):
         first = re.split(r",| and |;", teams)[0].strip()[:40] if teams else "my teams"
         if first:
@@ -245,7 +246,8 @@ def ideas(ans):
                         "prompt": f"Catch me up on {first}.",
                         "steps": (f"1. Search the latest on {first} (scores, results, news or releases, whatever "
                                   "fits).\n2. Give 3 to 5 bullets, newest first, with sources.\n3. End with "
-                                  "what's coming up next, with the date.")})
+                                  "what's coming up next, with the date.\n4. If something big happened, save it "
+                                  "to Home with home_post (kind news).")})
     if goals:
         out.append({"id": "goal-check-in", "name": "Goal check-in", "icon": "🎯",
                     "when": "They ask how they're doing on their goals, or it's their weekly check-in.",

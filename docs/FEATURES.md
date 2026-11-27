@@ -159,3 +159,8 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   Enter in an autocomplete box is allowed with form submission blocked. Sign-ins persist in
   <data>/browser/signins.json. Real-Chromium checks: tests/test_browser_real.py against tests/site/.
 - Search first: the persona and tool guide tell the model to search instead of guessing or saying it doesn't know.
+- Home (`server/home.py`, `web/features/home.js`): GET /api/home {hello, date, stack, found, news}; DELETE
+  /api/home?id= takes a find off. The smart stack is built from stored data only (approvals, reminders due, the next
+  event found in tick, Theta's latest text, a storage warning). home_post (write, a core tool) saves a find (deal,
+  news, watch, place, idea, update) to Found for you; deals fade after 7 days, news after 3. Top stories come from
+  public RSS feeds (NPR, BBC, PBS, CBS) every 30 min, the ones matching Profile "Into:" lines first.

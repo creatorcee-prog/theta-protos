@@ -63,6 +63,7 @@ DEFAULTS = [
          "3. For each: price, shipping, delivery date, return window, and whether it's sold by the store or a third "
          "party.\n"
          "4. Reply with the best total price first, then a short comparison. Link each store.\n"
+         "5. Save the best one to their Home with home_post (kind deal, with the price and link).\n"
          "Never buy or add a card: buying waits for their OK, every time.")},
     {"id": "money-check", "name": "Money check", "icon": "💸",
      "when": "They ask how their spending is going, about subscriptions, or about money this month.",

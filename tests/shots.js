@@ -44,7 +44,7 @@ async function waitUp(url) {
       const f = path.join(OUT, name + ".png"); await page.screenshot({path: f}); console.log("shot " + f);
       // nothing may stick out sideways (the filter chips scroll on purpose)
       const wide = await page.evaluate(() => [...document.querySelectorAll("#app *")].filter(e => {
-        if (e.closest(".chips, .chp-row") || !e.getClientRects().length) return false;
+        if (e.closest(".chips, .chp-row, .hf-stack, .hf-row") || !e.getClientRects().length) return false;
         const r = e.getBoundingClientRect(); return r.width && (r.right > innerWidth + 1 || r.left < -1);
       }).map(e => e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + (e.className && e.className.baseVal === undefined ? "." + String(e.className).split(" ")[0] : "")).slice(0, 5));
       check(wide.length === 0, name + ": no horizontal overflow" + (wide.length ? ": " + wide.join(", ") : ""));
