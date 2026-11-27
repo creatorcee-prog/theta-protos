@@ -186,3 +186,8 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   progress_update {steps, done} (a core tool) at the start and as each phase finishes; agent.run's ctx["progress"]
   streams a "progress" event {steps: [{text, state}]} that the app shows above the status line (check, spinner,
   clock), and the reply keeps meta.progress, where a phase never marked done shows as not done.
+- Self-improvement log layout (`server/improve.py`): each lesson's edit records the root cause (who found it), the
+  rationale (the evidence and the fix), a numeric prediction (base % and target: at most half), the observed % over
+  the latest 8 replies, the models behind that evidence (%), and the domains (kind of task, from the reply's tools and
+  route) with the problem rate in each. Settings > General > What Theta learned shows it under Details. Removing a
+  lesson Theta made itself mutes that cause.

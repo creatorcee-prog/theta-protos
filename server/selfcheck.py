@@ -258,7 +258,16 @@ def muted(st=None):
         if votes.get(r.get("reply_id"), 0) > 0:
             for c in r.get("causes") or []:
                 count[c] = count.get(c, 0) + 1
-    return {c for c, n in count.items() if n >= 2}
+    return {c for c, n in count.items() if n >= 2} | set((st or _load()).get("user_muted") or [])
+
+
+def mute(cause):
+    """The user removed this self lesson in Settings: don't make it again (their word wins)."""
+    with _lock:
+        st = _load()
+        st["user_muted"] = sorted(set(st.get("user_muted") or []) | {cause})
+        db.set_setting(KEY, st)
+    db.set_setting("feedback_version", int(db.get_setting("feedback_version", 0) or 0) + 1)
 
 
 def lessons(st=None):

@@ -287,6 +287,9 @@ async function waitUp(url) {
     await page.waitForSelector("#set-lessons .lesson", {timeout: 3000}).catch(() => {});
     const les = await page.$$eval("#set-lessons .lesson b", e => e.map(x => x.textContent));
     check(les.some(t => /too long/.test(t)), "Settings lists what Theta learned: " + les.join(" | "));
+    await page.click("#set-lessons details.sim summary").catch(() => {});
+    { const t = await page.$eval("#set-lessons details.sim", d => d.innerText).catch(() => "");
+      check(["Root cause", "Why this fix", "Predicted", "Observed", "Models", "Where"].every(k => t.includes(k)), "each lesson's details read: root cause, why, predicted, observed %, models %, where"); }
     await page.evaluate(() => document.getElementById("set-lessons").scrollIntoView({block: "center"}));
     await sleep(300);
     await shot("09c-settings-lessons");

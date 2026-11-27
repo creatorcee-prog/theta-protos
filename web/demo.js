@@ -186,7 +186,13 @@
       } else if (f.vote > 0) { const k = (f.tier || "quick") + ":" + (f.reply.length <= 320 ? "short" : "detailed"); likes.set(k, (likes.get(k) || []).concat([f])); }
     }
     for (const [k, fs] of likes) if (fs.length >= 3) for (const f of fs) put("l:" + k, `Liked: ${k.split(":")[0]} replies ${k.endsWith("short") ? "that are short" : "that go into detail"} \u2192 keep doing that`, f);
-    return [...found.values()].sort((a, b) => b.t - a.t).slice(0, 6);
+    // demo only: an example of the self-improvement log on each lesson (made-up numbers, as all demo data is)
+    const sim = l => ({root_cause: l.id.startsWith("d:") ? "You disliked: " + l.text.split(":")[1].split("\u2192")[0].trim() : "You liked a style of reply",
+      rationale: `You disliked ${l.n} ${l.n === 1 ? "reply" : "replies"} for this. The fix: ${l.text.split("\u2192").pop().trim()}.`,
+      predicted: {says: "at most half as many replies with this problem", base_pct: 30, target_pct: 15},
+      observed: {pct: 12.5, rated: 8, base_pct: 30, verdict: "helping"},
+      models: {"deepseek-chat": 75, "deepseek-reasoner": 25}, domains: {"research & web": {n: 5, pct: 20}, "conversation": {n: 3, pct: 0}}});
+    return [...found.values()].sort((a, b) => b.t - a.t).slice(0, 6).map(l => Object.assign(l, {sim: sim(l)}));
   }
 
   window.ThetaDemo = {fetch: demoFetch};

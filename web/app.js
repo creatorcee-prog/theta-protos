@@ -1556,6 +1556,17 @@
         early: "Too early to tell", recheck: "Learned with another model: Theta is checking it still holds"};
       const sub = [l.n > 1 ? `From ${l.n} replies` : "", STATUS[l.status] || ""].filter(Boolean).join(" · ");
       if (sub) t.append(el("span", null, sub));
+      const sim = l.sim || {};
+      if (sim.root_cause) { // the self-improvement log for this lesson: cause, why, predicted, observed, models, where
+        const det = el("details", "sim"), sm = el("summary", null, "Details"), dl = el("dl");
+        const pct = v => v == null ? "not enough replies yet" : `${v}%`, mix = o => Object.entries(o || {}).map(([k, v]) => `${k} ${typeof v === "object" ? (v.pct == null ? "" : v.pct + "% of " + v.n) : v + "%"}`.trim()).join(", ") || "none yet";
+        const pr = sim.predicted || {}, ob = sim.observed || {};
+        for (const [k, v] of [["Root cause", sim.root_cause], ["Why this fix", sim.rationale],
+          ["Predicted", pr.base_pct != null ? `${pr.says}: from ${pr.base_pct}% to at most ${pr.target_pct}%` : (pr.says || "")],
+          ["Observed", ob.pct != null ? `${ob.pct}% of the last ${ob.rated} replies (was ${pct(ob.base_pct)})` : `was ${pct(ob.base_pct)}; ${pct(null)}`],
+          ["Models", mix(sim.models)], ["Where (kind of task: problem rate)", mix(sim.domains)]]) { dl.append(el("dt", null, k), el("dd", null, v)); }
+        det.append(sm, dl); t.append(det);
+      }
       const x = el("button", "btn-dark", "Remove"); x.type = "button"; x.setAttribute("aria-label", "Remove lesson: " + l.text);
       x.addEventListener("click", async () => {
         x.disabled = true;

@@ -42,7 +42,10 @@ check("a dislike reason becomes a lesson", les and les[0]["id"].startswith("d:")
 sim = improve.record(les, now=T + 7)
 e = sim[les[0]["id"]]["edits"][-1]
 check("recorded as an edit: its text, a prediction made before, and a baseline", e["text"] == les[0]["text"]
-      and "fewer" in e["predicted"] and e["base"] == {"rated": 6, "hits": 2} and e["model"] == "deepseek-chat")
+      and "fewer" in e["predicted"] and e["base"]["rated"] == 6 and e["base"]["hits"] == 2 and e["model"] == "deepseek-chat")
+check("in the owner's layout: rationale, a numeric prediction, the baseline %, models % and domains",
+      e["rationale"].startswith("You disliked") and e["prediction"]["base_pct"] == 33.3 and e["prediction"]["target_pct"] == 16.7
+      and e["base"]["pct"] == 33.3 and abs(sum(e["base"]["models"].values()) - 100) < 0.5 and e["base"]["domains"])
 check("too early to tell at first", improve.check()[les[0]["id"]] == "early")
 
 for i in range(8):  # afterwards: the same complaint keeps coming
@@ -62,4 +65,11 @@ check("then the complaint stops: helping", improve.check(now=T + 70)[les[0]["id"
 turn("claude-x")
 check("a different model answering now: marked for a re-check", improve.check()[les[0]["id"]] == "recheck")
 check("Settings' lesson list carries the status", improve.summary()[les[0]["id"]]["status"] == "recheck")
+sm = improve.summary()[les[0]["id"]]
+check("the summary reads: root cause, rationale, predicted, observed %, model %, domain",
+      sm["root_cause"].startswith("You disliked") and sm["rationale"] and "says" in sm["predicted"]
+      and "pct" in sm["observed"] and isinstance(sm["models"], dict) and isinstance(sm["domains"], dict))
+check("domains come from what the reply did", improve.domain_of({"tools": ["gmail_search"]}) == "email"
+      and improve.domain_of({"tier": "code"}) == "coding" and improve.domain_of({"tools": ["web_search"]}) == "research & web"
+      and improve.domain_of({}) == "conversation")
 print("all improve checks passed")

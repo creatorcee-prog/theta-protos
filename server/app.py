@@ -1031,8 +1031,9 @@ def _lesson_list():
         st = improve.summary()
     except Exception:  # noqa: BLE001
         st = {}
-    return [{"id": x["id"], "text": x["text"], "n": x["n"], "t": x["t"], "status": (st.get(x["id"]) or {}).get("status")}
-            for x in les]
+    keep = ("root_cause", "rationale", "predicted", "observed", "models", "domains")  # the log, in the owner's layout
+    return [{"id": x["id"], "text": x["text"], "n": x["n"], "t": x["t"], "status": (st.get(x["id"]) or {}).get("status"),
+             "sim": {k: (st.get(x["id"]) or {}).get(k) for k in keep}} for x in les]
 
 
 def feedback_route(req, start):
@@ -1064,7 +1065,11 @@ def feedback_route(req, start):
             les = next((x for x in persona.lessons() if x["id"] == key), None)
             if les is None:
                 raise HTTPError(404, "no such lesson")
-            db.dismiss_feedback(les["rows"])
+            if key.startswith("s:"):  # one Theta made itself: there are no ratings to dismiss, so mute the cause
+                from . import selfcheck
+                selfcheck.mute(key[2:])
+            else:
+                db.dismiss_feedback(les["rows"])
             return respond_json(start, {"ok": True, "lessons": _lesson_list()})
         if m != "GET":
             raise HTTPError(405, "method not allowed")

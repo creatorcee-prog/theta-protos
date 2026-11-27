@@ -47,27 +47,107 @@ def _family(model):
     return re.split(r"[-/:._]", str(model or "").lower().split("/")[-1])[0]
 
 
-def _counts(rows, cause, after=None, before=None, last=None):
-    """(rated, hits): replies with evidence in the window, and how many showed this cause. Evidence is the user's
-    ratings plus Theta's own reviews (server/selfcheck.py) of every reply; on a reply the user rated, their word
-    wins (a dislike for this cause is a hit, a like is not)."""
+# the kind of task a reply was, from the tools it used and the route it took (the paper's "where it happened")
+DOMAINS = [
+    ("coding", ("code",), ()),
+    ("email", (), ("gmail_", "send_email")),
+    ("calendar & planning", (), ("calendar_", "plan_update", "remind_me", "routine_", "workflow_")),
+    ("research & web", ("search",), ("web_search", "research", "browse_", "vantage_", "weather")),
+    ("files & docs", (), ("drive_", "docs_", "slides_", "file_read")),
+    ("money", (), ("bank_",)),
+    ("texts & calls", (), ("send_text", "call_")),
+    ("memory & contacts", (), ("memory_edit", "find_contact", "save_contact", "history_search")),
+]
+
+
+def domain_of(meta):
+    meta = meta or {}
+    tools, tier = meta.get("tools") or [], meta.get("tier")
+    for name, tiers, prefixes in DOMAINS:
+        if tier in tiers or any(str(t).startswith(prefixes) for t in tools if prefixes):
+            return name
+    return "conversation"
+
+
+def _evidence(rows, cause, after=None, before=None, last=None):
+    """[{t, hit, model, domain}]: replies with evidence in the window, oldest first. Evidence is the user's ratings
+    plus Theta's own reviews (server/selfcheck.py) of every reply; on a reply the user rated, their word wins (a
+    dislike for this cause is a hit, a like is not)."""
     key = cause.split(":", 1)[1] if cause.startswith(("d:", "s:")) and not cause.startswith("d:x:") else None
     ev = {}
     if key:
         try:
             from . import selfcheck
             for r in selfcheck.effective():
-                ev[r["reply_id"]] = [r["t"], key in (r.get("causes") or [])]
+                ev[r["reply_id"]] = {"t": r["t"], "hit": key in (r.get("causes") or []), "model": r.get("model") or "", "rid": r["reply_id"]}
         except Exception:  # noqa: BLE001
             pass
     for r in rows:
         rid = r.get("message_id") or f"fb{r['id']}"
         hit = r["vote"] < 0 and _cause_of(r) == "d:" + (key or cause[2:])
-        ev[rid] = [ev.get(rid, [r["t"]])[0], hit]
-    win = sorted(v for v in ev.values() if not ((after is not None and v[0] <= after) or (before is not None and v[0] > before)))
+        old = ev.get(rid) or {}
+        ev[rid] = {"t": old.get("t", r["t"]), "hit": hit, "model": r.get("model") or old.get("model") or "", "rid": r.get("message_id")}
+    win = sorted((v for v in ev.values() if not ((after is not None and v["t"] <= after) or (before is not None and v["t"] > before))),
+                 key=lambda v: v["t"])
     if last:
         win = win[-last:]  # judge on the latest replies: a relapse shows even after a good start
-    return len(win), sum(bool(h) for _, h in win)
+    metas = {}
+    for v in win:
+        if v.get("rid") and v["rid"] not in metas:
+            m = db.get_message(v["rid"]) if isinstance(v["rid"], int) else None
+            metas[v["rid"]] = (m or {}).get("meta") or {}
+        meta = metas.get(v.get("rid")) or {}
+        v["domain"] = domain_of(meta)
+        v["model"] = v["model"] or meta.get("model") or "unknown"
+    return win
+
+
+def _counts(rows, cause, after=None, before=None, last=None):
+    """(rated, hits) in the window (see _evidence)."""
+    win = _evidence(rows, cause, after, before, last)
+    return len(win), sum(1 for v in win if v["hit"])
+
+
+def _pct(n, d):
+    return round(100.0 * n / d, 1) if d else None
+
+
+def _mix(win, key):
+    """{value: % of the window}, largest first."""
+    out = {}
+    for v in win:
+        out[v[key]] = out.get(v[key], 0) + 1
+    return {k: _pct(n, len(win)) for k, n in sorted(out.items(), key=lambda kv: -kv[1])}
+
+
+def _by_domain(win):
+    """{domain: {n, pct}}: how often the problem showed in each kind of task."""
+    out = {}
+    for v in win:
+        d = out.setdefault(v["domain"], [0, 0]); d[0] += 1; d[1] += bool(v["hit"])
+    return {k: {"n": n, "pct": _pct(h, n)} for k, (n, h) in sorted(out.items(), key=lambda kv: -kv[1][0])}
+
+
+def _rationale(les):
+    """Why this fix should work, in words: the evidence behind it and what the lesson changes."""
+    cause, n, text = les["id"], les.get("n") or 0, les.get("text") or ""
+    fix = text.split("\u2192", 1)[1].strip() if "\u2192" in text else text
+    if cause.startswith("s:"):
+        note = ""
+        try:
+            from . import selfcheck
+            what = selfcheck.RUBRIC.get(cause[2:], ("",))[0]
+            notes = [r for r in selfcheck.reviews() if cause[2:] in (r.get("causes") or [])]
+            if notes:
+                i = notes[-1]["causes"].index(cause[2:])
+                note = (notes[-1].get("notes") or [""] * (i + 1))[i]
+        except Exception:  # noqa: BLE001
+            what = ""
+        return (f"Theta's self-check found this in {n} recent replies ({what.rstrip('.')})"
+                + (f", most recently: \"{note}\"" if note else "") + f". The fix: {fix}.")
+    if cause.startswith("d:"):
+        return f"You disliked {n} {'reply' if n == 1 else 'replies'} for this. The fix: {fix}."
+    return f"You liked {n} replies like this. The fix: {fix}."
 
 
 def _cause_of(r):
@@ -91,11 +171,18 @@ def record(lessons, now=None):
         last = ent["edits"][-1] if ent["edits"] else None
         if last and last["text"] == les["text"]:
             continue
-        rated, hits = _counts(rows, cause, before=now)
+        base = _evidence(rows, cause, before=now)
+        rated, hits = len(base), sum(1 for v in base if v["hit"])
+        problem = cause.startswith(("d:", "s:"))
+        bpct = _pct(hits, rated)
         ent["edits"].append({"text": les["text"], "t": now, "model": _current_model(),
-                             "predicted": ("fewer replies with this problem" if cause.startswith(("d:", "s:"))
-                                           else "more replies like the ones liked"),
-                             "base": {"rated": rated, "hits": hits}})
+                             "rationale": _rationale(les),
+                             "predicted": ("fewer replies with this problem" if problem else "more replies like the ones liked"),
+                             "prediction": ({"base_pct": bpct, "target_pct": _pct(hits, 2 * rated),
+                                             "says": "at most half as many replies with this problem"} if problem
+                                            else {"says": "replies like these keep getting likes"}),
+                             "base": {"rated": rated, "hits": hits, "pct": bpct, "models": _mix(base, "model"),
+                                      "domains": _by_domain(base)}})
         ent["edits"] = ent["edits"][-12:]
         changed = True
     if changed:
@@ -113,13 +200,16 @@ def check(now=None):
         if not ent.get("edits"):
             continue
         e = ent["edits"][-1]
-        rated, hits = _counts(rows, cause, after=e["t"], last=CHECK_AFTER)
+        win = _evidence(rows, cause, after=e["t"], last=CHECK_AFTER)
+        rated, hits = len(win), sum(1 for v in win if v["hit"])
         if cause.startswith(("d:", "s:")) and rated >= CHECK_AFTER and e["base"]["rated"] >= MIN_BASE:
             before = e["base"]["hits"] / max(1, e["base"]["rated"])
             after = hits / rated
             verdict = "helping" if after < before or hits == 0 else "not helping"
-            if e.get("observed", {}).get("rated") != rated:
-                e["observed"] = {"rated": rated, "hits": hits, "verdict": verdict, "t": now or time.time()}
+            obs = {"rated": rated, "hits": hits, "pct": _pct(hits, rated), "verdict": verdict, "t": now or time.time(),
+                   "models": _mix(win, "model"), "domains": _by_domain(win)}
+            if {k: v for k, v in (e.get("observed") or {}).items() if k != "t"} != {k: v for k, v in obs.items() if k != "t"}:
+                e["observed"] = obs
                 changed = True
             status = verdict
         elif cause.startswith(("d:", "s:")):
@@ -150,8 +240,34 @@ def prompt_notes(lessons):
     return lines
 
 
+def _label(cause):
+    if cause.startswith("s:"):
+        try:
+            from . import selfcheck
+            return "Found by Theta's self-check: " + selfcheck.RUBRIC[cause[2:]][0].split(":")[0].rstrip(".")
+        except Exception:  # noqa: BLE001
+            return "Found by Theta's self-check"
+    if cause.startswith("d:x:"):
+        return f'You said: "{cause[4:]}"'
+    if cause.startswith("d:"):
+        from . import persona
+        return "You disliked: " + next((lbl for lbl, key, _ in persona.REASONS if key == cause[2:]), cause[2:])
+    return "You liked a style of reply"
+
+
 def summary():
-    """{cause: {status, edits}} for Settings."""
+    """{cause: the log in the owner's layout} for Settings: root cause, rationale, predicted, observed (%), the models
+    behind the evidence (%), and the domains (kinds of task, with the problem's rate in each)."""
     check()
-    return {c: {"status": e.get("status", "early"), "edits": len(e.get("edits") or []),
-                "since": (e.get("edits") or [{}])[-1].get("t")} for c, e in _load().items()}
+    out = {}
+    for c, ent in _load().items():
+        e = (ent.get("edits") or [{}])[-1]
+        obs, base = e.get("observed") or {}, e.get("base") or {}
+        out[c] = {"status": ent.get("status", "early"), "edits": len(ent.get("edits") or []), "since": e.get("t"),
+                  "root_cause": _label(c), "rationale": e.get("rationale") or "",
+                  "predicted": e.get("prediction") or {"says": e.get("predicted", "")},
+                  "observed": {"pct": obs.get("pct"), "rated": obs.get("rated"), "base_pct": base.get("pct"),
+                               "base_rated": base.get("rated"), "verdict": obs.get("verdict")},
+                  "models": obs.get("models") or base.get("models") or {},
+                  "domains": obs.get("domains") or base.get("domains") or {}}
+    return out

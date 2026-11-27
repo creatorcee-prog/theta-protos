@@ -571,3 +571,9 @@ html.kb #home .banner { display: none; }
 .file-chip button svg { width: 16px; height: 16px; }
 .msg.filemsg { background: none !important; padding: 0 !important; }
 .msg.filemsg .file-chip { background: #3a3a3c; margin: 0; }
+/* a lesson's self-improvement log: cause, why, predicted, observed, models, where */
+.row-set.lesson details.sim { margin-top: 6px; font-size: 13.5px; color: var(--muted); }
+.row-set.lesson details.sim summary { cursor: pointer; color: var(--accent); font-size: 13.5px; }
+.row-set.lesson details.sim dl { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 6px 0 0; }
+.row-set.lesson details.sim dt { font-weight: 600; color: var(--text); margin-top: 6px; }
+.row-set.lesson details.sim dd { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
