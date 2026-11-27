@@ -1,6 +1,6 @@
 /* Theta's service worker: a cache-first app shell, Web Push, and opening the right message from a notification.
  * Served at /sw.js (scope /). The API (/api/*) is never cached. */
-const VERSION = "theta-shell-v38";
+const VERSION = "theta-shell-v39";
 const SHELL = ["/", "/static/style.css", "/static/orb.js", "/static/orb8.js", "/static/demo.js", "/static/logos.js", "/static/app.js", "/static/features.js", "/manifest.webmanifest",
   "/static/icons/icon-192.png", "/static/icons/icon-512.png", "/static/icons/apple-touch-icon.png", "/static/icons/badge-72.png"];
 const ICON = "/static/icons/icon-192.png", BADGE = "/static/icons/badge-72.png";

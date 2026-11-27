@@ -170,6 +170,8 @@ def news(limit=12):
 
 
 def _next_event(now):
+    from . import home_extras
+    home_extras.refresh_today(now)  # today's whole list, for Home's calendar
     try:
         import datetime
         from . import gcal, persona
@@ -272,8 +274,11 @@ def route(req, start):
         name = p.get("nickname") or (p.get("name") or "").split(" ")[0]
     except Exception:  # noqa: BLE001
         pass
+    from . import home_extras
+    stk, fnd, nws = stack(), found()[:12], news()
     return respond_json(start, {"hello": hello + (f", {name}" if name else ""), "date": t.strftime("%A, %B ") + str(t.day),
-                                "stack": stack(), "found": found()[:12], "news": news()})
+                                "stack": stk, "found": fnd, "news": nws, "layout": home_extras.layout(),
+                                **home_extras.extras(stack=stk, found_=fnd, news_=nws)})
 
 
 ROUTES = {"/api/home": route}

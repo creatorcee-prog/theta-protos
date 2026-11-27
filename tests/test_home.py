@@ -69,4 +69,39 @@ check("GET /api/home returns the greeting, stack, finds and stories", s == 200 a
       and j["found"] and j["news"] and j["stack"])
 s, j = call("DELETE", "/api/home", "id=" + j["found"][0]["id"])
 check("DELETE takes a find off Home", s == 200 and not j["found"])
+
+# ---------------------------------------------------------------- layouts and extras (server/home_extras.py)
+from server import home_extras as hx
+
+
+def post(path, body):
+    raw = json.dumps(body).encode()
+    env = {"REQUEST_METHOD": "POST", "PATH_INFO": path, "QUERY_STRING": "", "CONTENT_LENGTH": str(len(raw)),
+           "CONTENT_TYPE": "application/json", "wsgi.input": io.BytesIO(raw), "HTTP_X_PROTOS_KEY": "k"}
+    got = {}
+    out = b"".join(app.app(env, lambda s, h: got.update(s=int(s.split()[0]))))
+    return got["s"], json.loads(out)
+
+
+check("the layout starts as classic, regular size, every extra on", hx.layout() == {"layout": "classic", "size": "m", "off": []})
+s, j = post("/api/home/layout", {"layout": "bento", "size": "l", "off": ["weather", "nonsense"]})
+check("a layout is saved, unknown extras dropped", s == 200 and j == {"layout": "bento", "size": "l", "off": ["weather"]})
+s, j = post("/api/home/layout", {"layout": "made-up", "size": "xl"})
+check("an unknown layout or size keeps the old one", j["layout"] == "bento" and j["size"] == "l")
+rec = hx.recommended()
+check("recommended settings come from the real state", rec["total"] >= 5 and rec["done"] + len(rec["items"]) == rec["total"]
+      and all(i["action"].startswith("settings:") for i in rec["items"]))
+new = {"items": [{}] * 5, "done": 1, "total": 6}
+o, why = hx.order({"approvals", "recommended", "calendar", "vantage", "weather"}, new, [], {"condition": "Sunny"}, [{"kind": "approve"}])
+check("something waiting for an OK leads, then setting up while new, Vantage last", o[0] == "approvals" and o[1] == "recommended"
+      and o[-1] == "vantage" and "OK" in why)
+o, _ = hx.order({"recommended", "calendar", "weather"}, {"items": [{}], "done": 6, "total": 7},
+                [{"title": "a"}, {"title": "b"}], {"condition": "Heavy snow"}, [])
+check("a busy day and bad weather move calendar and weather above setting up", o.index("calendar") < o.index("recommended")
+      and o.index("weather") < o.index("recommended"))
+o, _ = hx.order({"calendar"}, new, [], None, [])
+check("extras with nothing in them are hidden", o == ["calendar"])
+s, j = call("GET", "/api/home")
+check("GET /api/home sends the layout, extras and their order, without the extras turned off", s == 200 and j["layout"]["layout"] == "bento"
+      and "recommended" in j and "today" in j and "weather" not in j["order"] and "vantage" in j["order"])
 print("all home checks passed")

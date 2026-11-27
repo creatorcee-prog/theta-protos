@@ -58,6 +58,19 @@ async function waitUp(url) {
     await sleep(500);
     await shot("02-home");
     check(await page.isVisible("#home-orb"), "home shows Theta's globe");
+    // the Home layouts (Settings > General > Home): each keeps the globe and shows the extras, Vantage greyed
+    for (const lay of ["dock", "bento", "sheet", "satellites", "today"]) {
+      await page.evaluate(l => { localStorage.setItem("theta:home", JSON.stringify({layout: l, size: "m", off: []})); return window.Theta.homeRender(); }, lay);
+      await sleep(400);
+      await shot("02-home-" + lay);
+      const got = await page.evaluate(() => { const o = document.querySelector("#home .home-orb-wrap").getBoundingClientRect();
+        const v = [...document.querySelectorAll("#home .hx.soon, #home .hb.soon, #home .hp[disabled]")];
+        return {orb: o.width > 100 && o.top >= 0, vantage: v.length > 0 && v.every(e => e.disabled), cls: document.getElementById("home").className}; });
+      check(got.orb && got.cls.includes("lay-" + lay), lay + ": Home keeps the globe as the main thing");
+      if (lay !== "sheet") check(got.vantage, lay + ": Vantage shows, greyed out and not tappable");
+    }
+    await page.evaluate(() => { localStorage.removeItem("theta:home"); return window.Theta.homeRender(); });
+    await sleep(300);
 
     // chat: history, then a message that gets a long, streamed reply
     await page.click("#home-bot");

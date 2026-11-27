@@ -164,6 +164,15 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   event found in tick, Theta's latest text, a storage warning). home_post (write, a core tool) saves a find (deal,
   news, watch, place, idea, update) to Found for you; deals fade after 7 days, news after 3. Top stories come from
   public RSS feeds (NPR, BBC, PBS, CBS) every 30 min, the ones matching Profile "Into:" lines first.
+- Home layouts and extras (`server/home_extras.py`, `web/features/home.js`, from the Home Lab): GET/POST
+  /api/home/layout {layout: classic|dock|bento|sheet|satellites|today, size: s|m|l, off: [extras]}, kept on the
+  server so every device matches. The extras are calendar (opens the in-app calendar), Vantage (a greyed button until
+  it ships), recommended settings (from the account's real state: storage, profile, Google, Drive backups, push,
+  location, look), today's events and reminders, approvals, chips, finds, stories and weather (refreshed every 30 min
+  when a location is shared). /api/home adds {layout, today, weather, recommended, order, why}: the order is personal
+  (an approval leads; setting up comes first while an account is new; a busy day lifts the calendar; bad weather lifts
+  weather) and empty extras are hidden. Theta's globe stays the main button in every layout. Settings > General > Home
+  picks the layout, size and extras.
 - Suggested chips (`server/chiphub.py`, `web/features/chiphub.js`): once a week (and on "Look for more") Theta reads
   the skill collections in its sources (GitHub repos with `.claude-plugin/marketplace.json`; default
   anthropics/skills), frames each SKILL.md as outside content, and has the quick model rewrite it into a chip that
