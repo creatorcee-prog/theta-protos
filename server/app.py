@@ -690,6 +690,12 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None, files
             log("turn log failed:\n" + traceback.format_exc())
         if replied:
             _compact_later(bot)
+        if log_row.get("reply_id") and log_row.get("ok") and log_row.get("tier") != "action":
+            try:
+                from . import selfcheck
+                selfcheck.queue(log_row["reply_id"])
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # ---- approvals (send-risk actions wait for the user's tap) and jobs
@@ -1471,6 +1477,9 @@ def serve():
         log(f"storage: couldn't check ({type(e).__name__})")
     avail = models.available()
     log(f"models available: {', '.join(avail) or 'none (set DEEPSEEK_API_KEY or another key)'}")
+    if os.environ.get("PROTOS_SELFCHECK", "1") != "0":  # Theta reviews its own replies (server/selfcheck.py)
+        from . import selfcheck
+        selfcheck.ENABLED = True
     start_ticker()
     httpd = make(host, port)
     log(f"theta-protos {__version__} on http://{host}:{port}")

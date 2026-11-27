@@ -467,6 +467,12 @@ def lessons():
             for r in rs:
                 put(f"l:{tier}:{style}", f"Liked: {tier} replies {words} \u2192 keep doing that", r)
     out = sorted(found.values(), key=lambda x: -x["t"])
+    try:  # Theta's own reviews (server/selfcheck.py) fill the places the user's lessons leave
+        from . import selfcheck
+        have = {x["id"][2:] for x in out}
+        out += [x for x in selfcheck.lessons() if x["id"][2:] not in have]
+    except Exception:  # noqa: BLE001
+        pass
     return out[:LESSONS_MAX]
 
 

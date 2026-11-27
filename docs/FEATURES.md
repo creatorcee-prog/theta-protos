@@ -169,3 +169,10 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   anthropics/skills), frames each SKILL.md as outside content, and has the quick model rewrite it into a chip that
   uses only Theta's tools, or skip it (needs code, developer-only). Suggestions show in Settings > Chips with their
   full steps and source; only Add makes one a chip. GET/POST /api/chips/suggested.
+- Self-check (`server/selfcheck.py`): after each chat reply, a background review by a different model than the one
+  that answered (deepseek-reasoner when DeepSeek answered) grades it on a fixed rubric (too-long, wrong, off-target,
+  tone, asked-instead, unfinished, unchecked) and the user's instructions. A problem found in 3 of the last 20 reviews
+  becomes a lesson ("s:<cause>") with no rating needed. The user steers: their dislikes make lessons at once and come
+  first; a like clears the flags on that reply, and two likes on flagged replies mute that cause. improve.py judges
+  every lesson on self-reviews plus ratings, over the latest 8 replies, so a relapse shows. Capped at 200 reviews a
+  day; PROTOS_SELFCHECK=0 turns it off. Live experiment: `evals/selfimprove.py`.

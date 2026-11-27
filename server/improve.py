@@ -40,18 +40,27 @@ def _current_model():
         return ""
 
 
-def _counts(rows, cause, after=None, before=None):
-    """(rated, hits): rated replies in the window, and how many were disliked for this cause."""
-    rated = hits = 0
+def _counts(rows, cause, after=None, before=None, last=None):
+    """(rated, hits): replies with evidence in the window, and how many showed this cause. Evidence is the user's
+    ratings plus Theta's own reviews (server/selfcheck.py) of every reply; on a reply the user rated, their word
+    wins (a dislike for this cause is a hit, a like is not)."""
+    key = cause.split(":", 1)[1] if cause.startswith(("d:", "s:")) and not cause.startswith("d:x:") else None
+    ev = {}
+    if key:
+        try:
+            from . import selfcheck
+            for r in selfcheck.effective():
+                ev[r["reply_id"]] = [r["t"], key in (r.get("causes") or [])]
+        except Exception:  # noqa: BLE001
+            pass
     for r in rows:
-        if after is not None and r["t"] <= after:
-            continue
-        if before is not None and r["t"] > before:
-            continue
-        rated += 1
-        if cause.startswith("d:") and r["vote"] < 0 and _cause_of(r) == cause:
-            hits += 1
-    return rated, hits
+        rid = r.get("message_id") or f"fb{r['id']}"
+        hit = r["vote"] < 0 and _cause_of(r) == "d:" + (key or cause[2:])
+        ev[rid] = [ev.get(rid, [r["t"]])[0], hit]
+    win = sorted(v for v in ev.values() if not ((after is not None and v[0] <= after) or (before is not None and v[0] > before)))
+    if last:
+        win = win[-last:]  # judge on the latest replies: a relapse shows even after a good start
+    return len(win), sum(bool(h) for _, h in win)
 
 
 def _cause_of(r):
@@ -77,7 +86,7 @@ def record(lessons, now=None):
             continue
         rated, hits = _counts(rows, cause, before=now)
         ent["edits"].append({"text": les["text"], "t": now, "model": _current_model(),
-                             "predicted": ("fewer replies disliked for this" if cause.startswith("d:")
+                             "predicted": ("fewer replies with this problem" if cause.startswith(("d:", "s:"))
                                            else "more replies like the ones liked"),
                              "base": {"rated": rated, "hits": hits}})
         ent["edits"] = ent["edits"][-12:]
@@ -97,8 +106,8 @@ def check(now=None):
         if not ent.get("edits"):
             continue
         e = ent["edits"][-1]
-        rated, hits = _counts(rows, cause, after=e["t"])
-        if cause.startswith("d:") and rated >= CHECK_AFTER and e["base"]["rated"] >= MIN_BASE:
+        rated, hits = _counts(rows, cause, after=e["t"], last=CHECK_AFTER)
+        if cause.startswith(("d:", "s:")) and rated >= CHECK_AFTER and e["base"]["rated"] >= MIN_BASE:
             before = e["base"]["hits"] / max(1, e["base"]["rated"])
             after = hits / rated
             verdict = "helping" if after < before or hits == 0 else "not helping"
@@ -106,7 +115,7 @@ def check(now=None):
                 e["observed"] = {"rated": rated, "hits": hits, "verdict": verdict, "t": now or time.time()}
                 changed = True
             status = verdict
-        elif cause.startswith("d:"):
+        elif cause.startswith(("d:", "s:")):
             status = "early"
         else:
             status = "helping" if rated else "early"  # liked styles: kept while likes keep coming
@@ -128,7 +137,7 @@ def prompt_notes(lessons):
     for les in lessons:
         s = status.get(les["id"])
         if s == "not helping":
-            lines.append(f"{les['text']} (they've still flagged this since it was added: apply it strictly)")
+            lines.append(f"{les['text']} (this has kept happening since it was added: apply it strictly)")
         else:
             lines.append(les["text"])
     return lines
