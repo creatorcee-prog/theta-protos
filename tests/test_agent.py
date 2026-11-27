@@ -434,9 +434,16 @@ def test_app():
                      {"text": "Done. I'll ping you to stretch in 2 minutes."}]
         n0 = len(db.jobs("pending"))
         evs = sse(port, "remind me in 2 minutes to stretch")
-        names = [e for e, _ in evs]
+        names = [e for e, _ in evs if e != "activity"]  # status lines come between; their order is test_activity's
+        check("app: tool turn has status lines", sum(1 for e, _ in evs if e == "activity") >= 2)
         check("app: tool turn SSE order", names[:3] == ["user", "route", "ack"] and "tool" in names
               and names[-1] == "done" and names.index("tool") < names.index("delta"), names)
+        tm = (evs[-1][1].get("meta") or {}).get("timing") or {}
+        check("app: the reply keeps how long it took (meta.timing), so 'Took Ns' survives a reload",
+              isinstance(tm.get("total_ms"), int) and tm["total_ms"] >= 0 and "first_ms" in tm, tm)
+        check("app: 'Thinking it through' shows but isn't kept on the reply",
+              any(d.get("text") == "Thinking it through" for e, d in evs if e == "activity")
+              and "Thinking it through" not in ((evs[-1][1].get("meta") or {}).get("activity") or []))
         tool_states = [d["state"] for e, d in evs if e == "tool"]
         check("app: tool SSE events running/done", tool_states == ["running", "done"], tool_states)
         jobs = db.jobs("pending")

@@ -378,6 +378,13 @@ def _mark_approval_card(aid, state, result=None):
         pass
 
 
+def _timing(t0, first=None):
+    """meta.timing: how long the reply took, and when its first words went out (ms from the message), so "Took 8s"
+    under a reply survives a reload."""
+    now = time.monotonic()
+    return {"total_ms": int((now - t0) * 1000), "first_ms": int((first - t0) * 1000) if first else None}
+
+
 def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=None):
     """A tool turn: agent.run, then the stored reply (with approval chips if a send is waiting).
     `tag` is merged into the meta of every message this turn stores (reply_to, an edit's note)."""
@@ -436,6 +443,7 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
         rmeta["tools"] = info["tools"]
     if info.get("activity"):  # "Took 6s · read your inbox, drafted an email" under the reply
         rmeta["activity"] = list(info["activity"])[:40]
+    rmeta["timing"] = _timing(t0, info.get("ttft"))
     if approvals:
         rmeta["approvals"] = [a["id"] for a in approvals]
     if info.get("sources"):
@@ -561,7 +569,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
             emit("error", {"error": str(e)})
             return
         log_row.update(tier=route.tier, why=route.why)
-        live = bool(os.environ.get("TAVILY_API_KEY"))
+        live = router.search_live()
         ack_text = persona.ack(route.tier, text, live=live, seed=user["id"])
         if _use_tools(text, images, route):
             try:
@@ -631,7 +639,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
                 last_err = f"{provider} sent an empty reply"
                 ttft = None
                 continue
-            rmeta = {"model": model, "provider": provider, "tier": route.tier}
+            rmeta = {"model": model, "provider": provider, "tier": route.tier, "timing": _timing(t0, ttft)}
             if sources:
                 rmeta["sources"] = sources
             pc = _connect_from_text(full, [])
@@ -1168,8 +1176,9 @@ def connections():
         {"id": "calendar", "name": "Google Calendar", "connected": False, "what": "See and add events, reminders"},
         {"id": "drive", "name": "Google Drive", "connected": False, "what": "Find and read your files"},
         {"id": "vantage", "name": "Vantage", "connected": vantage, "what": "Events near you and in the world"},
-        {"id": "search", "name": "Web search", "connected": bool(os.environ.get("TAVILY_API_KEY")),
-         "what": "Live facts, news and prices, with sources"},
+        {"id": "search", "name": "Web search", "connected": router.search_live(),
+         "what": "Live facts, news and prices, with sources" + (
+             "" if os.environ.get("TAVILY_API_KEY") else " (through Theta's browser; a Tavily key makes it faster)")},
     ]
     try:
         from . import ext

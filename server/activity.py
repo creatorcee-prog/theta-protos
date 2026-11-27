@@ -247,6 +247,9 @@ def describe(name, args=None, ctx=None):
     return f"Using {words}", ("write" if tool.get("risk") in ("write", "send") else "read")
 
 
+THINKING = "Thinking it through"
+
+
 class Activity:
     """Emits activity start/done events for one turn and keeps their texts (for meta.activity)."""
 
@@ -255,12 +258,12 @@ class Activity:
         self.n = 0
         self.lock = threading.Lock()
 
-    def start(self, text, kind="read", id=None):
+    def start(self, text, kind="read", id=None, keep=True):
         kind = kind if kind in KINDS else "read"
         with self.lock:
             self.n += 1
             aid = str(id or f"act{self.n}")
-            if len(self.texts) < MAX_TEXTS and (not self.texts or self.texts[-1] != text):
+            if keep and len(self.texts) < MAX_TEXTS and (not self.texts or self.texts[-1] != text):
                 self.texts.append(text)
         self.emit("activity", {"id": aid, "text": text, "state": "start", "kind": kind})
         return aid

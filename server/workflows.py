@@ -70,11 +70,25 @@ def clean_name(name):
     return re.sub(r"\s+", " ", re.sub(r"[^\w\s'&/-]", " ", str(name or ""))).strip()[:60]
 
 
+_FILLER = re.compile(r"^(?:(?:please|pls|hey theta|theta|ok(?:ay)?|so|can you|could you|would you|will you|"
+                     r"i need you to|i want you to|i'd like you to|go ahead and|help me)[,\s]+)+", re.I)
+_TRAIL = {"the", "a", "an", "to", "at", "for", "of", "in", "on", "my", "me", "and", "or", "with", "from", "near", "by"}
+
+
 def name_for(text):
-    """A short name from the user's words: 'Find a dentist near me and email…' -> 'Find a dentist near me'."""
-    words = re.sub(r"^(please|can you|could you|hey theta|theta)[,\s]+", "", str(text or "").strip(), flags=re.I)
-    words = clean_name(words).split()
-    name = " ".join(words[:6]) or "Workflow"
+    """A short name for the kind of job, from the user's words: 'Can you book me a showroom visit (pick Gift) at
+    http://x, Sam Lee, Friday' -> 'Book a showroom visit'. The model may rename it when it saves (workflow_save)."""
+    t = str(text or "").strip()
+    t = re.sub(r"https?://\S+|www\.\S+|\S+@\S+|\([^)]*\)|\[[^\]]*\]|\d[\d:/.,-]*\s*(?:am|pm)?", " ", t, flags=re.I)
+    t = _FILLER.sub("", t.strip())
+    t = re.split(r"[,.;:!?\n]|\s+(?:and then|then|and)\s+|\s+(?:at|for|on|by|from)\s+", t, maxsplit=1)[0]
+    words = clean_name(t).split()
+    if len(words) > 2 and words[1].lower() in ("me", "us"):  # "Book me a visit" -> "Book a visit"
+        words.pop(1)
+    words = words[:6]
+    while words and words[-1].lower() in _TRAIL:
+        words.pop()
+    name = " ".join(words) or "Workflow"
     return name[:1].upper() + name[1:]
 
 
@@ -265,7 +279,9 @@ TOOLS = [
     {"name": "workflow_save", "risk": "write", "run": _t_save,
      "description": ("Save how you just did something as a reusable workflow (a recipe of tool steps). Use it "
                      "when the user says 'save that', 'remember how you did that', or taps 'save workflow: "
-                     "<name>'. Pass name; pass goal and steps=[{tool, args_template, note}] when you can see "
+                     "<name>'. Pass name (a short name for the kind of job, like \"Book a showroom visit\"; if the "
+                     "tapped name reads like one request's details, shorten it that way); pass goal and "
+                     "steps=[{tool, args_template, note}] when you can see "
                      "the calls you made (use placeholders like {\"query\": \"<city> weather\"} for parts that "
                      "change). Without steps, the last tool turn's steps are used. Example: "
                      "{\"name\": \"Weekend weather check\"}."),

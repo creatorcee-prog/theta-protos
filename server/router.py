@@ -322,12 +322,51 @@ def pick(text, history=(), attachments=(), last=None, now=None):
 
 # ---- web search for the search tier
 
+NO_LIVE = ("Live search isn't available right now. Answer from what you know, and say briefly that "
+           "you couldn't check live sources, so the user knows it may be out of date.")
+RESULTS_HEAD = ("Live web results (fetched just now). Use them, and cite each one you use as [n] right after the "
+                "claim it supports (the app turns [n] into a link). No list of links at the end. Don't invent sources "
+                "beyond these.")
+
+
 def search_context(text, max_results=5, timeout=12):
-    """Tavily results as a prompt block. Returns (block, sources) where
-    sources is [{"title", "url"}]; ({no-live block}, []) without a key or on failure."""
+    """Live results as a prompt block: Tavily, or when it isn't set up or fails, a search in Theta's own browser.
+    Returns (block, sources) where sources is [{"title", "url"}]; (NO_LIVE, []) when neither works."""
+    block, sources = _tavily(text, max_results, timeout)
+    if sources:
+        return block, sources
+    return _browser_search(text, max_results)
+
+
+def search_live():
+    """True when some live search can run (a Tavily key, or Theta's browser)."""
+    if (os.environ.get("TAVILY_API_KEY") or "").strip():
+        return True
+    try:
+        from . import browser
+        return browser.available()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _browser_search(text, max_results):
+    try:
+        from . import browser
+        rows = browser.web_results(text, max_results)
+    except Exception:  # noqa: BLE001
+        rows = []
+    if not rows:
+        return NO_LIVE, []
+    lines, sources = [RESULTS_HEAD], []
+    for i, x in enumerate(rows, 1):
+        lines.append(f"[{i}] {x['title'] or x['url']} ({x['url']})\n{x.get('snippet') or ''}")
+        sources.append({"title": x["title"] or x["url"], "url": x["url"]})
+    return "\n\n".join(lines), sources
+
+
+def _tavily(text, max_results=5, timeout=12):
     key = (os.environ.get("TAVILY_API_KEY") or "").strip()
-    no_live = ("Live search isn't available right now. Answer from what you know, and say briefly that "
-               "you couldn't check live sources, so the user knows it may be out of date.")
+    no_live = NO_LIVE
     if not key:
         return no_live, []
     body = json.dumps({"api_key": key, "query": text[:400], "max_results": max_results,
@@ -343,9 +382,7 @@ def search_context(text, max_results=5, timeout=12):
     results = [x for x in (data.get("results") or []) if isinstance(x, dict) and x.get("url")][:max_results]
     if not results:
         return no_live, []
-    lines = ["Live web results (fetched just now). Use them, and cite each one you use as [n] right after the "
-             "claim it supports (the app turns [n] into a link). No list of links at the end. Don't invent sources "
-             "beyond these."]
+    lines = [RESULTS_HEAD]
     sources = []
     for i, x in enumerate(results, 1):
         title = (x.get("title") or x["url"]).strip()

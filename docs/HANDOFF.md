@@ -122,8 +122,8 @@ later).
   picture while a turn browses, a full screen the user can drive, the last picture on the reply, and lasting
   sign-ins. The status line is live too (`server/activity.py`): "Drafting “Rent” to Sam", "Opening megaplex.com",
   "Reading Megaplex Theatres", "Clicking “Showtimes”" while Theta works, and "Took 8s · opened …, read …" under
-  the reply (meta.activity). Still only in `75eb145`: server-side `meta.timing` (so "Took 8s" survives a reload)
-  and a "Thinking it through" line before the first step.
+  the reply (meta.activity, meta.timing, so "Took 8s" survives a reload), with "Thinking it through" before the
+  first step. Nothing from `75eb145` is left.
 - **Stage 5 C onboarding is done and live** (rebuilt, not restored from `75eb145`): an in-chat intro shaped like
   Grok Bot's (`server/onboarding.py`, `web/features/onboarding.js`): hello and their name (typed), a name for
   the assistant (lettered A/B/C card, or typed; the `bot_name` setting renames header, home, composer and the
@@ -151,16 +151,14 @@ later).
 
    Then re-run the live walkthrough with screenshots.
 2. **From `docs/LATER.md`:**
-   - **The rest of `75eb145`:** `meta.timing` from the server, and "Thinking it through".
    - **Slack connector**
    - **Tighter browser address checks:** DNS rebinding, WebSockets, the first hop of a redirect.
    - **12-hour time** in the leave-by text.
    - **A native iPhone app** (Capacitor): removes iOS's keyboard bar and gives full haptics. Needs an Apple
      developer account.
    - **Move to the Linux box** once it's fixed.
-3. **Small known issues:**
-   - The "Save as a workflow" chip names the workflow from the raw message.
-   - The research helpers and the search tier can't check the live web until Tavily is set.
+3. **Small known issues:** none open. (Workflow names are now for the kind of job; search falls back to a Bing
+   search in Theta's own browser when Tavily isn't set or fails.)
 
 ## Related: the old Theta (theta-app on Vercel)
 - **Its Upstash Redis hit the free plan's monthly command limit** and refuses requests until the reset

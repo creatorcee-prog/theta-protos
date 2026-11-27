@@ -71,6 +71,12 @@ class Site(http.server.BaseHTTPRequestHandler):
             items = [n for n in ("Arc floor lamp", "Halo desk lamp", "Tripod lamp") if q in ("all", "") or q.lower() in n.lower()]
             lis = "".join(f'<li><a href="/item?n={urllib.parse.quote(n)}">{n}</a></li>' for n in items)
             return self._send(200, f"<!doctype html><title>Results for {q}</title><h1>{len(items)} results for {q}</h1><ul>{lis}</ul>".encode())
+        if u.path == "/bing":  # shaped like Bing's results page
+            q = urllib.parse.parse_qs(u.query).get("q", [""])[0]
+            items = "".join(f'<li class="b_algo"><h2><a href="https://lamps.test/{i}">{q} result {i}</a></h2>'
+                            f'<div class="b_caption"><p>Snippet {i} about {q}.</p></div></li>' for i in range(1, 8))
+            items += '<li class="b_algo"><h2><a href="http://127.0.0.1/x">private</a></h2></li>'
+            return self._send(200, f"<!doctype html><title>{q} - Search</title><ol id=b_results>{items}</ol>".encode())
         if u.path == "/account":
             if self._cookies().get("sid") == "good":
                 return self._send(200, b"<!doctype html><title>Your account</title><h1>Welcome back, Sam</h1><p>Lamp Club points: 120</p>")
@@ -310,6 +316,16 @@ check("the next time, Theta is still signed in", ok and "Welcome back, Sam" in o
 browser.forget_signins()
 ok, out = run("browse_open", {"url": LOGIN + "/account"})
 check("'Sign out everywhere' signs it out", ok and "Sign in to Lamp Club" in out and browser.signed_in_sites() == [])
+
+# ---------------------------------------------------------------- searching without a search key
+browser.SEARCH_URL = SHOP + "/bing?q="
+rows = browser.web_results("arc lamp", 3)
+check("a search in Theta's browser reads titles, links and snippets", len(rows) == 3
+      and rows[0] == {"title": "arc lamp result 1", "url": "https://lamps.test/1", "snippet": "Snippet 1 about arc lamp."})
+rows = browser.web_results("arc lamp", 10)
+check("a result pointing at a private address is dropped", all("127.0.0.1" not in r["url"] for r in rows) and len(rows) == 7)
+check("the search tab is private: not Theta's screen, never saved as sign-ins",
+      browser._engine.sessions[browser.SEARCH_KEY].private and "/bing" not in live.state("theta")["url"])
 
 # ---------------------------------------------------------------- Theta's screen (live.py)
 ok, out = run("browse_open", {"url": SHOP + "/book.html"})

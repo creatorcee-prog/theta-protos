@@ -16,6 +16,7 @@ os.environ["PROTOS_DATA"] = TMP
 for k in ("TAVILY_API_KEY", "VANTAGE_URL", "VANTAGE_DIR", "PROTOS_KEY"):
     os.environ.pop(k, None)
 os.environ["PROTOS_TZ"] = "America/Denver"
+os.environ["THETA_BROWSER"] = "0"  # no key AND no browser: the "can't search" path (the fallback is in test_router)
 
 from server import db, tools  # noqa: E402
 

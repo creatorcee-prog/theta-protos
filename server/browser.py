@@ -382,8 +382,9 @@ def _load_signins():
 
 def save_signins(eng, only=None):
     """Write the storage state of `only` (or the most recently used session). Runs on the browser thread."""
-    s = only or max(eng.sessions.values(), key=lambda x: x.used, default=None)
-    if s is None:
+    s = only or max((x for x in eng.sessions.values() if not getattr(x, "private", False)),
+                    key=lambda x: x.used, default=None)
+    if s is None or getattr(s, "private", False):  # the search tab never writes the user's sign-ins
         return
     try:
         state = s.context.storage_state()
@@ -1286,6 +1287,51 @@ def _browse_sign_in(args, ctx):
                 "shown to you). Check the page below: if it asks for a code sent by text or email, ask the user for it.")
         return _render(s, title, text, els, head=head)
     return _engine.call(work)
+
+
+# ---------------------------------------------------------------- searching the web without a search key
+# router.search_context falls back to this when Tavily isn't set up or fails: Bing's results page, read in a
+# private tab of Theta's browser (its own session, never shown on Theta's screen and never saved as sign-ins).
+
+SEARCH_KEY = "_search"
+SEARCH_URL = "https://www.bing.com/search?setlang=en-US&q="
+SEARCH_JS = r"""(n) => {
+  const clean = s => (s || "").replace(/\s+/g, " ").trim();
+  const real = href => {  // Bing wraps links in bing.com/ck/a?...&u=a1<base64url of the address>
+    try { const u = new URL(href); if (/bing\.com$/.test(u.hostname) && u.pathname.startsWith("/ck/")) {
+      const v = u.searchParams.get("u") || ""; if (v.startsWith("a1")) {
+        const b = v.slice(2).replace(/-/g, "+").replace(/_/g, "/"); return atob(b + "===".slice((b.length + 3) % 4)); } }
+    } catch (e) {} return href; };
+  const out = [];
+  for (const li of document.querySelectorAll("li.b_algo")) {
+    const a = li.querySelector("h2 a"); if (!a) continue;
+    const p = li.querySelector(".b_caption p, p");
+    out.push({title: clean(a.innerText), url: real(a.href), snippet: clean(p ? p.innerText : "").slice(0, 500)});
+    if (out.length >= n) break;
+  }
+  return out;
+}"""
+
+
+def web_results(query, max_results=5):
+    """[{title, url, snippet}] from a search in Theta's browser; [] when it can't (no Playwright, blocked)."""
+    if not available():
+        return []
+
+    def work(eng):
+        s = eng.session(SEARCH_KEY)
+        s.private = True
+        _goto(s, SEARCH_URL + urllib.parse.quote_plus(str(query)[:300]))
+        try:
+            s.page.wait_for_selector("li.b_algo", timeout=6000)
+        except Exception:  # noqa: BLE001  no results, or a check page
+            return []
+        rows = s.page.evaluate(SEARCH_JS, int(max_results)) or []
+        return [r for r in rows if str(r.get("url") or "").startswith(("http://", "https://")) and not check_url(r["url"])]
+    try:
+        return _engine.call(work, timeout=40)
+    except ToolError:
+        return []
 
 
 # ---------------------------------------------------------------- the plug-in contract

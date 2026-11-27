@@ -43,7 +43,11 @@ good = {"text": "Find a vegetarian place near the office and put it in my plan",
         "now": T}
 chips = workflows.maybe_offer(good)
 check("offer: 2+ tool steps that went well -> one chip",
-      chips == [{"label": "Save as a workflow", "value": "save workflow: Find a vegetarian place near the"}], chips)
+      chips == [{"label": "Save as a workflow", "value": "save workflow: Find a vegetarian place"}], chips)
+check("names are for the kind of job, not this request's details",
+      workflows.name_for("Can you book me a showroom visit (pick Gift) at http://x.test/b, Sam Lee, sam@x.com, Fri 1pm")
+      == "Book a showroom visit" and workflows.name_for("please clean up my inbox") == "Clean up my inbox"
+      and workflows.name_for("2+2") == "Workflow")
 check("offer: not again within 10 minutes", workflows.maybe_offer(dict(good, now=T + 60)) == [])
 check("offer: after the gap, yes", workflows.maybe_offer(dict(good, now=T + 700)) != [])
 check("offer: a single tool step -> none", workflows.maybe_offer({"text": "x", "tools": ["web_search"], "now": T + 9999}) == [])

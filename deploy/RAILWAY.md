@@ -39,7 +39,7 @@ Optional, add any you have:
 ANTHROPIC_API_KEY=
 GEMINI_API_KEY=
 GROQ_API_KEY=
-TAVILY_API_KEY=
+TAVILY_API_KEY=                     (web search; without it Theta searches Bing in its own browser, slower)
 VANTAGE_URL=https://<your Theta>/vantage
 VANTAGE_KEY=<Theta's dashboard key>
 ```

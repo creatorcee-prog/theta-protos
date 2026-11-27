@@ -105,13 +105,14 @@ def _web_search(args, ctx):
     query = args["query"].strip()
     if not query:
         raise ToolError("query is empty: pass what to look up, e.g. query='Denver weather tomorrow'")
-    if not (os.environ.get("TAVILY_API_KEY") or "").strip():
+    if not router.search_live():
         _connect(ctx, "tavily")
         return ("Live search isn't set up (no search key), so nothing was looked up. Answer from what you know "
                 "and say you couldn't check live sources.")
     block, sources = router.search_context(query, max_results=int(args.get("max_results") or 5))
     if not sources:
-        return "The search returned nothing usable. Try different words, or answer from what you know and say so."
+        return ("The search returned nothing usable. Try different words, open a likely site with browse_open, "
+                "or answer from what you know and say so.")
     if ctx is not None:
         have = {s["url"] for s in ctx.setdefault("sources", [])}
         ctx["sources"].extend(s for s in sources if s["url"] not in have)

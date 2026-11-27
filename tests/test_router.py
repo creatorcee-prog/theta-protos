@@ -151,10 +151,23 @@ def main():
     check("vision is never sticky-blocked", router.pick("look", (), [{"type": "image", "data": "data:image/png;base64,A"}],
                                                         last=think, now=now + 5).tier != "think")
 
-    # search context without a key
+    # search context without a key: Theta's browser searches instead (faked here); with neither, it says so
     os.environ.pop("TAVILY_API_KEY", None)
+    from server import browser
+    real_results, real_avail = browser.web_results, browser.available
+    browser.web_results = lambda q, n=5: [{"title": "BTC price today", "url": "https://coins.example/btc",
+                                            "snippet": "Bitcoin is $91,000."}]
     block, sources = router.search_context("bitcoin price")
-    check("search without Tavily says it can't check live", "couldn't check live" in block and sources == [])
+    check("without Tavily, a search in Theta's browser gives numbered results",
+          "[1] BTC price today (https://coins.example/btc)" in block and sources == [
+              {"title": "BTC price today", "url": "https://coins.example/btc"}], block)
+    browser.web_results = lambda q, n=5: []
+    block, sources = router.search_context("bitcoin price")
+    check("search with neither says it can't check live", "couldn't check live" in block and sources == [])
+    browser.web_results = real_results
+    os.environ["THETA_BROWSER"] = "0"
+    check("search_live: no key and no browser means no live search", router.search_live() is False)
+    os.environ.pop("THETA_BROWSER")
 
     # Tavily call shape (urlopen faked)
     import io

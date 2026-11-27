@@ -256,6 +256,7 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
     act = activity.Activity(emit, info["activity"])  # "Drafting an email to Sam" under the working globe
     ctx["activity"] = act.reporter()
     info["_act"] = act
+    act.start(activity.THINKING, "think", keep=False)  # until the first step or words; not kept for the reply
     ctx.setdefault("sources", info["sources"])
     info["sources"] = ctx["sources"]
     specs = tools.specs()
