@@ -4,3 +4,6 @@ pywebpush
 
 # 1Password: Theta's browser signs in with saved logins (server/vault.py). Optional; without it 1Password stays off.
 onepassword-sdk
+
+# Files you send Theta: reading the text out of PDFs (server/files.py). Optional; without it PDFs keep no text.
+pypdf

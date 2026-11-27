@@ -176,7 +176,8 @@ def _read_body(req):
         n = int(req.env.get("CONTENT_LENGTH") or 0)
     except ValueError:
         n = 0
-    ctype = (req.header("content-type") or "").split(";")[0].strip().lower()
+    # WSGI keeps Content-Type in CONTENT_TYPE, not HTTP_CONTENT_TYPE, so header() never sees it
+    ctype = (req.env.get("CONTENT_TYPE") or req.header("content-type") or "").split(";")[0].strip().lower()
     if ctype == "application/json":
         if n > MAX_BYTES * 4 // 3 + 4096:
             raise app.HTTPError(413, "images can be at most 8 MB")

@@ -560,3 +560,14 @@ html.kb #home .banner { display: none; }
   .tb.pop, .msg.fx-slam, .msg.fx-loud, .msg.fx-gentle, .thread.jolt, .c-btn .disc.in { animation: none; }
   .thread .item { transition: none; }
 }
+
+/* files: the chip above the box while it uploads, and in the bubble once sent */
+.file-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 8px 10px; border-radius: 14px; background: #262628;
+  color: var(--text); text-decoration: none; margin: 2px 6px 2px 0; }
+.file-chip svg { width: 20px; height: 20px; flex: none; color: #cfcfd4; }
+.file-chip b { font-weight: 500; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
+.file-chip small { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.file-chip button { color: var(--muted); padding: 0 2px; }
+.file-chip button svg { width: 16px; height: 16px; }
+.msg.filemsg { background: none !important; padding: 0 !important; }
+.msg.filemsg .file-chip { background: #3a3a3c; margin: 0; }

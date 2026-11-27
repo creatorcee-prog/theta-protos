@@ -291,7 +291,7 @@ up_id = saved["id"] if isinstance(saved, dict) else saved
 ok, out = act({"do": "upload", "ref": ref(out, "Photo"), "text": f"/api/uploads/{up_id}"})
 check("a photo the user sent can be attached to a file field", ok and f"Attached {len(png)} bytes" in out)
 ok, out2 = act({"do": "upload", "ref": ref(out, "Photo"), "text": "/etc/passwd"})
-check("only the user's own photos can be attached, never a file from the server", not ok and "photo the user sent" in out2)
+check("only the user's own photos can be attached, never a file from the server", not ok and "photo or file the user sent" in out2)
 ok, out = act({"do": "type", "ref": ref(out, "Message"), "text": "Hello from Theta"})
 check("a rich-text box (contenteditable) takes typing", ok and "Hello from Theta" in out)
 ok, out2 = act({"do": "key", "ref": ref(out, "Message"), "text": "Enter"})

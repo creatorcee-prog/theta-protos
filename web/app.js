@@ -353,6 +353,20 @@
 
   const UPLOAD = /^\/api\/uploads\/[0-9a-f]{32}$/;
   const viewUrl = new Map(); // /api/uploads/<id> -> the blob: URL this phone already has (no reload flash)
+  // after the server has the message: keep its photos on Theta (the JPEG prepImages made, so an iPhone's HEIC
+  // photo works too) and tie them to the message, so they show after a reload and on other devices
+  async function attachImages(msg, imgs) {
+    const urls = [];
+    for (const i of imgs) {
+      try {
+        const r = await http("/api/uploads", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({data: i.data})});
+        const j = await r.json();
+        if (r.ok && j.url) { urls.push(j.url); if (i.view) viewUrl.set(j.url, i.view); }
+      } catch (e) {}
+    }
+    if (!urls.length) return;
+    try { await post("/api/uploads/attach", {message_id: msg.id, urls}); msg.meta = Object.assign({}, msg.meta, {uploads: urls}); remember(msg); } catch (e) {}
+  }
   function uploadsOf(m) {
     const u = (m.meta || {}).uploads;
     return (Array.isArray(u) ? u : []).filter(x => typeof x === "string" && (UPLOAD.test(x) || /^blob:/.test(x) || /^data:image\/(png|jpeg|gif|webp);/.test(x))).slice(0, 8);
@@ -370,6 +384,11 @@
   function bubbles(m, streaming) {
     const meta = m.meta || {}, user = m.role === "user", out = [];
     for (const src of uploadsOf(m)) out.push(photoBubble(m, src));
+    for (const f of (Array.isArray(meta.files) ? meta.files : []).slice(0, 5)) {
+      if (!f || !/^[0-9a-f]{32}$/.test(String(f.id || ""))) continue;
+      const b = el("div", "msg filemsg " + (user ? "u" : "a"));
+      b.append(fileChip(String(f.name || "file"), f.size ? kb(f.size) : "", S.demo ? null : "/api/files/" + f.id)); out.push(b);
+    }
     const text = m.text || "";
     if (text || !out.length) {
       const parts = !user && !streaming ? chatParts(text, meta) : [text];
@@ -682,7 +701,8 @@
     opts = opts || {};
     text = String(text || "").trim();
     const imgs = Array.isArray(opts.images) ? opts.images.filter(Boolean).slice(0, 4) : [];
-    if (!text && !imgs.length) return null;
+    const sendFiles = Array.isArray(opts.files) ? opts.files : [];
+    if (!text && !imgs.length && !sendFiles.length) return null;
     if (S.streaming) { toast("One sec, Theta's still answering."); return null; }
     if (view !== "chat") go({v: "chat"});
     const w = thread.querySelector('[data-key="welcome"]'); if (w) w.remove();
@@ -695,7 +715,8 @@
       const ub0 = row.querySelector(".msg.text") || row.querySelector(".msg"); ub0.textContent = text; ub0.classList.add("pending");
     } else {
       const local = {id: null, cid, role: "user", text: opts.show || text, t: Date.now() / 1000,
-        meta: Object.assign(imgs.length ? {uploads: imgs.map(i => i.view || i.url), images: imgs.length} : {}, opts.effect ? {effect: opts.effect} : {})};
+        meta: Object.assign(imgs.length ? {uploads: imgs.map(i => i.view || i.url), images: imgs.length} : {}, opts.effect ? {effect: opts.effect} : {},
+          sendFiles.length ? {files: sendFiles} : {})};
       row = item(local, {pending: true, anim: true, effectNow: true}); thread.append(row);
       if (opts.effect === "slam") { thread.classList.remove("jolt"); void thread.offsetWidth; thread.classList.add("jolt"); setTimeout(() => thread.classList.remove("jolt"), 700); }
     }
@@ -748,7 +769,8 @@
     };
     try {
       if (imgs.length) await prepImages(imgs);
-      const body = editId != null ? {bot: BOT, id: editId, text} : Object.assign({bot: BOT, text, client_id: cid}, opts.show ? {show: opts.show} : {});
+      const body = editId != null ? {bot: BOT, id: editId, text} : Object.assign({bot: BOT, text, client_id: cid}, opts.show ? {show: opts.show} : {},
+        Array.isArray(opts.files) && opts.files.length ? {files: opts.files.map(f => f.id)} : {});
       // the vision model gets each picture as a data: URL (what the server's chat reads)
       if (imgs.length) body.images = imgs.map(i => i.data).filter(Boolean);
       const r = await http(editId != null ? "/api/messages/edit" : "/api/chat", {method: "POST", headers: {"content-type": "application/json", accept: "text/event-stream"},
@@ -882,9 +904,35 @@
       if (stick) requestAnimationFrame(() => toBottom(false)); // the newest message stays in view as the box grows
     }).observe(cwrap);
   }
+  // files picked with the paperclip's File: uploaded at once (server/files.py), sent with the message as ids
+  const fileQueue = []; // {name, size, id?, state: "up"|"ok"|"bad", why?}
+  async function addFile(f) {
+    if (fileQueue.length >= 5) { toast("Up to 5 files at a time."); return; }
+    if (f.size > 20 * 1024 * 1024) { toast("Files can be at most 20 MB.", 3200); return; }
+    const q = {name: f.name, size: f.size, state: "up"}; fileQueue.push(q); renderQueue(); sizeTa();
+    if (S.demo) { q.state = "bad"; q.why = "demo"; renderQueue(); toast("Demo mode: files go to Theta on the real server."); return; }
+    try {
+      const r = await http("/api/files", {method: "POST", headers: {"content-type": f.type || "application/octet-stream", "x-file-name": encodeURIComponent(f.name)}, body: f});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "upload failed");
+      Object.assign(q, {id: j.id, state: "ok", chars: j.chars, kind: j.kind});
+    } catch (e) { q.state = "bad"; q.why = e.message; toast(`${f.name} didn't upload: ${e.message}`, 4000); }
+    renderQueue();
+  }
+  const kb = n => n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + " KB" : (n / 1024 / 1024).toFixed(1) + " MB";
+  function fileChip(name, sub, href) {
+    const w = el(href ? "a" : "span", "file-chip"); if (href) { w.href = href; w.setAttribute("download", name); }
+    w.append(svg("i-file"), el("b", null, name), el("small", null, sub)); return w;
+  }
   function renderQueue() {
     const chip = $("attach-chip"); chip.replaceChildren();
-    if (!queue.length) { chip.hidden = true; return; }
+    for (const q of fileQueue) {
+      const c = fileChip(q.name, q.state === "up" ? "Uploading…" : q.state === "bad" ? "Didn't upload" : kb(q.size) + (q.chars === 0 && q.kind !== "text" ? " · no text inside" : ""));
+      const x = el("button"); x.type = "button"; x.setAttribute("aria-label", "Remove " + q.name); x.append(svg("i-close"));
+      x.addEventListener("click", () => { const i = fileQueue.indexOf(q); if (i >= 0) fileQueue.splice(i, 1); renderQueue(); sizeTa(); });
+      c.append(x); chip.append(c);
+    }
+    if (!queue.length && !fileQueue.length) { chip.hidden = true; return; }
     for (const q of queue) {
       const t = el("img"); t.src = q.view; t.alt = "Photo to send"; t.style.cssText = "width:44px;height:44px;object-fit:cover;border-radius:10px";
       const x = el("button"); x.type = "button"; x.setAttribute("aria-label", "Remove photo"); x.append(svg("i-close"));
@@ -896,13 +944,16 @@
   window.__thetaQueue = (f) => { if (queue.length >= 4) { toast("Up to 4 photos at a time."); return; } queue.push({blob: f, view: URL.createObjectURL(f), type: f.type}); renderQueue(); sizeTa(); };
   function submit(effect) {
     const text = ta.value.trim();
-    if (!text && !queue.length) { voiceMode(); return; }
+    if (!text && !queue.length && !fileQueue.length) { voiceMode(); return; }
     if (S.streaming) { toast("One sec, Theta's still answering."); return; }
+    if (fileQueue.some(q => q.state === "up")) { toast("One sec, the file is still uploading."); return; }
     const editing = S.editing; endEdit(false);
     const images = queue.splice(0).map(q => ({blob: q.blob, view: q.view, type: q.type}));
     renderQueue();
     stopMic(); ta.value = ""; sizeTa();
-    const o = {}; if (editing != null) o.edit = editing; if (images.length) o.images = images; if (effect) o.effect = effect;
+    const files = fileQueue.splice(0).filter(q => q.state === "ok").map(q => ({id: q.id, name: q.name, size: q.size, kind: q.kind}));
+    renderQueue();
+    const o = {}; if (editing != null) o.edit = editing; if (images.length) o.images = images; if (effect) o.effect = effect; if (files.length) o.files = files;
     send(text, o);
   }
   form.addEventListener("submit", e => { e.preventDefault(); submit(); });
@@ -1287,11 +1338,9 @@
   $("scrim").addEventListener("click", closeAttach);
   for (const id of ["att-photo", "att-camera", "att-file"]) $(id).addEventListener("change", e => {
     const f = e.target.files && e.target.files[0]; closeAttach(); if (!f) return;
-    if (/^image\//.test(f.type) && id !== "att-file") { window.__thetaQueue(f); e.target.value = ""; return; }
-    const chip = $("attach-chip"); chip.replaceChildren(svg(id === "att-file" ? "i-file" : "i-image"),
-      el("span", null, `${f.name}: Theta can't see attachments yet, so this one stays on your phone.`));
-    const x = el("button", null); x.type = "button"; x.setAttribute("aria-label", "Remove"); x.append(svg("i-close")); x.addEventListener("click", () => { chip.hidden = true; });
-    chip.append(x); chip.hidden = false; e.target.value = "";
+    e.target.value = "";
+    if (/^image\/(jpeg|png|gif|webp|heic|heif)$/.test(f.type)) { window.__thetaQueue(f); return; } // a photo, from any picker
+    addFile(f);
   });
 
   // ---------------------------------------------------------------- Settings: a list of pages (like iOS Settings)

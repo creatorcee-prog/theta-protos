@@ -385,7 +385,7 @@ def _timing(t0, first=None):
     return {"total_ms": int((now - t0) * 1000), "first_ms": int((first - t0) * 1000) if first else None}
 
 
-def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=None):
+def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=None, tainted=False):
     """A tool turn: agent.run, then the stored reply (with approval chips if a send is waiting).
     `tag` is merged into the meta of every message this turn stores (reply_to, an edit's note)."""
     tag = dict(tag or {})
@@ -410,7 +410,7 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
                                                                     "reply_to": user["id"]}))
 
     msgs = _build(history, text, bot, context=tools.context_block(bot))
-    info = {}
+    info = {"tainted": True} if tainted else {}  # an attached file is outside text: it can't make Theta send
     tctx = {"bot": bot, "user_id": user["id"]}
     try:
         final = agent.run(route, msgs, emit, info=info, ctx=tctx,
@@ -493,7 +493,7 @@ def _intercept(bot, text, user):
         return None
 
 
-def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
+def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None, files=None):
     """Runs one chat turn, calling emit(event, data) for
     user, route, [ack], [tool..., approval...], delta..., done | error.
     Think and search turns first get a short templated acknowledgement (its own
@@ -510,6 +510,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
     log_row = {"bot": bot, "chars_in": len(text), "ok": False, "tried": []}
     ttft = None
     replied = False
+    finfo, fblock = [], ""
     try:
         if edit:
             user = edit["user"]
@@ -523,7 +524,12 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
                 meta["client_id"] = str(client_id)[:80]
             if images:
                 meta["images"] = len(images)
-            tap = _APPROVE_TEXT.match(text) if not images else None
+            if files:
+                from . import files as F
+                finfo, fblock = F.for_message(files)
+                if finfo:
+                    meta["files"] = [{k: f.get(k) for k in ("id", "name", "size", "kind")} for f in finfo]
+            tap = _APPROVE_TEXT.match(text) if not images and not finfo else None
             shown = text
             if show and not tap:
                 shown = show
@@ -539,7 +545,10 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
                 tag["note"] = edit["note"]
         log_row["user_id"] = user["id"]
         emit("user", user)
-        if not edit and not tap and not images:
+        mtext = text  # what the model reads: the message, plus any attached files' text (framed as outside content)
+        if not edit and fblock:
+            mtext = f"{text}\n\n{fblock}"
+        if not edit and not tap and not images and not fblock:
             claimed = _intercept(bot, text, user)
             if claimed:  # the intro took it (a typed answer): its texts, no model call
                 fresh = db.get_message(user["id"])
@@ -571,12 +580,12 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
         log_row.update(tier=route.tier, why=route.why)
         live = router.search_live()
         ack_text = persona.ack(route.tier, text, live=live, seed=user["id"])
-        if _use_tools(text, images, route):
+        if _use_tools(text, images, route) or (fblock and not images):
             try:
                 # a search turn's canned line ("Checking live sources now", or "I can't check live") would
                 # guess at what the tools will do; the model's own line before its first call says it instead
-                _agent_turn(bot, text, history, user, route, None if route.tier == "search" else ack_text,
-                            emit, log_row, t0, tag=tag)
+                _agent_turn(bot, mtext, history, user, route, None if route.tier == "search" else ack_text,
+                            emit, log_row, t0, tag=tag, tainted=bool(fblock))
                 replied = True
             except models.ModelError as e:
                 log_row["error"] = str(e)[:300]
@@ -597,7 +606,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None):
                 if images and route.tier != "vision":  # no model that can see is configured
                     note = "The user attached an image, but no image-capable model is set up, so say you can't see it."
                     extra = f"{extra}\n\n{note}" if extra else note
-                msgs = _build(history, text, bot, images=images if route.tier == "vision" else None, extra=extra)
+                msgs = _build(history, mtext, bot, images=images if route.tier == "vision" else None, extra=extra)
             log_row["tried"].append(f"{provider}/{model}")
             log_row.update(provider=provider, model=model, steps=1)
             cleaner = persona.Cleaner()
@@ -863,24 +872,27 @@ def chat(req, start):
         raise HTTPError(400, "text must be a string")
     text = (text or "").strip()
     images = _images(body)
-    if not text and not images:
+    if not text and not images and not body.get("files"):
         raise HTTPError(400, "text is required")
     if len(text) > 20000:
         raise HTTPError(413, "message too long")
     client_id = body.get("client_id")
     # a tapped option sends its full prompt as text and its label as show: the chat keeps the label
     show = body.get("show") if isinstance(body.get("show"), str) and body.get("show").strip() else None
-    return _run_chat(req, start, bot, text, images, client_id, show=show[:80].strip() if show else None)
+    fids = [str(f) for f in (body.get("files") or []) if isinstance(f, str)][:5]
+    if not text and fids:
+        text = "I attached " + ("a file." if len(fids) == 1 else f"{len(fids)} files.")
+    return _run_chat(req, start, bot, text, images, client_id, show=show[:80].strip() if show else None, files=fids)
 
 
-def _run_chat(req, start, bot, text, images, client_id, edit=None, show=None):
+def _run_chat(req, start, bot, text, images, client_id, edit=None, show=None, files=None):
     """Run _chat_worker and answer with its SSE stream (or one JSON object with ?stream=0)."""
     if req.query.get("stream") == "0":
         got = {}
 
         def keep(ev, data):
             got[ev] = data
-        _chat_worker(bot, text, images, client_id, keep, edit=edit, show=show)
+        _chat_worker(bot, text, images, client_id, keep, edit=edit, show=show, files=files)
         if "done" in got:
             out = {"user": got["user"], "reply": got["done"]}
             if "ack" in got:
@@ -891,7 +903,7 @@ def _run_chat(req, start, bot, text, images, client_id, edit=None, show=None):
 
     q = queue.Queue()
     threading.Thread(target=_chat_worker, args=(bot, text, images, client_id, lambda e, d: q.put((e, d))),
-                     kwargs={"edit": edit}, name="chat", daemon=True).start()
+                     kwargs={"edit": edit, "show": show, "files": files}, name="chat", daemon=True).start()
 
     def gen():
         yield b": stream open\n\n"

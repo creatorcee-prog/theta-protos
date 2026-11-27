@@ -86,6 +86,8 @@ def comm_of(tool, args):
 def tainted(info):
     """Did this turn read outside text (mail, web, files) before now?"""
     from . import tools
+    if (info or {}).get("tainted"):  # the message itself carried outside text (an attached file)
+        return True
     return any((tools.BY_NAME.get(n) or {}).get("untrusted") for n in ((info or {}).get("tools") or [])[:-1])
 
 

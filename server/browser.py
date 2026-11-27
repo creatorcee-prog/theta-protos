@@ -848,11 +848,19 @@ def _do(fn, e):
 
 def _upload_path(ref):
     """The file for an upload action: a photo the user sent Theta (its id, or /api/uploads/<id>)."""
-    from . import uploads
+    from . import files, uploads
     rid = str(ref or "").strip().rsplit("/", 1)[-1].split(".", 1)[0]
+    if files.get(rid):  # a file they sent: given to the page under its real name
+        import shutil
+        info = files.get(rid)
+        out = os.path.join(db.data_dir(), "browser", "outgoing", rid)
+        os.makedirs(out, exist_ok=True)
+        dst = os.path.join(out, info["name"])
+        shutil.copyfile(files.path_of(rid), dst)
+        return dst
     p = uploads.path_for(rid) if uploads.ID_RE.match(rid or "") else None
     if not p or not os.path.isfile(p):
-        raise ToolError("upload takes a photo the user sent you: pass its id (from /api/uploads/<id>) as text")
+        raise ToolError("upload takes a photo or file the user sent you: pass its id as text")
     return p
 
 
@@ -950,7 +958,7 @@ def _browse_act(args, ctx):
                     path = _upload_path(text)
                     _do(lambda: _loc(s, e["ref"]).set_input_files(path, timeout=ACT_TIMEOUT), e)
                     _snap(s)
-                    done.append(f"attached the photo to {e['ref']} {e.get('label')!r}")
+                    done.append(f"attached it to {e['ref']} {e.get('label')!r}")
                 elif do == "type":
                     e = _el(s, ref)
                     if text is None:
@@ -1377,7 +1385,7 @@ TOOLS = [
              "ref": {"type": "string", "description": "The element's ref from the latest list, e.g. e7."},
              "text": {"type": "string", "description": ("What to type; the option to pick; up/down for scroll; a key "
                                                         "for key (Escape, Tab, ArrowDown, Enter...); seconds or "
-                                                        "words to wait for; a photo's id for upload.")},
+                                                        "words to wait for; a photo's or file's id for upload.")},
              "enter": {"type": "boolean", "description": "Press Enter after typing (search boxes only)."}},
              "required": ["do"]}}},
          "required": ["actions"]}},
