@@ -23,11 +23,11 @@ import time
 
 from . import activity, db, models, persona, tools
 
-MAX_STEPS = 10
+MAX_STEPS = 24
 TOOL_SECONDS = 20
 TOOL_TIMEOUT_AWARE = True  # a tool with its own "timeout" gets that long (see _run_tools)
-TURN_SECONDS = 90
-MAX_TOKENS = 1200
+TURN_SECONDS = 300
+MAX_TOKENS = 2400
 MAX_SENDS = 10         # approval cards per turn (each card carries its own Approve / Discard)
 APPROVAL_TTL = 24 * 3600
 
@@ -76,6 +76,12 @@ def _service_ready(service):
     return True
 
 
+def _approval_key(name, args):
+    """What makes two approval cards 'the same thing': the page for a form, the recipient for a message."""
+    a = args or {}
+    return str(a.get("url") or a.get("to") or a.get("event_id") or a.get("file_id") or a.get("message_id") or "")
+
+
 def _approval(call, ctx, emit, info):
     """Turn a send-risk call into a pending approval. Returns the text the model sees."""
     name, args = call["name"], call.get("args") or {}
@@ -91,7 +97,18 @@ def _approval(call, ctx, emit, info):
     action = {"tool": name, "args": args, "bot": ctx.get("bot") or "theta", "preview": text,
               "created": now, "expires": now + APPROVAL_TTL, "user_id": ctx.get("user_id")}
     aid = db.add_approval(action)
-    info["approvals"].append({"id": aid, "tool": name, "preview": text})
+    # a newer version of the same thing in this turn (the user corrected it mid-turn): the older card is withdrawn,
+    # so there's never a stale one left to approve by mistake
+    key = _approval_key(name, args)
+    same = (lambda a: bool(key) and a.get("tool") == name and a.get("key") == key)
+    for old in [a for a in info["approvals"] if same(a)]:
+        try:
+            from . import app
+            app.decide_approval(old["id"], "deny", bot=ctx.get("bot"), quiet=True)
+        except Exception:  # noqa: BLE001
+            pass
+        info["approvals"].remove(old)
+    info["approvals"].append({"id": aid, "tool": name, "preview": text, "key": _approval_key(name, args)})
     emit("approval", {"id": aid, "tool": name, "preview": text, "expires": action["expires"]})
     needs = _NEEDS.get(name)
     if needs and not _service_ready(needs):  # say so now, not when they tap Approve: the connect card comes too
@@ -153,6 +170,66 @@ def _auto_run(call, ctx, emit, info):
         return False, f"Error: {text}"
     return True, (f"Done without asking (the user allows this one): {text} A card shows exactly what was done. "
                   "Tell them in one line.")
+
+
+def _last_user_text(messages):
+    for m in reversed(messages or []):
+        if m.get("role") == "user":
+            c = m.get("content")
+            if isinstance(c, list):
+                c = " ".join(p.get("text", "") for p in c if isinstance(p, dict))
+            return str(c or "")
+    return ""
+
+
+COMPACT_AT = 90_000   # chars of tool output in a turn before older results are trimmed
+KEEP_RECENT = 4       # tool results always kept whole (the newest)
+
+
+def _compact(msgs):
+    """Context engineering: once a long turn's tool output piles up, older results shrink to their opening (the
+    model already acted on them); the newest KEEP_RECENT stay whole."""
+    tool_msgs = [m for m in msgs if m.get("role") == "tool"]
+    if sum(len(str(m.get("content") or "")) for m in tool_msgs) < COMPACT_AT:
+        return
+    for m in tool_msgs[:-KEEP_RECENT]:
+        c = str(m.get("content") or "")
+        if len(c) > 900 and not c.endswith("(trimmed)"):
+            m["content"] = c[:700] + "\n…(older result trimmed to save room; call the tool again if you need it)"
+
+
+def _after_step(results, calls, msgs, fails, info, route, cands, ci, emit):
+    """Watch for a stuck turn: the same calls again, or steps where every tool failed. After two, tell the model to
+    change approach (not retry), and move to a stronger model when one is set up (once per turn)."""
+    info.setdefault("ok_tools", [])
+    for c, ok, text in results:
+        if ok:
+            info["ok_tools"].append(c["name"])
+        else:
+            fails["errors"].append({"name": c["name"], "args": c.get("args") or {}, "error": str(text)[:200]})
+    sig = [(c["name"], str(sorted((c.get("args") or {}).items()))) for c in calls]
+    stuck = all(not ok for _c, ok, _t in results) or sig == fails["last"]
+    fails["last"] = sig
+    fails["streak"] = fails["streak"] + 1 if stuck else 0
+    if fails["streak"] < 2:
+        return
+    fails["streak"] = 0
+    msgs.append({"role": "user", "content": ("[harness] The last attempts didn't work. Don't repeat them. Step back, "
+                                             "say to yourself what's actually failing, and try a different approach "
+                                             "(another tool, another site, a smaller step), or tell the user plainly "
+                                             "what's blocking and what you need.")})
+    if fails["escalated"]:
+        return
+    fails["escalated"] = True
+    try:
+        from . import router
+        strong = [c for c in router.candidates("think") if models.supports_tools(c[0]) and c != cands[ci]]
+    except Exception:  # noqa: BLE001
+        strong = []
+    if strong:
+        fails["switch"] = (strong + [c for c in cands if c not in strong], 0)
+        emit("route", {"model": strong[0][1], "provider": strong[0][0], "tier": "think",
+                       "why": "stuck, so a stronger model takes over"})
 
 
 def _run_tools(calls, ctx, emit, info, deadline):
@@ -259,8 +336,16 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
     act.start(activity.THINKING, "think", keep=False)  # until the first step or words; not kept for the reply
     ctx.setdefault("sources", info["sources"])
     info["sources"] = ctx["sources"]
-    specs = tools.specs()
+    # progressive disclosure: start with the core tools and the ones this message's words call for; load_tools adds
+    # more for the next step (an 11k-token tool list on every step was most of a turn's cost)
+    # (the user's own words: the last user turn also carries the context block, whose words would match everything)
+    active = tools.pick_tools(ctx.get("user_text") or _last_user_text(messages), ctx.get("recent_tools") or ())
+    if ctx.get("routine") or ctx.get("all_tools"):  # unattended (a routine): nobody can steer it, so give it everything
+        active = [t["name"] for t in tools.TOOLS]
+    ctx["load_tools"] = lambda names: [active.append(n) for n in names if n not in active]
+    info["loaded"] = active
     msgs = _with_guide(messages)
+    fails = {"streak": 0, "escalated": False, "last": None, "errors": []}
     deadline = time.monotonic() + turn_seconds
     cands = list(getattr(route, "candidates", ()) or [(route.provider, route.model)])
     cands = [c for c in cands if models.supports_tools(c[0])] or cands
@@ -292,6 +377,15 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
 
     final = False
     while True:
+        # messages the user sent while Theta works arrive here, between steps, and steer the rest of the turn
+        inbox = ctx.get("inbox")
+        if callable(inbox) and not final:
+            for extra in inbox() or []:
+                msgs.append({"role": "user", "content": "[The user added this while you were working; take it into "
+                                                         f"account from now on]\n{extra}"})
+                deadline = max(deadline, time.monotonic() + 60)
+        _compact(msgs)
+        specs = tools.specs([tools.BY_NAME[n] for n in active if n in tools.BY_NAME])
         out_of_time = time.monotonic() >= deadline - 5
         if (info["steps"] >= max_steps - 1 or out_of_time) and info["steps"] > 0 and not final:
             final = True
@@ -338,9 +432,27 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
             state["sep"] = True
         msgs.append({"role": "assistant", "content": res.get("text") or "", "tool_calls": calls,
                      "reasoning": res.get("reasoning") or ""})
-        for c, ok, text in _run_tools(calls, ctx, emit, info, deadline):
+        results = _run_tools(calls, ctx, emit, info, deadline)
+        for c, ok, text in results:
             msgs.append({"role": "tool", "tool_call_id": c["id"], "name": c["name"],
                          "content": tools.wrap(c["name"], text, ok)})
+        _after_step(results, calls, msgs, fails, info, route, cands, ci, emit)
+        if fails.get("switch") is not None:
+            cands, ci = fails.pop("switch")
+        save = ctx.get("checkpoint")
+        if callable(save):
+            try:
+                save(msgs, info)
+            except Exception:  # noqa: BLE001  a checkpoint is a nicety; the turn goes on
+                pass
+    unresolved = [e for e in fails["errors"] if e["name"] not in {c for c in info.get("ok_tools", [])}]
+    if unresolved and not info.get("error"):
+        said = cleaner.full.lower()
+        if not any(w in said for w in ("couldn't", "could not", "didn't work", "failed", "wasn't able", "error", "not able")):
+            # the model doesn't get to be the only judge: a step that failed and was never redone is said plainly
+            from . import activity as A
+            what = A.describe(unresolved[-1]["name"], unresolved[-1]["args"])[0]
+            on_text(f"\n\n(One step didn't work: {what[:1].lower() + what[1:]}: {unresolved[-1]['error'][:140]})")
     tail = cleaner.finish()
     if tail:
         info["emitted"] = True

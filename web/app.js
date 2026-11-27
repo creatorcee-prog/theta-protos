@@ -703,7 +703,10 @@
     const imgs = Array.isArray(opts.images) ? opts.images.filter(Boolean).slice(0, 4) : [];
     const sendFiles = Array.isArray(opts.files) ? opts.files : [];
     if (!text && !imgs.length && !sendFiles.length) return null;
-    if (S.streaming) { toast("One sec, Theta's still answering."); return null; }
+    if (S.streaming) { // Theta is still working: this message steers that turn, or waits for it (server/runtime.py)
+      if (imgs.length || sendFiles.length || opts.edit != null) { toast("One sec, Theta's still answering."); return null; }
+      return steer(text, opts);
+    }
     if (view !== "chat") go({v: "chat"});
     const w = thread.querySelector('[data-key="welcome"]'); if (w) w.remove();
     dock("retry", null);
@@ -851,8 +854,26 @@
         text: e.message && !/^HTTP|fetch|network/i.test(e.message) ? e.message : "The message didn't go through. Nothing was lost.",
         actions: [["Dismiss", () => dock("retry", null)], ["Try again", () => { if (editId == null) { row.replaceWith(); regroup(); } dock("retry", null); send(text, opts); }, true]]});
       return null;
-    } finally { S.streaming = false; if (S.pollAfter) { S.pollAfter = false; setTimeout(poll, 300); } }
+    } finally { S.streaming = false; if (S.pollAfter) { S.pollAfter = false; setTimeout(poll, 300); } sendLater(); }
   }
+  // a message sent while Theta works: shown at once, and given to the running turn, which takes it into account
+  // at its next step. If nothing is running any more (a plain reply finishing), it's sent as soon as that's done.
+  const later = [];
+  async function steer(text, opts) {
+    try {
+      const j = await post("/api/chat/steer", Object.assign({bot: BOT, text}, opts.show ? {show: opts.show} : {}));
+      if (j && j.mode === "steered" && j.user) {
+        remember(j.user);
+        const row = item(j.user, {anim: true}); const pend = thread.querySelector(".pending-row");
+        thread.insertBefore(row, pend && pend.isConnected ? pend : null); regroup(); follow(true); haptic("light");
+        return j.user;
+      }
+    } catch (e) {}
+    later.push([text, opts]); toast("Got it. Sending that as soon as Theta's done.", 2200);
+    return null;
+  }
+  function sendLater() { if (!S.streaming && later.length) { const [t, o] = later.shift(); setTimeout(() => send(t, o), 300); } }
+
   // a finished short reply lands bubble by bubble, each after its typing beat; the typing globe stays between them
   async function land(reply, prow, porb, o) {
     const final = item(reply, {anim: true, measuredMs: o.measuredMs});
@@ -945,7 +966,7 @@
   function submit(effect) {
     const text = ta.value.trim();
     if (!text && !queue.length && !fileQueue.length) { voiceMode(); return; }
-    if (S.streaming) { toast("One sec, Theta's still answering."); return; }
+    if (S.streaming && (queue.length || fileQueue.length || S.editing != null)) { toast("One sec, Theta's still answering."); return; }
     if (fileQueue.some(q => q.state === "up")) { toast("One sec, the file is still uploading."); return; }
     const editing = S.editing; endEdit(false);
     const images = queue.splice(0).map(q => ({blob: q.blob, view: q.view, type: q.type}));

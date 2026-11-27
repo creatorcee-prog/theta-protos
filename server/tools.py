@@ -312,6 +312,12 @@ def _send_email(args, ctx):
 # ---- the registry
 
 TOOLS = [
+    {"name": "load_tools", "risk": "read", "run": lambda a, c: _load_tools(a, c),
+     "description": ("Load more tools by name (from the list of more tools in your instructions) so you can call "
+                     "them in your next step. Load everything a job needs at once. Example: {\"names\": "
+                     "[\"gmail_search\", \"gmail_archive\"]}."),
+     "params": {"type": "object", "properties": {"names": {"type": "array", "items": {"type": "string"}}},
+                "required": ["names"]}},
     {"name": "web_search", "risk": "read", "untrusted": True, "run": _web_search,
      "description": ("Search the live web (news, prices, weather, opening hours, anything that changes). "
                      "Returns numbered results with links; cite the ones you use as [n] right after the claim. "
@@ -418,6 +424,76 @@ def _ext_reset():
     _ext_done = False
 
 
+# ---- progressive disclosure: a turn starts with CORE plus the tools its words call for; the rest are listed in the
+# guide by name and one line, and the model loads any of them with load_tools (agent.py adds them next step)
+CORE = ("web_search", "remind_me", "memory_edit", "plan_update", "history_search", "weather", "show_card", "react",
+        "browse_open", "browse_act", "browse_submit", "browse_sign_in", "browse_screenshot", "chip_open",
+        "find_contact", "file_read", "load_tools")
+# words that bring a group along, beyond each feature's own RELEVANT words
+GROUPS = [(r"\b(e-?mails?|gmail|inbox|unsubscribe|newsletters?|drafts?|repl(y|ies))\b",
+           ("gmail_search", "gmail_read", "gmail_draft", "gmail_reply_draft", "send_email_draft", "gmail_archive",
+            "gmail_mark_read", "gmail_trash", "gmail_unsubscribe", "gmail_filter", "gmail_restore")),
+          (r"\b(calendar|meeting|event|schedule|appointment|tomorrow|today|tonight|week)\b",
+           ("calendar_list", "calendar_add", "calendar_invite", "calendar_move", "calendar_delete")),
+          (r"\b(drive|docs?|document|slides?|folder|spreadsheet|sheet)\b",
+           ("drive_search", "drive_read", "drive_list", "docs_create", "slides_create", "drive_make_folder", "drive_move")),
+          (r"\b(text|sms|call|phone|ring)\b", ("send_text", "call_me", "call_someone", "find_contact", "save_contact")),
+          (r"\b(routine|every (day|morning|week|night)|daily|weekly|workflow)\b",
+           ("routine_create", "routine_list", "routine_delete", "routine_run_now", "workflow_save", "workflow_run", "workflow_list")),
+          (r"\b(research|compare|deep dive|look into|investigate)\b", ("research",)),
+          (r"\b(image|picture|draw|photo of|illustration)\b", ("generate_image",)),
+          (r"\b(bank|money|spent|spending|balance|subscriptions?|charges?)\b", ("bank_accounts", "bank_transactions")),
+          (r"\b(chip|skill|playbook)\b", ("chip_save",))]
+
+
+def pick_tools(text, extra=()):
+    """The tool names a turn starts with: CORE, the groups its words call for, each feature's RELEVANT tools,
+    and `extra` (tools the last turns used)."""
+    _ext()
+    names = list(CORE)
+    for pat, group in GROUPS:
+        if re.search(pat, text or "", re.I):
+            names += group
+    try:
+        from . import ext
+        names += ext.relevant_tools(text)
+    except Exception:  # noqa: BLE001
+        pass
+    names += list(extra)
+    seen, out = set(), []
+    for n in names:
+        if n in BY_NAME and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out
+
+
+def catalog(loaded=()):
+    """One line per tool NOT already loaded: what load_tools can bring in."""
+    _ext()
+    skip = set(loaded)
+    lines = []
+    for t in TOOLS:
+        if t["name"] in skip:
+            continue
+        first = re.split(r"(?<=[.!?])\s", t["description"].strip(), maxsplit=1)[0][:110]
+        lines.append(f"- {t['name']}: {first}")
+    return "\n".join(lines)
+
+
+def _load_tools(args, ctx):
+    names = [str(n).strip() for n in (args.get("names") or []) if str(n).strip()]
+    known = [n for n in names if n in BY_NAME]
+    unknown = [n for n in names if n not in BY_NAME]
+    if not known:
+        raise ToolError("none of those are tools; pick names from the list in your instructions")
+    fn = (ctx or {}).get("load_tools")
+    if callable(fn):
+        fn(known)
+    return ("Loaded: " + ", ".join(known) + ". Call them in your next step." +
+            (f" Not tools: {', '.join(unknown)}." if unknown else ""))
+
+
 def specs(tools=None):
     """What the model sees: [{name, description, params}], in a fixed order (cache-friendly)."""
     _ext()
@@ -437,7 +513,10 @@ BROWSER_FIRST = (
 def guide():
     """The tool guide for the system prompt: stable text, the same every turn."""
     _ext()
-    return (f"{GUIDE_MARK}: {', '.join(t['name'] for t in TOOLS)}.\n"
+    more = catalog(CORE)
+    core = ", ".join(n for n in CORE if n in BY_NAME)
+    return (f"{GUIDE_MARK}: the ones attached to this message (always {core}, plus any the request calls for), and "
+            f"these (call load_tools with their names first, then use them):\n{more}\n"
             "- Use a tool whenever it gets the job done or makes the answer right; simple lookups take 1-3 calls. "
             "Reading, searching and looking things up never need asking: just do them. If you don't know something, "
             "or it could have changed since you learned it, search first (web_search) instead of guessing or "

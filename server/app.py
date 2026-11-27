@@ -385,7 +385,7 @@ def _timing(t0, first=None):
     return {"total_ms": int((now - t0) * 1000), "first_ms": int((first - t0) * 1000) if first else None}
 
 
-def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=None, tainted=False):
+def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, tag=None, tainted=False, resume=None):
     """A tool turn: agent.run, then the stored reply (with approval chips if a send is waiting).
     `tag` is merged into the meta of every message this turn stores (reply_to, an edit's note)."""
     tag = dict(tag or {})
@@ -409,13 +409,19 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
             emit("ack", db.add_message(bot, "assistant", TOOL_ACK, {"ack": True, "tier": route.tier, "tool": True,
                                                                     "reply_to": user["id"]}))
 
-    msgs = _build(history, text, bot, context=tools.context_block(bot))
+    from . import runtime
+    msgs = resume or _build(history, text, bot, context=tools.context_block(bot))
     info = {"tainted": True} if tainted else {}  # an attached file is outside text: it can't make Theta send
-    tctx = {"bot": bot, "user_id": user["id"]}
+    tctx = {"bot": bot, "user_id": user["id"], "recent_tools": runtime.recent_tools(history),
+            "user_text": (user.get("meta") or {}).get("prompt") or user.get("text") or text}
+    run = runtime.begin(bot, user["id"], route)
+    tctx["inbox"] = run.take
+    tctx["checkpoint"] = lambda m, i: runtime.checkpoint(bot, user["id"], route, m, i)
     try:
         final = agent.run(route, msgs, emit, info=info, ctx=tctx,
-                          on_tool_start=on_tool_start, on_note=on_note, max_tokens=MAX_TOKENS)
+                          on_tool_start=on_tool_start, on_note=on_note, max_tokens=agent.MAX_TOKENS)
     finally:
+        runtime.end(bot, run)
         log_row["tried"] = info.get("tried") or [f"{provider}/{model}"]
         log_row.update(provider=info.get("provider") or provider, model=info.get("model") or model,
                        steps=info.get("steps"), tools=info.get("tools") or [])
@@ -514,7 +520,10 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None, files
     try:
         if edit:
             user = edit["user"]
-            history = db.messages(bot, before=user["id"], limit=persona.HISTORY)
+            if edit.get("followup"):  # sent mid-turn: the reply that turn wrote (after it) belongs in the history
+                history = [m for m in db.messages(bot, limit=persona.HISTORY + 1) if m["id"] != user["id"]][-persona.HISTORY:]
+            else:
+                history = db.messages(bot, before=user["id"], limit=persona.HISTORY)
             tap = None
             emit("deleted", {"ids": list(edit.get("deleted") or []), "user_id": user["id"]})
         else:
@@ -539,7 +548,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None, files
                 shown = "Approve" if tap.group(1).lower() == "approve" else "Discard"
             user = db.add_message(bot, "user", shown, meta)
         tag = {"reply_to": user["id"]}
-        if edit:
+        if edit and not edit.get("followup"):
             tag["edited"] = True
             if edit.get("note"):
                 tag["note"] = edit["note"]

@@ -277,7 +277,7 @@ def test_loop():
     # step cap: a model that never stops calling tools gets a final no-tools call at step 6
     CALLS.clear()
     SCRIPT[:] = [lambda m, t, ch: {"tool_calls": [tc("history_search", {"query": "x"})]} if ch == "auto"
-                 else {"text": "Here's what I have."}] * 10
+                 else {"text": "Here's what I have."}] * (agent.MAX_STEPS + 4)
     info = {}
     out = agent.run(route_for(), base_msgs("loop forever"), lambda e, d: None, info=info, ctx={"bot": "theta"})
     check("loop: capped at 6 model calls", len(CALLS) == agent.MAX_STEPS and info["steps"] == agent.MAX_STEPS,

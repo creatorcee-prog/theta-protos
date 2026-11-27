@@ -241,7 +241,7 @@ check("inside a routine, routine_create/run_now refuse", len(routines.all_routin
 
 # per-run step cap
 reset_day()
-SCRIPT[:] = [{"tool_calls": [{"id": f"s{i}", "name": "routine_list", "args": {}}]} for i in range(20)]
+SCRIPT[:] = [{"tool_calls": [{"id": f"s{i}", "name": "routine_list", "args": {}}]} for i in range(agent.MAX_STEPS + 4)]
 routines.run(routines.get(r["id"]))
 check("per-run step cap: at most agent.MAX_STEPS model calls, the last with tools off",
       len(CALLS) == agent.MAX_STEPS and CALLS[-1]["tool_choice"] == "none", len(CALLS))

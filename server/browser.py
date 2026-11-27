@@ -1345,14 +1345,14 @@ def web_results(query, max_results=5):
 # ---------------------------------------------------------------- the plug-in contract
 
 TOOLS = [
-    {"name": "browse_sign_in", "risk": "write", "untrusted": True, "run": _browse_sign_in,
+    {"name": "browse_sign_in", "risk": "write", "untrusted": True, "timeout": 90, "run": _browse_sign_in,
      "description": ("Sign in on the page that's open in Theta's browser, with the user's login from 1Password or "
                      "Bitwarden. It "
                      "fills the username, password and one-time code itself (you never see them) and only on a page "
                      "whose address matches the login's saved website. Open the sign-in page with browse_open "
                      "first. item picks a login by title when several fit. Example: {} or {\"item\": \"Amazon\"}."),
      "params": {"type": "object", "properties": {"item": {"type": "string"}}}},
-    {"name": "browse_open", "risk": "read", "untrusted": True, "run": _browse_open,
+    {"name": "browse_open", "risk": "read", "untrusted": True, "timeout": 60, "run": _browse_open,
      "description": ("Open a web page in Theta's own browser and read it: you get its title, URL, the visible text "
                      "(about 1,000 chars; pass find='words' to jump to the part you need) and a numbered list of "
                      "links, buttons and fields, each with a ref like e7 for browse_act and browse_submit. Use it "
@@ -1367,7 +1367,7 @@ TOOLS = [
          "find": {"type": "string", "description": "Optional words to look for; the text shows the parts that "
                                                    "mention them."}},
          "required": ["url"]}},
-    {"name": "browse_act", "risk": "write", "untrusted": True, "run": _browse_act,
+    {"name": "browse_act", "risk": "write", "untrusted": True, "timeout": 90, "run": _browse_act,
      "description": ("Do things on the open page, in order, like a person would: click links or harmless "
                      "buttons, type into fields (dates as YYYY-MM-DD), pick dropdown options, hover to open a menu, "
                      "press a key (Escape closes pop-ups, ArrowDown+Enter picks a suggestion), scroll (with ref: to "
@@ -1389,7 +1389,7 @@ TOOLS = [
              "enter": {"type": "boolean", "description": "Press Enter after typing (search boxes only)."}},
              "required": ["do"]}}},
          "required": ["actions"]}},
-    {"name": "browse_submit", "risk": "send", "untrusted": True, "run": _browse_submit, "preview": _submit_preview,
+    {"name": "browse_submit", "risk": "send", "untrusted": True, "timeout": 75, "run": _browse_submit, "preview": _submit_preview,
      "description": ("Propose pressing a button that submits, buys, books, pays, posts, signs up, deletes or sends "
                      "on the open page. It does NOT press it: the user sees the page URL, every field that will be "
                      "sent (passwords and card numbers masked) and the button, with Approve and Discard, and only "
@@ -1405,7 +1405,7 @@ TOOLS = [
                     "items": {"type": "object", "properties": {"ref": {"type": "string"}, "text": {"type": "string"}},
                               "required": ["ref", "text"]}}},
          "required": ["url", "ref"]}},
-    {"name": "browse_screenshot", "risk": "read", "run": _browse_screenshot,
+    {"name": "browse_screenshot", "risk": "read", "timeout": 40, "run": _browse_screenshot,
      "description": ("Take a screenshot of the open page and save it. Returns a marker like [image:ab12]; put that "
                      "marker on its own line in your reply and the user sees the picture. Use it when they want to "
                      "see the page, or when the layout matters (a seat map, a chart). Example: {}. "
