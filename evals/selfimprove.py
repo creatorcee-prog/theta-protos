@@ -87,8 +87,25 @@ def call_json(provider, model, prompt, max_tokens=3000):
     return json.loads(m.group(0)) if m else {}
 
 
+KEEP_SETTINGS = ("selfcheck", "sim", "feedback_version", "profile")  # what Theta learned, and who the user is
+RESET_TABLES = ("jobs", "memory", "summary", "approvals", "plans", "routines", "workflows", "seen")
+
+
+def reset():
+    """Everything back to a clean start except the lessons, reviews and ratings, so a later round differs from the
+    first only by what Theta learned (not by reminders, plans or notes the earlier rounds left behind)."""
+    c = db._conn()
+    tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for t in RESET_TABLES:
+        if t in tables:
+            c.execute(f"DELETE FROM {t}")
+    c.execute(f"DELETE FROM settings WHERE key NOT IN ({','.join('?' * len(KEEP_SETTINGS))})", KEEP_SETTINGS)
+    c.commit()
+
+
 def turn(text):
-    """One real turn in an empty chat. Returns the reply message."""
+    """One real turn in a clean, empty chat. Returns the reply message."""
+    reset()
     old = [m["id"] for m in db.messages("theta", limit=500)]
     if old:
         db.delete_messages(old)
