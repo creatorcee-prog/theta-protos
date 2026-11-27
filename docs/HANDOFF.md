@@ -13,7 +13,8 @@ later).
   - `creatorcee-prog/theta-protos`: this app.
   - `creatorcee-prog/theta-app`: the older Theta on Vercel, which hosts Vantage.
 - **Branches:** work happens on `claude/loving-brahmagupta-y86b04`, and finished work is pushed to `main`.
-  Railway builds from `main`, but not automatically: the user starts each deploy on Railway.
+  Railway builds from `main`. Auto-deploy through the Railway GitHub App was set up on 2026-11-27 (earlier deploys were
+  started by hand); confirm a push went live with `/api/health`, whose `build` is the deployed commit.
 
 ## Where it runs
 - **Railway:** https://theta-protos-production.up.railway.app
