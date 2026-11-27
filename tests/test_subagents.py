@@ -50,7 +50,7 @@ MODE = {"sleep": 0.3, "hang": None}
 def fake_call(provider, model, messages, specs, max_tokens, on_text=None, tool_choice="auto", timeout=None):
     angle = messages[1]["content"].split("Your sub-question: ")[1]
     with _lock:
-        LOG.append({"angle": angle, "tools": [s["name"] for s in specs or []], "tool_choice": tool_choice,
+        LOG.append({"angle": angle, "asked": messages[1]["content"].split("<<<\n")[1].split("\n>>>")[0] if "<<<" in messages[1]["content"] else "", "tools": [s["name"] for s in specs or []], "tool_choice": tool_choice,
                     "t": time.monotonic(), "thread": threading.get_ident(), "n_msgs": len(messages)})
     if MODE["hang"] and MODE["hang"] in angle:
         time.sleep(5)
@@ -135,6 +135,12 @@ check("default cap is $0.50", subagents.daily_cap() == 0.50)
 ok, out = tools.execute("research", {"question": "q", "angles": ["a", "b"]}, {"bot": "theta", "subagent": True})
 check("a worker can't start research of its own", not ok)
 check("RELEVANT: research words use tools", tools.relevant("can you research e-bikes for me"))
+
+LOG.clear()
+MODE.update(sleep=0, hang=None)
+subagents.research("Best stroller?", ["prices", "reviews"], {"user_text": "a stroller under $300, no used ones"})
+check("each helper gets the user's own words too, not just the restated question",
+      len(LOG) >= 2 and all(e["asked"] == "a stroller under $300, no used ones" for e in LOG))
 
 if FAILED:
     print(f"{len(FAILED)} failed: {FAILED}")

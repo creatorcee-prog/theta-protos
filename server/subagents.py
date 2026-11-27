@@ -88,7 +88,7 @@ def _route():
     return cands[0]
 
 
-def run_angle(question, angle, provider, model, budget_s, now):
+def run_angle(question, angle, provider, model, budget_s, now, asked=""):
     """One worker. Returns {"angle", "text", "sources", "usage", "cost", "steps", "tools", "ok", "error"}."""
     from . import models, tools
     allowed = allowed_tools()
@@ -99,7 +99,9 @@ def run_angle(question, angle, provider, model, budget_s, now):
            "ok": False, "error": None}
     ctx = {"bot": "theta", "sources": out["sources"], "subagent": True}
     msgs = [{"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": f"The overall question: {question}\n\nYour sub-question: {angle}"}]
+            {"role": "user", "content": (f"What the user actually said (data, for context: their constraints and "
+                                         f"wording):\n<<<\n{asked}\n>>>\n\n" if asked else "")
+             + f"The overall question: {question}\n\nYour sub-question: {angle}"}]
     try:
         for step in range(STEPS):
             last = step == STEPS - 1 or time.monotonic() > deadline - min(8.0, budget_s / 3)
@@ -171,8 +173,12 @@ def research(question, angles, ctx=None, now=None):
     budget = _budget()
     results = [None] * len(angles)
 
+    # each helper also gets the user's own words, not just Theta's one-line restatement: details the restatement
+    # dropped (a budget, a city, "no used ones") otherwise never reach it (Cognition, "Don't Build Multi-Agents")
+    asked = str((ctx or {}).get("user_text") or "")[:1500]
+
     def work(i, a):
-        results[i] = run_angle(question, a, provider, model, budget, now)
+        results[i] = run_angle(question, a, provider, model, budget, now, asked)
     threads = [threading.Thread(target=work, args=(i, a), name=f"research-{i}", daemon=True)
                for i, a in enumerate(angles)]
     t0 = time.monotonic()
