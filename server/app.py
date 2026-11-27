@@ -438,6 +438,14 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
         rmeta["approvals"] = [a["id"] for a in approvals]
     if info.get("sources"):
         rmeta["sources"] = info["sources"]
+    if any(str(t).startswith("browse_") for t in info.get("tools") or []):
+        try:  # the last picture of Theta's screen, so the reply shows where the browser ended up
+            from . import live
+            shot = live.snapshot(bot)
+            if shot:
+                rmeta["screen"] = shot
+        except Exception:  # noqa: BLE001
+            pass
     out, cards = _cards_from_text(out, cards, tools_ran=bool(info.get("tools")))
     if not info.get("tools"):  # a tool turn's reply reports what was done; it isn't a list to fill in
         cards = _card_if_fits(text, out, cards)

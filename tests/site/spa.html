@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Lamp finder</title></head><body>
+<h1>Lamp finder</h1>
+<div role="tablist"><button role="tab" id="t1">Desk</button><button role="tab" id="t2">Floor</button></div>
+<div id="panel">Pick a kind of lamp.</div>
+<p id="slow"></p>
+<button type="button" id="tip" onclick="alert('Tip: warm white is 2700K')">Show tip</button>
+<p>Saved for later: Arc floor lamp <button type="button" id="rm" onclick="document.getElementById('st').textContent = confirm('Remove the Arc floor lamp?') ? 'Removed' : 'Kept'">Remove item</button> <span id="st"></span></p>
+<label>Photo <input type="file" id="photo" accept="image/*"></label> <span id="file"></span>
+<p><label id="msg-l">Message</label></p><div contenteditable="true" aria-labelledby="msg-l" id="msg" style="border:1px solid #ccc;min-height:40px"></div>
+<script>
+document.getElementById("t1").onclick = () => { document.getElementById("panel").textContent = "Desk lamps: Pixar Junior, Halo Mini"; };
+document.getElementById("t2").onclick = () => {
+  document.getElementById("panel").textContent = "Loading floor lamps…";
+  setTimeout(() => { document.getElementById("panel").textContent = "Floor lamps: Arc, Tripod, Torchiere"; }, 2500);
+};
+document.getElementById("photo").onchange = e => { const f = e.target.files[0]; document.getElementById("file").textContent = f ? "Attached " + f.size + " bytes" : ""; };
+</script></body></html>

@@ -727,7 +727,12 @@ def settings_route(req, start):
                                 "cap": _cap(), "today": calls_today(now), "hours": list(HOURS),
                                 "record": db.get_setting("record_calls") is not False,
                                 "provider": _provider_name(), "voice": db.get_setting("call_voice") or {},
-                                "voices": _voices()})
+                                "voices": _voices(), "setup": _setup()})
+
+
+def _setup():
+    from . import telco
+    return telco.setup_status()
 
 
 def test_route(req, start):

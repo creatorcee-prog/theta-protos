@@ -24,7 +24,7 @@ import threading
 
 FEATURES = ("google", "gcal", "routines", "workflows", "subagents", "media", "browser", "calls", "passkeys")
 FEATURES += ("reactions", "uploads", "gifs")  # stage 5, builder A: tapbacks, photos, GIFs
-# paused (stage 5 B, kept in commit 75eb145): FEATURES += ("live",)
+FEATURES += ("live",)  # Theta's screen: watch its browser work and take over (server/live.py)
 FEATURES += ("cards",)  # the card kit, connect cards, weather
 FEATURES += ("onboarding",)  # the first-run intro, in the chat
 FEATURES += ("contacts", "texts", "resume", "gactions", "gdrive", "approvals", "recordings", "modelcheck", "bank", "vault")  # saved contacts, texting, picking requests back up once connected

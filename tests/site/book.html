@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Book a visit</title>
+<style>
+body { font: 16px system-ui, sans-serif; padding: 16px; }
+label { display: block; margin: 10px 0 4px; }
+[role=listbox] { border: 1px solid #ccc; margin: 0; padding: 0; list-style: none; width: 220px; }
+[role=option] { padding: 6px; cursor: pointer; }
+[role=option][aria-selected=true] { background: #def; }
+#cities li { padding: 4px; }
+#cities li.on { background: #def; }
+</style></head>
+<body>
+<h1>Book a showroom visit</h1>
+<form method="post" action="/book">
+  <label for="name">Full name</label><input id="name" name="name" required>
+  <label for="email">Email</label><input id="email" name="email" type="email">
+  <label for="date">Date</label><input id="date" name="date" type="date">
+  <label for="time">Time</label>
+  <select id="time" name="time"><option>10:00</option><option>13:00</option><option>16:00</option></select>
+  <fieldset><legend>Where</legend>
+    <label><input type="radio" name="where" value="downtown" checked> Downtown</label>
+    <label><input type="radio" name="where" value="airport"> Airport</label>
+  </fieldset>
+  <label><input type="checkbox" name="parking" value="yes"> I need parking</label>
+  <label for="notes">Notes</label><textarea id="notes" name="notes"></textarea>
+  <label id="occ-l">Occasion</label>
+  <button type="button" id="occ" aria-haspopup="listbox" aria-labelledby="occ-l occ">Choose…</button>
+  <ul role="listbox" id="occ-list" hidden>
+    <li role="option">New home</li><li role="option">Gift</li><li role="option">Just looking</li>
+  </ul>
+  <input type="hidden" name="occasion" id="occ-v">
+  <label for="city">City</label><input id="city" name="city" autocomplete="off" role="combobox" aria-autocomplete="list">
+  <ul id="cities" hidden></ul>
+  <p><button type="submit">Book visit</button></p>
+</form>
+<script>
+const occ = document.getElementById("occ"), list = document.getElementById("occ-list");
+occ.onclick = () => { list.hidden = !list.hidden; };
+for (const o of list.children) o.onclick = () => {
+  for (const x of list.children) x.setAttribute("aria-selected", "false");
+  o.setAttribute("aria-selected", "true"); occ.textContent = o.textContent; document.getElementById("occ-v").value = o.textContent; list.hidden = true;
+};
+const CITIES = ["Denver", "Dallas", "Detroit", "Boulder"], city = document.getElementById("city"), ul = document.getElementById("cities");
+let hits = [], at = -1;
+const draw = () => { ul.replaceChildren(...hits.map((c, i) => { const li = document.createElement("li"); li.textContent = c; if (i === at) li.className = "on"; return li; })); ul.hidden = !hits.length; };
+city.addEventListener("input", () => { hits = CITIES.filter(c => c.toLowerCase().startsWith(city.value.toLowerCase()) && city.value); at = -1; draw(); });
+city.addEventListener("keydown", e => {
+  if (e.key === "ArrowDown" && hits.length) { at = Math.min(hits.length - 1, at + 1); draw(); e.preventDefault(); }
+  if (e.key === "Enter" && at >= 0) { city.value = hits[at]; hits = []; draw(); e.preventDefault(); }
+});
+</script>
+</body></html>

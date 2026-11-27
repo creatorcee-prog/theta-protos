@@ -70,7 +70,7 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 |---|---|---|
 | A: Google | `server/google.py`, `server/gcal.py`, `web/features/calendar.js`, `tests/test_google.py`, `tests/test_gcal.py` | Google sign-in; Gmail (search, read, drafts, send through approval); Calendar tools; Drive (search, read, create Docs and Slides); the in-app calendar, mirroring Google Calendar plus any calendar links |
 | B: Automation | `server/routines.py`, `server/workflows.py`, `server/subagents.py`, `server/media.py`, `web/features/routines.js`, `web/features/media.js`, tests | Routines and triggers; saved workflows; read-only research sub-agents; image generation |
-| C: Acting | `server/browser.py`, `server/calls.py`, `web/features/calls.js`, `web/features/browser.js`, `Dockerfile`, tests | A headless browser Theta drives (submitting or buying needs approval; no password vault yet); phone calls to the user, and to others with disclosure and approval |
+| C: Acting | `server/browser.py`, `server/calls.py`, `web/features/calls.js`, `web/features/browser.js`, `Dockerfile`, tests | A headless browser Theta drives (submitting or buying needs approval; logins from 1Password or Bitwarden; the user can watch and take over on Theta's screen); phone calls to the user, and to others with disclosure and approval |
 - A server feature may define `intercept(bot, text, user_msg)`: it can claim a chat message before the model
   (the intro takes typed answers this way) and returns the assistant messages it sent, or None.
 - `/api/chat` takes an optional `show`: the label the chat stores in place of `text` (a tapped option's prompt
@@ -112,6 +112,17 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   GOOGLE_API_KEY, ...) are adopted at start (models.KEY_ALIASES).
 - Bank accounts (`server/bank.py`): SimpleFIN Bridge, read-only. A setup token is claimed for an Access URL kept in
   the database (or SIMPLEFIN_ACCESS_URL); tools bank_accounts, bank_transactions; cached 30 min (~24 calls/day).
-- 1Password (`server/vault.py` + browser.py's browse_sign_in): a service account token (OP_SERVICE_ACCOUNT_TOKEN);
-  logins are used only on a page whose host matches the item's saved website; values never reach the model.
+- Password managers (`server/vault.py` + browser.py's browse_sign_in): 1Password through a service account token
+  (OP_SERVICE_ACCOUNT_TOKEN), Bitwarden through the `bw` CLI (`server/bitwarden.py`: BW_CLIENTID/BW_CLIENTSECRET
+  log in, BW_PASSWORD unlocks, BW_FOLDER limits it; TOTP codes computed from the seed, RFC 6238). Logins are used
+  only on a page whose host matches the item's saved website; values never reach the model.
+- Theta's screen (`server/live.py`, `web/features/live.js`): /api/live (state), /api/live/frame.jpg (CDP JPEG,
+  scaled, ≤4 fps), /api/live/act (the user's own taps, typing, keys, scroll, back, reload, goto; a page's confirm()
+  comes back to the user, and only their OK accepts it), /api/live/signins (list, DELETE signs out). A floating
+  live picture shows while a turn browses; a reply that browsed carries meta.screen (the last picture).
+- Browser (`server/browser.py`): reads iframes (refs f1e3) and shadow DOM, role widgets and pointer-styled
+  elements; actions click, type, select, hover, key, scroll (to a ref), wait (seconds or words), upload (a photo the
+  user sent), back. Popups and new tabs are adopted; dialogs are reported (an approved submit accepts its confirm);
+  Enter in an autocomplete box is allowed with form submission blocked. Sign-ins persist in
+  <data>/browser/signins.json. Real-Chromium checks: tests/test_browser_real.py against tests/site/.
 - Search first: the persona and tool guide tell the model to search instead of guessing or saying it doesn't know.

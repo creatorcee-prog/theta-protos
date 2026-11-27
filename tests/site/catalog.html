@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Catalog</title><style>li { height: 120px; }</style></head><body>
+<h1>All lamps</h1><ul id="l"></ul>
+<script>
+let n = 0; const l = document.getElementById("l");
+const more = () => { for (let i = 0; i < 15 && n < 60; i++) { const li = document.createElement("li"); li.textContent = "Item " + (++n); l.append(li); } };
+more();
+addEventListener("scroll", () => { if (innerHeight + scrollY > document.body.scrollHeight - 200) more(); });
+</script></body></html>

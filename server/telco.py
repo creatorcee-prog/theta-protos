@@ -77,6 +77,17 @@ def missing():
     return "set TELNYX_API_KEY, TELNYX_FROM and TELNYX_TEXML_APP_ID on the server"
 
 
+SETUP_VARS = ("TELNYX_API_KEY", "TELNYX_FROM", "TELNYX_TEXML_APP_ID", "TELNYX_PUBLIC_KEY", "PROTOS_PUBLIC_URL")
+
+
+def setup_status():
+    """Which of the Telnyx setup variables are set (names only, never values), for the in-app steps."""
+    if provider() == "twilio":
+        return {"provider": "twilio", "set": [], "missing": []}
+    return {"provider": "telnyx", "set": [k for k in SETUP_VARS if _env(k)],
+            "missing": [k for k in SETUP_VARS if not _env(k)]}
+
+
 # ---------------------------------------------------------------- Telnyx REST
 
 def _telnyx(method, path, body=None, form=False, raw=False):

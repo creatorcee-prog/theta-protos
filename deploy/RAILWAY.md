@@ -84,8 +84,14 @@ Dockerfile"). It starts from the official Playwright image, so Chromium and ever
 - **To turn browsing off** without changing the build, add the variable `THETA_BROWSER=0`.
 - **Safety:** Theta only opens public `http`/`https` sites, never addresses on private networks (including
   Railway's internal network). Anything that submits, buys, books, posts, signs up, deletes or sends waits for
-  your Approve tap, with the exact fields shown (passwords and card numbers masked). It never types passwords:
-  there's no password vault yet.
+  your Approve tap, with the exact fields shown (passwords and card numbers masked). The model never types a
+  password: logins come from 1Password or Bitwarden (below), or you sign in yourself on Theta's screen.
+- **Theta's screen:** while Theta browses, a small live picture floats above the chat; tap it (or ••• > Theta's
+  screen) to watch full size and take over: tap, swipe, type. Sites stay signed in between chats (cookies kept in
+  the volume, owner-only); Settings > Security > Theta's browser > Sign out forgets them all.
+- **Browser first:** for anything done on a website, Theta does it there itself. Connected apps (Gmail, Calendar,
+  Drive, texts, bank) still go through their APIs first: faster, surer, and Google often refuses sign-ins from
+  automated browsers.
 
 ## Phone calls and texts (Telnyx)
 Calls, texts and call recordings go through Telnyx. (Twilio still works if its variables are set and Telnyx's
@@ -149,6 +155,22 @@ Theta never sees the passwords: it fills them into the site itself, and only on 
 2. developer.1password.com > **Service accounts** > create one with read access to the Theta vault. Copy its token.
 3. On Railway, add `OP_SERVICE_ACCOUNT_TOKEN=ops_...` and deploy.
 Then ask Theta to do something behind a login ("check my water bill"); it opens the site and signs in.
+
+## Bitwarden (the same, from your Bitwarden vault)
+Theta uses the official Bitwarden CLI (the Dockerfile installs it), so it needs to log in and unlock like you do.
+1. Safest: a **separate Bitwarden account** holding only the logins Theta should use (share them to it from your
+   own vault). Or use a folder in your own account (step 3), knowing the master password opens everything.
+2. Bitwarden web vault > **Settings > Security > Keys > View API key**: copy `client_id` and `client_secret`.
+3. On Railway, add and deploy:
+   ```
+   BW_CLIENTID=user.xxxx
+   BW_CLIENTSECRET=...
+   BW_PASSWORD=...            (that account's master password, used only to unlock)
+   BW_FOLDER=Theta            (optional: only logins in this folder)
+   BW_SERVER=https://vault.bitwarden.eu   (only for the EU cloud or a self-hosted server)
+   ```
+Each login needs the site's address saved on it. One-time codes: if the login has an authenticator key saved,
+Theta fills the current code itself.
 
 ## Google: Gmail, Calendar, Drive, Docs and Slides
 One Google sign-in covers all of them. It takes about 15 minutes in a browser, once.

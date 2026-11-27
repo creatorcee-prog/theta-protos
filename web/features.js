@@ -2,7 +2,7 @@
 (() => {
   "use strict";
   const FEATURES = ["calendar", "routines", "calls", "browser", "media", "passkeys"];
-  // paused (stage 5 B, kept in commit 75eb145): FEATURES.push("activity", "live");
+  FEATURES.push("live"); // Theta's screen: watch its browser work, take over
   FEATURES.push("cards"); // the card kit
   FEATURES.push("onboarding"); // the first-run intro, in the chat
   FEATURES.push("contacts"); // Settings > General > Contacts

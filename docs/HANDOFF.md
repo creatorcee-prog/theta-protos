@@ -110,16 +110,17 @@ later).
 - **Web:** `node tests/shots.js` (headless iPhone checks and screenshots) and `python3 tests/test_web.py`.
 - **Live checks:** `DEEPSEEK_API_KEY=sk-dummy` works in the Claude sandbox, because its proxy injects the key.
 
+- **Browser first, with Theta's screen (Nov 27):** Theta does website jobs itself in its browser while the user can
+  watch live and take over; connected apps still use their APIs. Bitwarden joins 1Password for sign-ins; sites stay
+  signed in. The route guard had a bug since browsing began (Playwright passed the request into the handler's
+  session argument), so real Chromium never loaded a page on Railway; fixed, and `tests/test_browser_real.py`
+  now drives real Chromium through cookie walls, popups, iframes, shadow DOM, forms, autocomplete, infinite scroll,
+  dialogs, uploads and a two-step sign-in with a code.
+
 ## In the middle of (paused, saved, not running)
-- **Stage 5 B (activity line and live view)** is saved in commit `75eb145`; commit `01291a1` set it aside.
-  - **B:**
-    - honest `activity` stream events ("Reading your inbox · 4s", "Waking 3 helpers")
-    - `meta.timing` and "Took 6s · …" under replies
-    - tapping that line opens a live view of Theta's browser that the user can control (`server/live.py`,
-      `web/features/activity.js`, `web/features/live.js`, and changes to `app.py`, `agent.py` and `browser.py`)
-    - it was stopped partway: check it against current `app.py`/`agent.py` before restoring
-  - **To resume:** `git checkout 75eb145 -- <those files>`, add "live" (server) and "activity", "live" (web) to
-    `ext.FEATURES` and `web/features.js`, then run the suite.
+- **Theta's screen (the live view) is done and live**, rebuilt from the paused `75eb145` work: a floating live
+  picture while a turn browses, a full screen the user can drive, the last picture on the reply, and lasting
+  sign-ins. Still paused from `75eb145`: the honest `activity` stream events and `meta.timing` line.
 - **Stage 5 C onboarding is done and live** (rebuilt, not restored from `75eb145`): an in-chat intro shaped like
   Grok Bot's (`server/onboarding.py`, `web/features/onboarding.js`): hello and their name (typed), a name for
   the assistant (lettered A/B/C card, or typed; the `bot_name` setting renames header, home, composer and the
@@ -142,13 +143,13 @@ later).
    - `GEMINI_API_KEY`
    - `TAVILY_API_KEY` (web search)
    - `GIPHY_API_KEY`
-   - Twilio: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`
+   - Telnyx: the steps are in the app (Settings > Apps > Phone calls) and in `deploy/RAILWAY.md`
+   - Passwords: `OP_SERVICE_ACCOUNT_TOKEN` (1Password) or `BW_CLIENTID`, `BW_CLIENTSECRET`, `BW_PASSWORD` (Bitwarden)
 
    Then re-run the live walkthrough with screenshots.
-2. **Resume the paused work:** B (activity line and the live view of Theta's screen).
+2. **Resume the paused work:** the activity events and "Took 6s" timing line from `75eb145`.
 3. **From `docs/LATER.md`:**
    - **Slack connector**
-   - **Password vault:** Bitwarden or 1Password through placeholders the model never sees.
    - **Tighter browser address checks:** DNS rebinding, WebSockets, the first hop of a redirect.
    - **12-hour time** in the leave-by text.
    - **A native iPhone app** (Capacitor): removes iOS's keyboard bar and gives full haptics. Needs an Apple

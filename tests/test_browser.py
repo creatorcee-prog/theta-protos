@@ -223,7 +223,9 @@ class Page:
     def wait_for_load_state(self, state=None, timeout=None):
         pass
 
-    def evaluate(self, js):
+    def evaluate(self, js, arg=None):
+        if js is browser.FOCUS_JS:
+            return {}
         assert js is browser.SNAPSHOT_JS
         els = []
         for e in self.dom:
@@ -242,6 +244,27 @@ class Page:
     def locator(self, sel):
         return Locator(self, sel.split('"')[1])
 
+    # what the real browser has and these pages don't use: one frame, never closed, no dialogs
+    @property
+    def main_frame(self):
+        return self
+
+    @property
+    def frames(self):
+        return [self]
+
+    def is_closed(self):
+        return False
+
+    def wait_for_timeout(self, ms):
+        pass
+
+    def on(self, event, fn):
+        pass
+
+    def bring_to_front(self):
+        pass
+
     def screenshot(self, path=None, full_page=False, timeout=None):
         with open(path, "wb") as f:
             f.write(b"\x89PNG\r\n\x1a\nfake")
@@ -256,8 +279,16 @@ class Context:
     def route(self, pattern, handler):
         self.handler = handler
 
+    def on(self, event, fn):
+        pass
+
     def new_page(self):
-        return Page(self)
+        p = Page(self)
+        self.pages = getattr(self, "pages", []) + [p]
+        return p
+
+    def storage_state(self):
+        return {"cookies": [], "origins": []}
 
     def close(self):
         LOG["closed"] += 1
@@ -329,7 +360,7 @@ check("a search form's submit button is allowed in browse_act", ok and "Page: Re
 
 ok, out = tools.execute("browse_open", {"url": "https://shop.example/order"}, CTX)
 check("the checkout page lists its fields", ok and "[e1] text field \"Full name\"" in out
-      and "password field \"Password\" (only browse_sign_in fills it, from 1Password)" in out and "(submits: use browse_submit)" in out)
+      and "password field \"Password\" (only browse_sign_in fills it, from 1Password or Bitwarden)" in out and "(submits: use browse_submit)" in out)
 check("a password value never reaches the model", "hunter2" not in out)
 for ref, label in [("e8", "Place order"), ("e9", "Continue (type=submit in a form)"), ("e10", "Delete my account link")]:
     ok, out = tools.execute("browse_act", {"actions": [{"do": "click", "ref": ref}]}, CTX)
@@ -497,7 +528,7 @@ sys.modules["onepassword"] = types.SimpleNamespace(Client=FakeClient)
 os.environ["OP_SERVICE_ACCOUNT_TOKEN"] = "ops_test"
 vault._cache.update(t=0.0, items=[])
 ok, out = tools.execute("vault_logins", {}, CTX)
-check("vault_logins lists logins and their sites, never passwords", ok and "Bank: bank.example" in out
+check("vault_logins lists logins and their sites, never passwords", ok and "Bank (1Password): bank.example" in out
       and "Wifi" not in out and SECRET_PW not in out)
 LOG["typed_password"] = False
 tools.execute("browse_open", {"url": "https://bank.example/login"}, CTX)
@@ -507,11 +538,82 @@ check("browse_sign_in signs in through a two-step form and an authenticator code
 check("and no password or code ever reaches the model", SECRET_PW not in out and SECRET_CODE not in out)
 tools.execute("browse_open", {"url": "https://bank-login.example/login"}, CTX)
 ok, out = tools.execute("browse_sign_in", {}, CTX)
-check("a look-alike site gets nothing", not ok and "no 1Password login saved for bank-login.example" in out)
+check("a look-alike site gets nothing", not ok and "no saved login for bank-login.example" in out)
 ok, out = tools.execute("browse_act", {"actions": [{"do": "type", "ref": "e1", "text": "x"}]}, CTX)
 check("browse_sign_in is a write tool; the model still can't type into password fields itself",
       tools.BY_NAME["browse_sign_in"]["risk"] == "write")
 os.environ.pop("OP_SERVICE_ACCOUNT_TOKEN")
 check("without the token, 1Password shows as not connected", vault.connections()[0]["connected"] is False)
+
+# ---------------------------------------------------------------- Bitwarden (server/bitwarden.py), through a fake bw
+import json, stat, tempfile as _tf
+from server import bitwarden
+BW_DIR = _tf.mkdtemp()
+BW_LOG = os.path.join(BW_DIR, "log.jsonl")
+BW_SEED = "JBSWY3DPEHPK3PXP"
+FAKE_BW = r'''#!/usr/bin/env python3
+import json, os, sys
+args = [a for a in sys.argv[1:] if a != "--nointeraction"]
+state = os.path.join(os.environ["BITWARDENCLI_APPDATA_DIR"], "fake.json")
+st = json.load(open(state)) if os.path.exists(state) else {"status": "unauthenticated"}
+with open(LOG, "a") as f:
+    f.write(json.dumps({"argv": sys.argv[1:], "session": os.environ.get("BW_SESSION", "")}) + "\n")
+def save(): json.dump(st, open(state, "w"))
+items = [{"type": 1, "id": "b1", "name": "Bank (bw)", "folderId": "f1", "login": {"username": "sam@example.com",
+          "password": PW, "totp": "otpauth://totp/Bank:sam?secret=SEED&issuer=Bank", "uris": [{"uri": "https://bank.example/login"}]}},
+         {"type": 2, "id": "n1", "name": "A note", "folderId": "f1"},
+         {"type": 1, "id": "b2", "name": "Shop", "folderId": None, "login": {"username": "u", "password": "p", "uris": [{"uri": "shop.example"}]}}]
+cmd = args[0]
+if cmd == "status": print(json.dumps({"status": st["status"], "serverUrl": None}))
+elif cmd == "login":
+    assert os.environ["BW_CLIENTID"] == "user.abc" and os.environ["BW_CLIENTSECRET"] == "sec"; st["status"] = "locked"; save()
+elif cmd == "unlock":
+    if os.environ.get("BW_PASSWORD") != "master-pw": sys.stderr.write("Invalid master password.\n"); sys.exit(1)
+    st["status"] = "unlocked"; save(); print("SESSIONKEY", end="")
+elif cmd == "sync": print("Syncing complete.")
+elif cmd == "list" and args[1] == "folders": print(json.dumps([{"id": "f1", "name": "Theta"}]))
+elif cmd == "list" and args[1] == "items":
+    assert os.environ.get("BW_SESSION") == "SESSIONKEY"
+    fid = args[args.index("--folderid") + 1] if "--folderid" in args else None
+    print(json.dumps([i for i in items if fid is None or i.get("folderId") == fid]))
+elif cmd == "get" and args[1] == "item":
+    print(json.dumps(next(i for i in items if i["id"] == args[2])))
+else: sys.exit(2)
+'''.replace("LOG", repr(BW_LOG)).replace("PW", repr(SECRET_PW)).replace("SEED", BW_SEED)
+bw_path = os.path.join(BW_DIR, "bw")
+with open(bw_path, "w") as f:
+    f.write(FAKE_BW)
+os.chmod(bw_path, os.stat(bw_path).st_mode | stat.S_IEXEC)
+check("Bitwarden: not connected without its variables", not bitwarden.available() and vault.connections()[1]["connected"] is False)
+os.environ.update(BW_BIN=bw_path, BW_CLIENTID="user.abc", BW_CLIENTSECRET="sec", BW_PASSWORD="master-pw", BW_FOLDER="Theta")
+bitwarden.reset(); vault._cache.update(t=0.0, items=[])
+ok, out = tools.execute("vault_logins", {}, CTX)
+check("Bitwarden logins are listed by title and site, only from BW_FOLDER", ok and "Bank (bw) (Bitwarden): bank.example" in out
+      and "Shop" not in out and "A note" not in out and SECRET_PW not in out)
+calls = [json.loads(l) for l in open(BW_LOG)]
+check("it logs in with the API key, unlocks with the password from the environment, never on the command line",
+      [c["argv"][0] for c in calls][:4] == ["status", "login", "unlock", "sync"]
+      and not any("master-pw" in " ".join(c["argv"]) or "sec" in c["argv"] for c in calls))
+check("RFC 6238: the code for a known seed and time", bitwarden.totp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", now=59) == "287082"
+      and bitwarden.totp("otpauth://totp/x?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=8", now=59) == "94287082")
+check("formats Theta can't compute give no code", bitwarden.totp("steam://ABC") == "" and bitwarden.totp("not base32!") == "")
+LOG["typed_password"] = False
+tools.execute("browse_open", {"url": "https://bank.example/login"}, CTX)
+os.environ.pop("OP_SERVICE_ACCOUNT_TOKEN", None)
+ok, out = tools.execute("browse_sign_in", {}, CTX)
+check("browse_sign_in signs in from Bitwarden: username, password and the code it works out", ok
+      and "Bitwarden login 'Bank (bw)'" in out and "filled: username, password, code" in out and LOG["typed_password"])
+check("no password, seed or code from Bitwarden reaches the model", SECRET_PW not in out and BW_SEED not in out
+      and bitwarden.totp(BW_SEED) not in out)
+n = len(open(BW_LOG).readlines())
+tools.execute("vault_logins", {}, CTX)
+check("the session key is reused: no new login or unlock", not any(json.loads(l)["argv"][0] in ("login", "unlock")
+      for l in open(BW_LOG).readlines()[n:]))
+os.environ["BW_PASSWORD"] = "wrong"; bitwarden.reset(); vault._cache.update(t=0.0, items=[])
+ok, out = tools.execute("vault_logins", {}, CTX)
+check("a wrong master password says so, without echoing it", not ok and "Invalid master password" in out and "wrong" not in out.replace("wrong master", ""))
+for k in ("BW_BIN", "BW_CLIENTID", "BW_CLIENTSECRET", "BW_PASSWORD", "BW_FOLDER"):
+    os.environ.pop(k)
+bitwarden.reset()
 
 print("all browser tests passed")

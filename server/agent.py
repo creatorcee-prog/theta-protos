@@ -216,7 +216,7 @@ MAX_NOTES = 2   # progress texts per turn: "On it, I'll..." and at most one upda
 
 
 _CLAIM = re.compile(r"(?i)\b(done|set|all set|finished|sent|added|saved|created|booked|scheduled|fixed|archived|"
-                    r"deleted|trashed|moved)\b(?!\s+(?:it|that|this|them|up|you)\b)")  # a result, before it happened
+                    r"deleted|trashed|moved|filled|submitted|signed in|waiting (?:on|for) your)\b(?!\s+(?:it|that|this|them|up|you)\b)")  # a result, before it happened
 
 
 _DOING = re.compile(r"(?i)^(\w+ing\b|i'?ll\b|i will\b|i'?m\b|let me\b|going to\b|on it\b|now\b)")  # progress, not a result

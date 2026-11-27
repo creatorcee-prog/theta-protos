@@ -10,7 +10,7 @@
   t.append(T.el("b", null, "Theta's browser"), s); r.append(t); g.append(r);
   const say = c => {
     s.textContent = c && c.connected
-      ? "Available. Theta can open sites, read them and fill in forms. Submitting, buying or booking always waits for your OK, and it never types passwords."
+      ? "Available. Theta opens sites, reads them, fills in forms and stays signed in. Buying, booking or sending waits for your OK; passwords come only from 1Password or Bitwarden. Watch or take over from Theta's screen in the ••• menu."
       : "Not available on this server yet (it needs Playwright and Chromium; the repo's Dockerfile installs them).";
   };
   let done = false;

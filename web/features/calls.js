@@ -26,6 +26,15 @@
   width: 100%; max-width: 230px; outline: none; }
 .calls-phone:focus { box-shadow: 0 0 0 2px #3a3a3a; }
 .calls-note { color: var(--muted); font-size: 14px; margin: 0; padding: 0 0 12px; line-height: 1.35; }
+.calls-setup { background: #1d1d1d; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 4px 0 12px; font-size: 14.5px; line-height: 1.4; }
+.calls-setup h4 { margin: 0 0 6px; font-size: 15px; }
+.calls-setup ol { margin: 6px 0 0; padding-left: 20px; }
+.calls-setup li { margin: 0 0 8px; }
+.calls-setup code { background: #2a2a2a; border-radius: 6px; padding: 1px 5px; font-size: 13px; word-break: break-all; }
+.calls-setup .cs-copy { margin-left: 6px; font-size: 12.5px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+.calls-setup .cs-vars { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.calls-setup .cs-var { font-size: 12.5px; border-radius: 999px; padding: 2px 9px; background: #2a2a2a; color: var(--muted); }
+.calls-setup .cs-var.ok { background: #16351f; color: #8fe0a5; }
 .calls-sample { padding: 8px 0 14px; }
 .calls-sample .msg { max-width: 100%; }
 `;
@@ -126,12 +135,47 @@
     elModel.replaceChildren(); elModel.hidden = !o.models;
     for (const m of o.models || []) { const op = el("option", null, m); op.value = m; elModel.append(op); }
   };
-  g.append(pr.r, nr.r, rr.r, recr.r, vr.r, elWrap, tr.r, note);
+  // the Telnyx setup steps, right here (with this app's own addresses), until calling works
+  const setupBox = el("div", "calls-setup"); setupBox.hidden = true;
+  const link = (href, text) => { const a = el("a", null, text); a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer"; return a; };
+  const codeCopy = text => {
+    const w = el("span"), c = el("code", null, text), b = el("button", "cs-copy", "Copy"); b.type = "button";
+    b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(text); T.toast("Copied."); } catch (e) { T.toast(text, 6000); } });
+    w.append(c, b); return w;
+  };
+  function renderSetup(st) {
+    const miss = (st && st.missing) || [], have = new Set((st && st.set) || []);
+    setupBox.hidden = !!state.configured && !miss.length;
+    if (setupBox.hidden) return;
+    const base = location.origin;
+    const li = (...parts) => { const n = el("li"); n.append(...parts); return n; };
+    const b = t => el("b", null, t);
+    const ol = el("ol");
+    ol.append(
+      li("Make an account at ", link("https://telnyx.com/sign-up", "telnyx.com"), " and add a payment method."),
+      li(b("Numbers > Buy Numbers"), ": pick one with voice and SMS."),
+      li(b("Voice > Programmable Voice > TeXML Applications > Add"), ". Voice URL (POST): ", codeCopy(base + "/api/calls/inbound"),
+        ". Save, assign your number to it, and copy the application's ", b("ID"), "."),
+      li(b("Messaging > Messaging Profiles > Add"), ". Webhook URL (API v2): ", codeCopy(base + "/api/texts/inbound"),
+        ". Assign your number. For US texts, register under ", b("Messaging > 10DLC"), " (sole proprietor); carriers block unregistered texts."),
+      li(b("Account > API Keys > Create"), " (copy it) and ", b("Account > Public Key"), " (copy it)."),
+      li("On Railway > your service > ", b("Variables"), ", add these, then redeploy:"));
+    const vars = el("div", "cs-vars");
+    const vals = {TELNYX_API_KEY: "the API key", TELNYX_FROM: "your number, +1…", TELNYX_TEXML_APP_ID: "step 3's ID", TELNYX_PUBLIC_KEY: "the public key", PROTOS_PUBLIC_URL: base};
+    for (const k of ["TELNYX_API_KEY", "TELNYX_FROM", "TELNYX_TEXML_APP_ID", "TELNYX_PUBLIC_KEY", "PROTOS_PUBLIC_URL"]) {
+      const v = el("span", "cs-var" + (have.has(k) ? " ok" : ""), (have.has(k) ? "✓ " : "") + k); v.title = have.has(k) ? "Set" : "Not set: " + vals[k]; vars.append(v);
+    }
+    const last = ol.lastChild; last.append(vars, el("div", "calls-note", "Green ones are already set. PROTOS_PUBLIC_URL is " + base + "."));
+    ol.append(li("Back here: enter your number and name, pick a voice, and tap ", b("Test call"), "."));
+    setupBox.replaceChildren(el("h4", null, "Set up calls and texts (about 15 minutes)"), ol);
+  }
+  g.append(setupBox, pr.r, nr.r, rr.r, recr.r, vr.r, elWrap, tr.r, note);
 
   let state = {};
   const status = () => {
     if (T.state.demo) { note.textContent = "Demo: sample values. On Theta these save to the server."; return; }
-    if (!state.configured) note.textContent = "Calling isn't set up on the server yet (Telnyx keys). See deploy/RAILWAY.md.";
+    renderSetup(state.setup);
+    if (!state.configured) note.textContent = "Calling isn't set up yet: follow the steps above.";
     else if (!state.public_url) note.textContent = "Set PROTOS_PUBLIC_URL on the server so the phone service can reach Theta.";
     else note.textContent = `Calls to others: ${state.today || 0} of ${state.cap ?? 5} today, ${(state.hours || [8, 21])[0]}:00–${(state.hours || [8, 21])[1]}:00 your time, each one only after you approve it.`;
   };

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Lamp Shop</title>
+<style>
+body { font: 16px system-ui, sans-serif; margin: 0; }
+nav { display: flex; gap: 18px; padding: 12px; background: #eee; }
+.menu { position: relative; }
+.menu .drop { display: none; position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #ccc; padding: 8px; }
+.menu:hover .drop { display: block; }
+#cookies { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; }
+#cookies .box { background: #fff; width: 100%; padding: 20px; }
+main { padding: 16px; }
+</style></head>
+<body>
+<nav>
+  <a href="/search?q=all">Products</a>
+  <a href="/deals.html" target="_blank">Deals</a>
+  <div class="menu"><span tabindex="0">Account</span><div class="drop"><a href="/orders.html">Order history</a></div></div>
+  <button type="button" id="help" onclick="window.open('/help.html', 'help', 'width=400,height=500')">Open help</button>
+</nav>
+<main>
+  <h1>Lamps for every room</h1>
+  <form role="search" action="/search" method="get">
+    <input type="search" name="q" aria-label="Search lamps">
+    <button type="submit">Search</button>
+  </form>
+  <promo-box></promo-box>
+  <p>Get our newsletter:</p>
+  <iframe id="news" src="http://news.test:PORT/newsletter.html" width="420" height="160" title="Newsletter"></iframe>
+  <p><a href="/book.html">Book a showroom visit</a> · <a href="/catalog.html">Full catalog</a> · <a href="/spa.html">Lamp finder</a></p>
+  <img src="http://127.0.0.1:PORT/private.png" alt="" width="1" height="1">
+</main>
+<div id="cookies"><div class="box">We use cookies. <button type="button" onclick="document.getElementById('cookies').remove()">Accept all</button></div></div>
+<script>
+customElements.define("promo-box", class extends HTMLElement {
+  connectedCallback() {
+    const r = this.attachShadow({mode: "open"});
+    r.innerHTML = '<label>Promo code <input id="code"></label> <button type="button" id="apply">Apply code</button> <span id="msg"></span>';
+    r.getElementById("apply").onclick = () => { r.getElementById("msg").textContent = "Code " + r.getElementById("code").value + " applied"; };
+  }
+});
+</script>
+</body></html>
