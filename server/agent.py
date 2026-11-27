@@ -293,6 +293,10 @@ def _run_tools(calls, ctx, emit, info, deadline):
     return results
 
 
+class Stopped(Exception):
+    """The user tapped Stop."""
+
+
 NOTE_MAX = 160  # longest note kept from the text before tool calls
 HOLD_MAX = 700  # text held back while it might turn out to come before tool calls
 MAX_NOTES = 2   # progress texts per turn: "On it, I'll..." and at most one update
@@ -303,6 +307,41 @@ _CLAIM = re.compile(r"(?i)\b(done|set|all set|finished|sent|added|saved|created|
 
 
 _DOING = re.compile(r"(?i)^(\w+ing\b|i'?ll\b|i will\b|i'?m\b|let me\b|going to\b|on it\b|now\b)")  # progress, not a result
+
+
+# A finished reply that says something was done ("I've set...", "Dropped the dentist.", "Done.") when no tool did it
+# this turn. The model must never be the only judge of what happened: such a reply is sent back once, with what
+# really ran, to either do it now or say plainly it didn't.
+_DID = re.compile(r"(?i)(?:^|[.!?]\s+|\n)(?:done\b|all set\b|i(?:'ve| have)? (?:just )?(?:set|sent|added|saved|created|booked|"
+                  r"scheduled|cancel+ed|removed|dropped|deleted|moved|updated|changed|forgot(?:ten)?|cleared|turned|"
+                  r"emailed|texted|called|unsubscribed|archived|trashed|noted|swapped|replaced)\b|"
+                  r"(?:cancel+ed|removed|dropped|deleted|moved|updated|changed|cleared|forgotten|swapped|replaced)[.:!]|"
+                  r"(?:it'?s|that'?s|you'?re) (?:now )?(?:set|done|booked|scheduled|cancel+ed|gone|removed|updated)\b)")
+_UNDO_WORDS = re.compile(r"(?i)\b(cancel+ed|removed|dropped|deleted|forgot(?:ten)?|cleared|gone|instead|swapped|replaced)\b")
+_UNDO_TOOLS = ("cancel", "delete", "trash", "forget", "memory_edit", "remind_change", "archive", "unsubscribe", "move")
+CHECK_NOTE = ("[Check from the app, not the user] Your reply says something was done, but {what}. Nothing happens "
+              "unless a tool does it. Either call the right tool now, or tell the user plainly what you did and "
+              "didn't do (and what you can't do yet). Don't repeat the earlier reply; write the real one.")
+
+
+_LATER = re.compile(r"(?i)\b(?:once|when|as soon as|the moment)\b[^.!?\n]{0,40}\bconnect(?:ed|s)?\b[^.!?\n]{0,60}"
+                    r"\b(?:i'?ll|i will)\b|\bi'?ll\b[^.!?\n]{0,60}\b(?:once|when|as soon as|the moment)\b[^.!?\n]{0,40}\bconnect")
+
+
+def unbacked_claim(text, info):
+    """'' when the reply only claims what this turn's tools did, else what's missing (for CHECK_NOTE)."""
+    if text and _LATER.search(text) and not info.get("approvals") and not info.get("ok_tools"):
+        return ("it promises to pick this up once something's connected, but no tool was called, so nothing will be "
+                "picked up (calling the send tool with the full content is what saves it and shows the connect card)")
+    if not text or not _DID.search(text):
+        return ""
+    ran = [n for n in info.get("ok_tools", []) if (tools.BY_NAME.get(n) or {}).get("risk") in ("write", "send")]
+    if not ran and not info.get("side_effects") and not info.get("approvals"):
+        return "no tool changed anything this turn"
+    if _UNDO_WORDS.search(text) and not any(k in n for n in ran for k in _UNDO_TOOLS):
+        return "it also says something was removed, cancelled or replaced, and no tool removed anything (only " + \
+               ", ".join(sorted(set(ran))) + " ran)"
+    return ""
 
 
 def _claims(sentence):
@@ -359,7 +398,11 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
     cleaner = persona.Cleaner()
     state = {"sep": False, "hold": "", "held": on_note is not None, "notes": 0}
 
+    stopped = ctx.get("stopped") if callable(ctx.get("stopped")) else (lambda: False)
+
     def on_text(chunk):
+        if stopped():
+            raise Stopped()  # cuts the model's stream at once
         if not chunk:
             return
         # A step's opening words are held while short: if tool calls follow, they're a note of their own
@@ -381,6 +424,12 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
             info["emitted"] = True
             emit("delta", {"text": out})
 
+    save0 = ctx.get("checkpoint")
+    if callable(save0):  # saved before the first step too, so a crash before it finishes is picked up again
+        try:
+            save0(msgs, info)
+        except Exception:  # noqa: BLE001
+            pass
     final = False
     while True:
         # messages the user sent while Theta works arrive here, between steps, and steer the rest of the turn
@@ -401,9 +450,15 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
         if f"{provider}/{model}" not in info["tried"]:
             info["tried"].append(f"{provider}/{model}")
         remaining = max(10.0, deadline - time.monotonic())
+        if stopped():
+            info["stopped"] = True
+            break
         try:
             res = models.call(provider, model, msgs, specs, max_tokens, on_text=on_text,
                               tool_choice="none" if final else "auto", timeout=remaining)
+        except Stopped:
+            info["stopped"] = True
+            break
         except models.ModelError as e:
             clean_slate = not info["emitted"] and not info["side_effects"] and not info["approvals"]
             if clean_slate and ci + 1 < len(cands):
@@ -430,6 +485,17 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
             state["held"] = False
             on_text(held)
         state["held"] = on_note is not None
+        if not calls and not final and not state.get("checked"):
+            what = unbacked_claim(res.get("text") or "", info)
+            if what:  # take the reply back and have it either do the thing or say it didn't
+                state["checked"] = True
+                info["claim_checked"] = what
+                emit("reset", {"why": "check"})
+                cleaner = persona.Cleaner()
+                info["emitted"] = False
+                msgs.append({"role": "assistant", "content": res.get("text") or ""})
+                msgs.append({"role": "user", "content": CHECK_NOTE.format(what=what)})
+                continue
         if not calls or final:
             break
         if info["steps"] == 1 and not info["emitted"] and on_tool_start:
@@ -459,6 +525,13 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
             from . import activity as A
             what = A.describe(unresolved[-1]["name"], unresolved[-1]["args"])[0]
             on_text(f"\n\n(One step didn't work: {what[:1].lower() + what[1:]}: {unresolved[-1]['error'][:140]})")
+    if info.get("stopped"):
+        state["held"] = False
+        stopped = lambda: False  # noqa: E731  (on_text reads this) let the note through
+        ran = [n for n in info.get("ok_tools", []) if (tools.BY_NAME.get(n) or {}).get("risk") in ("write", "send")]
+        on_text("\n\n(Stopped." + (" What already ran: " + ", ".join(sorted(set(ran))) + "." if ran else " Nothing was changed.") + ")")
+    if state.get("checked") and unbacked_claim(cleaner.full, info):  # still claiming after the check: say so in code
+        on_text("\n\n(To be clear: nothing was actually changed this turn.)")
     tail = cleaner.finish()
     if tail:
         info["emitted"] = True

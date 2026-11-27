@@ -8,8 +8,11 @@
   done aren't repeated) and the reply lands in the chat like any other. A turn is resumed at most once.
 - recent_tools(): the tools the last few turns used, loaded up front (a follow-up usually needs the same ones).
 
+- stop(): the Stop button. The running turn ends at once: the model's stream is cut, no new step starts, and the
+  reply keeps what was written so far plus a plain note (a tool already running finishes; nothing new starts).
+
 Routes: POST /api/chat/steer {bot, text, show?} -> {mode: "steered", user} or {mode: "later"} (nothing running;
-the app sends it as a normal message once the reply is done).
+the app sends it as a normal message once the reply is done). POST /api/chat/stop {bot} -> {stopped: bool}.
 """
 import threading
 import time
@@ -25,7 +28,7 @@ MAX_CHECKPOINT = 3_000_000  # chars
 class Run:
     def __init__(self, bot, user_id):
         self.bot, self.user_id = bot, user_id
-        self.inbox, self.pending, self.closed = [], [], False
+        self.inbox, self.pending, self.closed, self.stopped = [], [], False, False
         self.lock = threading.Lock()
 
     def take(self):
@@ -79,6 +82,18 @@ def steer(bot, text, show=None):
         run.inbox.append(text)
         run.pending.append(msg)
     return msg
+
+
+def stop(bot):
+    """Stop the running turn. False if nothing is running."""
+    with _lock:
+        run = RUNS.get(bot)
+    if run is None or run.closed:
+        return False
+    run.stopped = True
+    with run.lock:
+        run.pending = []  # a message sent mid-turn isn't answered after a stop either
+    return True
 
 
 def recent_tools(history, turns=4):
@@ -164,4 +179,14 @@ def steer_route(req, start):
     return respond_json(start, {"mode": "steered", "user": msg} if msg else {"mode": "later"})
 
 
-ROUTES = {"/api/chat/steer": steer_route}
+def stop_route(req, start):
+    from .app import BOT_IDS, HTTPError, respond_json
+    if req.method != "POST":
+        raise HTTPError(405, "method not allowed")
+    bot = (req.json() or {}).get("bot") or "theta"
+    if bot not in BOT_IDS:
+        raise HTTPError(404, "unknown bot")
+    return respond_json(start, {"stopped": stop(bot)})
+
+
+ROUTES = {"/api/chat/steer": steer_route, "/api/chat/stop": stop_route}

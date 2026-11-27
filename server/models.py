@@ -23,6 +23,7 @@ LOCAL_LLM_URL (+ LOCAL_LLM_MODEL, optional LOCAL_LLM_KEY).
 import json
 import os
 import socket
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -160,7 +161,22 @@ def _set_usage(usage, tokens_in=None, tokens_out=None, cache_read=None, cache_wr
 
 # ---- HTTP + SSE
 
+RETRY_WAITS = (1.0, 2.5)  # a brief 429 / 5xx from the same provider is tried again before falling back
+
+
 def _post(provider, url, headers, body, timeout=None):
+    """Open the request. A rate limit or server error before anything streamed is retried on the same provider
+    (nothing has been shown or done yet, so it's safe), up to len(RETRY_WAITS) times."""
+    for wait in RETRY_WAITS + (None,):
+        try:
+            return _post_once(provider, url, headers, body, timeout)
+        except ModelError as e:
+            if wait is None or not (e.status in (429, 500, 502, 503, 504, 529)):
+                raise
+            time.sleep(min(5.0, max(wait, getattr(e, "retry_after", 0) or 0)))
+
+
+def _post_once(provider, url, headers, body, timeout=None):
     data = json.dumps(body, ensure_ascii=False).encode()
     h = {"Content-Type": "application/json", "Accept": "text/event-stream", "User-Agent": UA}
     h.update(headers)
@@ -326,8 +342,10 @@ def _openai_gen(provider, model, messages, max_tokens, tools=None, usage=None, t
     resp = _post(provider, url, headers, body, timeout)
     calls = {}
     _set_usage(usage)
+    ended = False  # a stream that just stops (no [DONE], no finish_reason) was cut off, not finished
     for _ev, data in _events(provider, resp):
         if data.strip() == "[DONE]":
+            ended = True
             break
         try:
             j = json.loads(data)
@@ -341,6 +359,10 @@ def _openai_gen(provider, model, messages, max_tokens, tools=None, usage=None, t
         elif isinstance(j.get("x_groq"), dict) and j["x_groq"].get("usage"):
             _openai_usage(j["x_groq"]["usage"], usage)
         for ch in j.get("choices") or []:
+            if ch.get("finish_reason"):
+                ended = True
+                if ch["finish_reason"] == "length" and isinstance(usage, dict):
+                    usage["cut"] = "length"  # hit max_tokens: the reply is shown as cut short
             delta = ch.get("delta") or {}
             # deepseek-reasoner streams its thinking as reasoning_content: never shown, kept for tool turns
             if delta.get("reasoning_content"):
@@ -357,6 +379,8 @@ def _openai_gen(provider, model, messages, max_tokens, tools=None, usage=None, t
                     slot["name"] += fn["name"]
                 if fn.get("arguments"):
                     slot["args"] += fn["arguments"]
+    if not ended:
+        raise ModelError(f"{provider}: the reply stream was cut off before it finished", provider=provider, retryable=True)
     if calls:
         yield "tool_calls", [{"id": c["id"] or _call_id(), "name": c["name"], "args": _parse_args(c["args"])}
                              for _i, c in sorted(calls.items())]
@@ -411,7 +435,7 @@ def _anthropic_gen(provider, model, messages, max_tokens, tools=None, usage=None
     body = _anthropic_body(model, messages, max_tokens, tools, tool_choice)
     headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
     resp = _post(provider, "https://api.anthropic.com/v1/messages", headers, body, timeout)
-    blocks = {}
+    blocks, ended = {}, False
     u = {"in": 0, "read": 0, "write": 0, "out": 0}
     _set_usage(usage)
 
@@ -451,7 +475,10 @@ def _anthropic_gen(provider, model, messages, max_tokens, tools=None, usage=None
             err = j.get("error") or {}
             raise ModelError(f"anthropic: {err.get('message') or err}", provider=provider)
         elif kind == "message_stop":
+            ended = True
             break
+    if not ended:
+        raise ModelError(f"{provider}: the reply stream was cut off before it finished", provider=provider, retryable=True)
     if blocks:
         yield "tool_calls", [{"id": b["id"], "name": b["name"], "args": _parse_args(b["args"])}
                              for _i, b in sorted(blocks.items())]

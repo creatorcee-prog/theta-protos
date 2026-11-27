@@ -457,6 +457,7 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
             "user_text": (user.get("meta") or {}).get("prompt") or user.get("text") or text}
     run = runtime.begin(bot, user["id"], route)
     tctx["inbox"] = run.take
+    tctx["stopped"] = lambda: run.stopped
     tctx["checkpoint"] = lambda m, i: runtime.checkpoint(bot, user["id"], route, m, i)
     try:
         final = agent.run(route, msgs, emit, info=info, ctx=tctx,
@@ -949,14 +950,79 @@ def chat(req, start):
     return _run_chat(req, start, bot, text, images, client_id, show=show[:80].strip() if show else None, files=fids)
 
 
+_inflight = set()
+_inflight_lock = threading.Lock()
+SAME_SEND_WAIT = 300  # how long a repeated send waits for the first one's reply
+
+
+def _sent_before(bot, client_id):
+    """The user message this phone already sent with this client_id (a double tap, or "Try again" after a dropped
+    stream while the server was still answering), or None."""
+    if not client_id:
+        return None
+    return next((m for m in reversed(db.messages(bot, limit=60)) if m["role"] == "user"
+                 and (m.get("meta") or {}).get("client_id") == str(client_id)[:80]), None)
+
+
+def _replay(bot, user):
+    """The events for a message that's already being (or been) answered: its user message, then the reply once
+    it exists. Nothing runs twice."""
+    yield "user", user
+    end = time.time() + SAME_SEND_WAIT
+    while time.time() < end:
+        reply = next((m for m in db.since(user["id"], bot=bot, limit=50) if m["role"] == "assistant"
+                      and (m.get("meta") or {}).get("reply_to") == user["id"] and not (m.get("meta") or {}).get("ack")), None)
+        if reply:
+            yield "done", reply
+            return
+        time.sleep(0.5)
+    yield "error", {"error": "Still working on your earlier message; it'll show up here when it's done."}
+
+
 def _run_chat(req, start, bot, text, images, client_id, edit=None, show=None, files=None):
-    """Run _chat_worker and answer with its SSE stream (or one JSON object with ?stream=0)."""
+    """Run _chat_worker and answer with its SSE stream (or one JSON object with ?stream=0). The same client_id sent
+    twice runs once: the second request gets the first one's reply."""
+    key = (bot, str(client_id)[:80]) if client_id and not edit else None
+    with _inflight_lock:
+        dup = key and (key in _inflight or _sent_before(bot, client_id))
+        if key and not dup:
+            _inflight.add(key)
+    if dup:
+        user = _sent_before(bot, client_id)
+        for _ in range(20):  # the first request may not have stored it yet
+            if user:
+                break
+            time.sleep(0.1)
+            user = _sent_before(bot, client_id)
+        events = _replay(bot, user) if user else iter([("error", {"error": "That message is already being sent."})])
+        if req.query.get("stream") == "0":
+            got = dict(events)
+            return respond_json(start, {"user": got.get("user"), "reply": got.get("done")} if "done" in got
+                                else {"error": (got.get("error") or {}).get("error")}, 200 if "done" in got else 409)
+        start("200 OK", _headers("text/event-stream; charset=utf-8",
+                                 [("Cache-Control", "no-cache, no-transform"), ("X-Accel-Buffering", "no")]))
+        return (_sse(ev, data) for ev, data in events)
+    try:
+        return _run_chat_once(req, start, bot, text, images, client_id, edit=edit, show=show, files=files, key=key)
+    except BaseException:
+        if key:
+            with _inflight_lock:
+                _inflight.discard(key)
+        raise
+
+
+def _run_chat_once(req, start, bot, text, images, client_id, edit=None, show=None, files=None, key=None):
     if req.query.get("stream") == "0":
         got = {}
 
         def keep(ev, data):
             got[ev] = data
-        _chat_worker(bot, text, images, client_id, keep, edit=edit, show=show, files=files)
+        try:
+            _chat_worker(bot, text, images, client_id, keep, edit=edit, show=show, files=files)
+        finally:
+            if key:
+                with _inflight_lock:
+                    _inflight.discard(key)
         if "done" in got:
             out = {"user": got["user"], "reply": got["done"]}
             if "ack" in got:
@@ -966,8 +1032,15 @@ def _run_chat(req, start, bot, text, images, client_id, edit=None, show=None, fi
                                     "user": got.get("user")}, 502)
 
     q = queue.Queue()
-    threading.Thread(target=_chat_worker, args=(bot, text, images, client_id, lambda e, d: q.put((e, d))),
-                     kwargs={"edit": edit, "show": show, "files": files}, name="chat", daemon=True).start()
+
+    def work():
+        try:
+            _chat_worker(bot, text, images, client_id, lambda e, d: q.put((e, d)), edit=edit, show=show, files=files)
+        finally:
+            if key:
+                with _inflight_lock:
+                    _inflight.discard(key)
+    threading.Thread(target=work, name="chat", daemon=True).start()
 
     def gen():
         yield b": stream open\n\n"
@@ -1388,6 +1461,18 @@ def api(req, start):
         if state is not None and state not in getattr(db, "JOB_STATES", (state,)):
             raise HTTPError(400, "unknown job state")
         return respond_json(start, {"jobs": fn(state, req.int_arg("limit", 50, 1, 500)) if callable(fn) else []})
+    if p.startswith("/api/jobs/") and m == "POST":  # {action: cancel | move, in_minutes | at}: the user's own edit
+        try:
+            jid = int(p.rsplit("/", 1)[-1])
+        except ValueError:
+            raise HTTPError(404, "no such job") from None
+        body = req.json()
+        try:
+            out = tools.BY_NAME["reminders"]["run"]({**{k: body.get(k) for k in ("in_minutes", "at") if body.get(k) is not None},
+                                                    "action": body.get("action"), "id": jid}, {"bot": "theta"})
+        except tools.ToolError as e:
+            raise HTTPError(400, str(e)) from None
+        return respond_json(start, {"ok": True, "result": out})
     if p == "/api/tick" and m == "POST":
         jobs_sent = run_jobs() + run_features()
         res = run_proactive()

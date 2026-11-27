@@ -82,10 +82,16 @@ def fmt_time(ts, now=None):
     n = local_time(now if now is not None else time.time())
     days = (t.date() - n.date()).days
     hm = t.strftime("%H:%M")
+    # the distance is worked out here, not left to the model (it once said "in about 20 minutes" for 2 h 20 min)
+    left = ts - (now if now is not None else time.time())
+    rel = ""
+    if 0 < left < 2 * 86400:
+        h, m = int(left // 3600), int(left % 3600 // 60)
+        rel = " (in " + (f"{h} h {m} min" if h else f"{max(1, m)} min") + ")"
     if days == 0:
-        return f"today {hm}"
+        return f"today {hm}{rel}"
     if days == 1:
-        return f"tomorrow {hm}"
+        return f"tomorrow {hm}{rel}"
     return t.strftime("%a %d %b %Y ") + hm
 
 
@@ -210,6 +216,39 @@ def _remind_me(args, ctx):
     return (f"Reminder set (job {job}) for {fmt_time(due, now)} "
             f"({local_time(due).isoformat(timespec='minutes')}): {text[:300]}. "
             "It will arrive as a message from you plus a phone notification.")
+
+
+# ---- reminders: see, cancel or move what's already set (remind_me only adds)
+
+def _pending_reminders(bot):
+    return [j for j in db.jobs("pending", limit=100) if j.get("kind") == "remind"
+            and (j.get("payload") or {}).get("bot", bot) == bot]
+
+
+def _reminders(args, ctx):
+    now, bot = _now(ctx), _bot(ctx)
+    action = args.get("action") or "list"
+    pend = _pending_reminders(bot)
+    if action == "list":
+        if not pend:
+            return "No reminders are set."
+        return "Pending reminders:\n" + "\n".join(
+            f"- id {j['id']}: {fmt_time(j['due_t'], now)}: {(j.get('payload') or {}).get('text', '')}" for j in pend)
+    rid = args.get("id")
+    if rid is None:
+        raise ToolError("pass id (from action=list or the context block's reminder list)")
+    job = next((j for j in pend if j["id"] == int(rid)), None)
+    if not job:
+        raise ToolError(f"no pending reminder with id {rid}; list them first")
+    what = (job.get("payload") or {}).get("text", "")
+    if action == "cancel":
+        db.finish_job(job["id"], "cancelled", {"by": "theta"})
+        return f"Cancelled the reminder '{what}' that was due {fmt_time(job['due_t'], now)}."
+    if action == "move":
+        due = _due(args, now)
+        db.move_job(job["id"], due)
+        return f"Moved '{what}' from {fmt_time(job['due_t'], now)} to {fmt_time(due, now)} ({local_time(due).isoformat(timespec='minutes')})."
+    raise ToolError("action must be list, cancel or move")
 
 
 # ---- vantage_now
@@ -363,6 +402,16 @@ TOOLS = [
          "in_minutes": {"type": "number", "description": "Minutes from now (1 to 527040)."},
          "at": {"type": "string", "description": "Absolute time, ISO 8601 with offset, e.g. 2026-11-26T09:00:00-07:00."}},
          "required": ["text"]}},
+    {"name": "reminders", "risk": "write", "run": _reminders,
+     "description": ("See, cancel or move reminders that are already set (remind_me only adds new ones). To change a "
+                     "reminder's time use action=move, never a second remind_me. Examples: {\"action\": \"list\"}, "
+                     "{\"action\": \"cancel\", \"id\": 12}, {\"action\": \"move\", \"id\": 12, \"in_minutes\": 180}."),
+     "params": {"type": "object", "properties": {
+         "action": {"type": "string", "enum": ["list", "cancel", "move"]},
+         "id": {"type": "integer", "description": "The reminder's id (from list, or the context block)."},
+         "in_minutes": {"type": "number", "description": "For move: minutes from now."},
+         "at": {"type": "string", "description": "For move: absolute ISO 8601 time with offset."}},
+         "required": ["action"]}},
     {"name": "vantage_now", "risk": "read", "untrusted": True, "run": _vantage_now,
      "description": ("Vantage's current picture: events near the user (quakes, storms, official alerts...) and "
                      "big world events, most serious first. Use it when they ask what's going on, whether it's "
@@ -426,7 +475,7 @@ def _ext_reset():
 
 # ---- progressive disclosure: a turn starts with CORE plus the tools its words call for; the rest are listed in the
 # guide by name and one line, and the model loads any of them with load_tools (agent.py adds them next step)
-CORE = ("web_search", "remind_me", "memory_edit", "plan_update", "history_search", "weather", "show_card", "react",
+CORE = ("web_search", "remind_me", "reminders", "memory_edit", "plan_update", "history_search", "weather", "show_card", "react",
         "browse_open", "browse_act", "browse_submit", "browse_sign_in", "browse_screenshot", "chip_open",
         "find_contact", "file_read", "home_post", "progress_update", "load_tools")
 # words that bring a group along, beyond each feature's own RELEVANT words
@@ -740,8 +789,8 @@ def context_block(bot="theta", now=None):
     except Exception:
         pending = []
     if pending:
-        lines.append("Pending reminders:\n" + "\n".join(
-            f"- {fmt_time(j['due_t'], now)}: {(j.get('payload') or {}).get('text', '')}" for j in pending[:10]))
+        lines.append("Pending reminders (for reference: mention one only if they ask or it bears on this message):\n" + "\n".join(
+            f"- id {j['id']}, {fmt_time(j['due_t'], now)}: {(j.get('payload') or {}).get('text', '')}" for j in pending[:10]))
     else:
         lines.append("Pending reminders: none.")
     try:

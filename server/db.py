@@ -556,6 +556,12 @@ def finish_job(job_id, state, result=None):
                            (state, res, done, int(job_id))).rowcount > 0
 
 
+def move_job(job_id, due_t):
+    """Reschedule a pending job. True if it was pending and moved."""
+    return _conn().execute("UPDATE jobs SET due_t = ? WHERE id = ? AND state = 'pending'",
+                           (float(due_t), int(job_id))).rowcount > 0
+
+
 def get_job(job_id):
     row = _conn().execute("SELECT * FROM jobs WHERE id = ?", (int(job_id),)).fetchone()
     return _job(row) if row else None

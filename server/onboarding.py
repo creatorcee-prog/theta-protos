@@ -305,10 +305,22 @@ _LEAD = re.compile(r"^(?:(?:hi|hey|hello)[,!.\s]+)?(?:i'?m|i am|it'?s|my name is
                    r"let'?s go with|how about|name you|i'?ll call you|call you)\s+", re.I)
 
 
+# words that are replies or commands, not names: "Say ok.", "sounds good", "yes please", "skip it" were being saved
+# as the user's name because anything short passed (the check only looked at length)
+_NOT_NAMES = set("""ok okay k yes yeah yep yup no nope nah sure fine cool good great nice thanks thank thx ty please pls say
+said sounds sound go going start begin continue next skip later done wait hold hmm hm um uh lol haha idk dunno whatever
+what why how who where when which me you your it its that this the a an and or but not just maybe hi hey hello yo
+test testing help stop cancel back menu settings nothing none nobody someone anything something theta assistant bot
+call name named""".split())
+
+
 def _a_name(text):
     """A short name from what they typed ("I'm Cee" -> "Cee"), or "" if it doesn't look like one."""
     t = _LEAD.sub("", re.sub(r"\s+", " ", str(text or "")).strip()).strip(" .!?,\"'")
     if not t or len(t) > 32 or len(t.split()) > 3 or "?" in str(text) or not re.fullmatch(r"[\w .'-]+", t):
+        return ""
+    words = [w.strip(".'-").lower() for w in t.split()]
+    if any(w in _NOT_NAMES or w.isdigit() for w in words) or not all(w[:1].isalpha() for w in words if w):
         return ""
     return t[:1].upper() + t[1:]
 

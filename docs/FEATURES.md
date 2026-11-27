@@ -102,6 +102,14 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 - Gmail archive / trash / mark read take a `query` (every inbox match, up to 2,000, one call). `gmail_filter` and
   `gmail_filter_delete` need `gmail.settings.basic`.
 - The agent shows at most two progress texts per turn, and runs up to 10 steps.
+- Honest replies (`server/agent.py` unbacked_claim): a finished reply that says something was done (or promises to
+  pick it up once an app is connected) when no tool did it is taken back with a `reset` event and sent back once to
+  do it or say plainly it didn't; a repeat gets a plain note from code. Stop: POST /api/chat/stop {bot} (the
+  composer's button while Theta answers) cuts the stream and starts nothing new. A repeated `client_id` runs once and
+  gets the first reply. A stream that ends without [DONE] / finish_reason is an error (kept as partial); a 429/5xx
+  before anything streamed is retried twice on the same provider. Turns are checkpointed before their first step.
+- Reminders: `reminders` {action: list | cancel | move} (a core tool) and POST /api/jobs/<id> {action}; remind_me
+  only adds. Times in the context block carry their distance ("in 2 h 20 min"), worked out in code.
 - Call recordings (`server/recordings.py`): on unless "record_calls" is off. Calls to others open with "This call is
   recorded."; an objection on the call stops it and the audio is discarded. Twilio's recording is downloaded to
   `<data>/recordings/<call id>.mp3`, deleted at Twilio, served at /api/calls/audio/<id> (byte ranges), and kept 90 days.

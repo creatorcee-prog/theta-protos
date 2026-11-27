@@ -39,7 +39,7 @@ def main():
 
     # ---- registry
     names = [t["name"] for t in tools.TOOLS]
-    check("5-8 tools, unique names", 5 <= len(names) <= 8 and len(set(names)) == len(names), names)
+    check("5-9 tools, unique names", 5 <= len(names) <= 9 and len(set(names)) == len(names), names)
     check("v0 tools present", {"web_search", "memory_edit", "history_search", "remind_me", "vantage_now",
                                "plan_update", "send_email_draft"} <= set(names))
     check("every tool has risk, schema, docs with an example",

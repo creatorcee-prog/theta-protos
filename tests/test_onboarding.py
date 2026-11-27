@@ -136,4 +136,8 @@ check("with Google sign-in set up: connect Gmail, with its card", st["step"] == 
 onboarding.typed("just help me plan my week", None)
 check("typing instead of connecting ends the intro (the model takes the message)", onboarding.done())
 
+from server import onboarding as _ob
+check("a reply isn't taken as a name (\"Say ok.\" became the user's name once)",
+      all(_ob._a_name(t) == "" for t in ("Say ok.", "sounds good", "yes please", "skip", "ok", "42"))
+      and _ob._a_name("I'm Cee") == "Cee" and _ob._a_name("Mary Jane") == "Mary Jane")
 print("all onboarding checks passed")

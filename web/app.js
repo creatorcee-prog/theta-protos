@@ -742,7 +742,9 @@
     if (view !== "chat") go({v: "chat"});
     const w = thread.querySelector('[data-key="welcome"]'); if (w) w.remove();
     dock("retry", null);
-    const cid = "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    // "Try again" reuses the id: if the server did get the first send (the stream dropped mid-answer), it hands back
+    // that reply instead of answering twice
+    const cid = opts.cid || "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     const editId = opts.edit != null ? Number(opts.edit) : null, before = editId != null ? S.msgs.get(editId) : null;
     let row = editId != null ? thread.querySelector(`[data-key="m${editId}"]`) : null, userMsg = null;
     if (editId != null && !row) { toast("That message isn't on screen anymore."); return null; }
@@ -760,7 +762,7 @@
     haptic("light");
     playFx(fxFor(text), "c:" + cid);
     toBottom(true);
-    S.streaming = true;
+    S.streaming = true; busy(true);
     const t0 = performance.now();
     // acknowledged: one pulse; then working: the swirl, in a small bubble where the reply will appear
     orbs.head.ack(); setStatus("working");
@@ -844,6 +846,8 @@
           if (shown) { if (!frame) frame = requestAnimationFrame(draw); }
           else if (detailed(buf)) startShow();
           else if (!firstAt) { firstAt = performance.now(); timer = setTimeout(startShow, LONG_WAIT_MS); }
+        } else if (ev === "reset") { // the server took the reply back (it claimed something no tool did): start over
+          buf = ""; if (shown && !frame) frame = requestAnimationFrame(draw);
         } else if (ev === "done") reply = data;
         else if (ev === "error") throw new Error((data && data.error) || "Theta hit an error");
       });
@@ -884,9 +888,9 @@
       const offline = !navigator.onLine || !e.status;
       dock("retry", {err: true, icon: "i-bell", title: offline && !e.message.startsWith("HTTP") ? "Theta didn't answer" : "Theta couldn't answer just now",
         text: e.message && !/^HTTP|fetch|network/i.test(e.message) ? e.message : "The message didn't go through. Nothing was lost.",
-        actions: [["Dismiss", () => dock("retry", null)], ["Try again", () => { if (editId == null) { row.replaceWith(); regroup(); } dock("retry", null); send(text, opts); }, true]]});
+        actions: [["Dismiss", () => dock("retry", null)], ["Try again", () => { if (editId == null) { row.replaceWith(); regroup(); } dock("retry", null); send(text, Object.assign({}, opts, editId == null ? {cid} : {})); }, true]]});
       return null;
-    } finally { S.streaming = false; if (S.pollAfter) { S.pollAfter = false; setTimeout(poll, 300); } sendLater(); }
+    } finally { S.streaming = false; busy(false); if (S.pollAfter) { S.pollAfter = false; setTimeout(poll, 300); } sendLater(); }
   }
   // a message sent while Theta works: shown at once, and given to the running turn, which takes it into account
   // at its next step. If nothing is running any more (a plain reply finishing), it's sent as soon as that's done.
@@ -942,7 +946,13 @@
     const has = !!ta.value.trim() || queue.length > 0;
     if (has && !form.classList.contains("has-text")) { const d = $("c-send").querySelector(".disc"); d.classList.remove("in"); void d.offsetWidth; d.classList.add("in"); }
     form.classList.toggle("has-text", has);
-    $("c-send").setAttribute("aria-label", has ? "Send" : "Voice mode");
+    $("c-send").setAttribute("aria-label", has ? "Send" : S.streaming ? "Stop" : "Voice mode");
+  }
+  // while Theta answers, the empty composer's button is Stop (typing turns it back into Send, which steers the turn)
+  function busy(on) { form.classList.toggle("is-busy", !!on); sizeTa(); }
+  async function stopTurn() {
+    haptic("light");
+    try { await post("/api/chat/stop", {bot: BOT}); } catch (e) { if (!(e instanceof AuthError)) toast("Couldn't stop it. Try again."); }
   }
   ta.addEventListener("input", () => { sizeTa(); if (orbs.head.state === "waiting") setStatus("idle"); });
   ta.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && HOVER.matches) { e.preventDefault(); form.requestSubmit(); } });
@@ -997,7 +1007,7 @@
   window.__thetaQueue = (f) => { if (queue.length >= 4) { toast("Up to 4 photos at a time."); return; } queue.push({blob: f, view: URL.createObjectURL(f), type: f.type}); renderQueue(); sizeTa(); };
   function submit(effect) {
     const text = ta.value.trim();
-    if (!text && !queue.length && !fileQueue.length) { voiceMode(); return; }
+    if (!text && !queue.length && !fileQueue.length) { if (S.streaming && !S.demo) stopTurn(); else voiceMode(); return; }
     if (S.streaming && (queue.length || fileQueue.length || S.editing != null)) { toast("One sec, Theta's still answering."); return; }
     if (fileQueue.some(q => q.state === "up")) { toast("One sec, the file is still uploading."); return; }
     const editing = S.editing; endEdit(false);
