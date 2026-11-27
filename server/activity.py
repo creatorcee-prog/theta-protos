@@ -134,6 +134,7 @@ _FIXED = {
     "browse_screenshot": ("Taking a picture of the page", "browse"),
     "bank_accounts": ("Checking your bank balances", "read"),
     "plan_update": ("Updating your plan", "write"),
+    "progress_update": ("Planning the steps", "think"),
     "remind_me": ("Setting the reminder", "write"),
     "react": ("Reacting", "write"),
     "show_card": ("Making a card", "write"),

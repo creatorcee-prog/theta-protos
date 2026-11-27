@@ -428,7 +428,7 @@ def _ext_reset():
 # guide by name and one line, and the model loads any of them with load_tools (agent.py adds them next step)
 CORE = ("web_search", "remind_me", "memory_edit", "plan_update", "history_search", "weather", "show_card", "react",
         "browse_open", "browse_act", "browse_submit", "browse_sign_in", "browse_screenshot", "chip_open",
-        "find_contact", "file_read", "home_post", "load_tools")
+        "find_contact", "file_read", "home_post", "progress_update", "load_tools")
 # words that bring a group along, beyond each feature's own RELEVANT words
 GROUPS = [(r"\b(e-?mails?|gmail|inbox|unsubscribe|newsletters?|drafts?|repl(y|ies))\b",
            ("gmail_search", "gmail_read", "gmail_draft", "gmail_reply_draft", "send_email_draft", "gmail_archive",

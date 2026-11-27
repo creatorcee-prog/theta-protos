@@ -182,3 +182,7 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   newest backup if this copy is a fresh start (fewer messages, nothing older than the backup), keeps messages
   written since and the current sign-ins, says so in the chat, and loads a backup only once. PROTOS_AUTO_RESTORE=0
   turns it off.
+- Progress cards (`server/progress.py`, `web/features/progress.js`): for a job with 3+ phases Theta calls
+  progress_update {steps, done} (a core tool) at the start and as each phase finishes; agent.run's ctx["progress"]
+  streams a "progress" event {steps: [{text, state}]} that the app shows above the status line (check, spinner,
+  clock), and the reply keeps meta.progress, where a phase never marked done shows as not done.

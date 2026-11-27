@@ -332,6 +332,12 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
     ctx = ctx if isinstance(ctx, dict) else {}  # shared with the caller: tools add cards and images to it
     act = activity.Activity(emit, info["activity"])  # "Drafting an email to Sam" under the working globe
     ctx["activity"] = act.reporter()
+
+    def _progress(steps, done):  # progress_update: a live card of the job's phases (server/progress.py)
+        from . import progress
+        info["progress"] = {"steps": list(steps), "done": done}
+        emit("progress", {"steps": progress.states(steps, done)})
+    ctx["progress"] = _progress
     info["_act"] = act
     act.start(activity.THINKING, "think", keep=False)  # until the first step or words; not kept for the reply
     ctx.setdefault("sources", info["sources"])

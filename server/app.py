@@ -445,6 +445,9 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
         rmeta["tools"] = info["tools"]
     if info.get("activity"):  # "Took 6s · read your inbox, drafted an email" under the reply
         rmeta["activity"] = list(info["activity"])[:40]
+    if info.get("progress"):  # the job's phases, as far as Theta said it got (unfinished ones show as not done)
+        from . import progress
+        rmeta["progress"] = progress.states(info["progress"]["steps"], info["progress"]["done"], final=True)
     rmeta["timing"] = _timing(t0, info.get("ttft"))
     if approvals:
         rmeta["approvals"] = [a["id"] for a in approvals]

@@ -795,7 +795,7 @@
       if (r.status === 409 && editId != null) throw Object.assign(new Error("Only your latest message can be edited."), {status: 409, edit409: true});
       if (!r.ok || !r.body) throw Object.assign(new Error(`HTTP ${r.status}`), {status: r.status});
       await readSSE(r.body, (ev, data) => {
-        for (const fn of (listeners[ev] || [])) { try { fn(data, {text, reply: () => reply}); } catch (err) { console.error(err); } }
+        for (const fn of (listeners[ev] || [])) { try { fn(data, {text, reply: () => reply, pending: prow, follow: () => follow(false)}); } catch (err) { console.error(err); } }
         if (ev === "user" && data && data.id != null) {
           remember(data); userMsg = data; row.dataset.key = "m" + data.id; row.dataset.t = String(Math.round(data.t || Date.now() / 1000));
           row.querySelectorAll(".msg").forEach(b => { b.dataset.id = data.id; b.classList.remove("pending"); });

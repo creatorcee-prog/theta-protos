@@ -78,6 +78,16 @@ async function waitUp(url) {
       await page.evaluate(() => document.querySelector("#thread .cm-quoted").scrollIntoView({block: "center"})); await sleep(150);
       await shot("02c-quoted-email");
     }
+    { // a multi-step job's phases: a check for each done, and one it never finished shows as not done
+      const pg = await page.evaluate(() => [...document.querySelectorAll("#thread .pg .pg-step")].map(r => r.className.split(" ")[1]));
+      check(pg.join(",") === "done,done,skipped", "a reply keeps its progress card: " + pg.join(","));
+      await page.evaluate(() => { document.querySelector("#thread .pg").scrollIntoView({block: "center"});
+        // and the live card while working: in progress spins, to come shows a clock
+        const live = Theta.progressCard([{text: "Research completed", state: "done"}, {text: "Comparing findings", state: "active"}, {text: "Verification pending", state: "pending"}]);
+        live.id = "pg-live"; document.querySelector("#thread .pg").after(live); });
+      await sleep(200); await shot("02d-progress");
+      await page.evaluate(() => document.getElementById("pg-live").remove());
+    }
     const usage0 = (await page.$$("#thread .usage .u-txt")).length;
     check(usage0 >= 2, "history replies show their token use");
     await page.fill("#c-text", "Should I buy the new camera now or wait? Compare it for me");
