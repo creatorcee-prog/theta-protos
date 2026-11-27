@@ -58,6 +58,9 @@ USER_EVERY = 4
 JUDGE_PROMPT = """You are an impartial judge scoring an AI assistant's reply for this user:
 {user}
 
+What the assistant knows about them and can do (not made up if it uses these):
+{known}
+
 Score 1-10 for how well the reply serves this user: did it do/answer the actual thing, correctly, with no invented
 facts, at the right length, in a fitting tone, without needless questions? Judge only the reply.
 
@@ -96,7 +99,7 @@ def turn(text):
 
 def judge(jp, jm, ask, reply):
     try:
-        d = call_json(jp, jm, JUDGE_PROMPT.format(user=USER, ask=ask, tools=selfcheck._steps(reply.get("meta") or {}),
+        d = call_json(jp, jm, JUDGE_PROMPT.format(user=USER, known=selfcheck.known(), ask=ask, tools=selfcheck._steps(reply.get("meta") or {}),
                                                   reply=reply["text"][:6000]))
         return max(1, min(10, int(d.get("score")))), str(d.get("worst") or "")[:100]
     except Exception as e:  # noqa: BLE001
