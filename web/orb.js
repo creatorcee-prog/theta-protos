@@ -11,6 +11,10 @@
  * Openings (for the splash): "converge" (dots start as stars and glide into the globe, nearest first) and
  * "signal" (rings of dots pulse out like a broadcast, then come home as the globe's latitudes).
  * Dot shapes (theta-app's "Voice and tools > Dots"): circle, triangle, square, diamond, pentagon, hexagon, star.
+ * Styles (theta-app's avatar styles): urchin (the default), precision (fine and dense), lumen (an inner shell and a
+ * bright rim), flow (always gently streaming), signal (rays that pulse out), rings (the classic rings).
+ * Color: setColor("#a78bfa") tints the globe from the theme color. A mount can pass {style, shape, hue} to preview
+ * one without changing the saved look.
  *
  *   const orb = ThetaOrb.mount(canvas, {dots: 520});
  *   orb.setState("thinking"); orb.pulse(0.6); orb.opening("converge", () => ...); orb.destroy();
@@ -22,14 +26,31 @@
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
   const reduceQ = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : {matches: false};
 
-  // ---- the look: Theta's house colors (the "theta" dots theme: cyan core, blue/indigo edges)
+  // ---- the look: Theta's house colors (the "theta" dots theme: cyan core, blue/indigo edges), or the theme color's
   const LOOK = {hue: 195, sat: 95, light: 62, edgeHue: 222, waitHue: 262};
+  try { const c = localStorage.getItem("theta:accent"); if (c) Object.assign(LOOK, lookFor(c)); } catch (e) { /* no storage */ }
 
   // ---- dot shapes
   const SHAPES = ["circle", "triangle", "square", "diamond", "pentagon", "hexagon", "star"];
   const SIDES = {triangle: 3, square: 4, diamond: 4, pentagon: 5, hexagon: 6};
   let shape = store("theta:dot") || "circle";
   if (SHAPES.indexOf(shape) < 0) shape = "circle";
+  // ---- styles: how the globe is built and moves
+  const STYLES = {urchin: {}, precision: {n: 2, dotK: 0.62, glow: 0.7}, lumen: {inner: true, rim: true, glow: 1.2},
+                  flow: {flow: true, inner: true}, signal: {rays: true, rim: true}, rings: {rings: true}};
+  let style = store("theta:style") || "urchin";
+  if (!STYLES[style]) style = "urchin";
+  // ---- color: the theme color's hue, kept for the next open
+  function hexHue(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "")); if (!m) return null;
+    const n = parseInt(m[1], 16), r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    if (d < 0.08) return {hue: 210, sat: 8};  // white / grey: a silver globe
+    const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return {hue: (h * 60 + 360) % 360, sat: 95};
+  }
+  function lookFor(c) { const h = hexHue(c) || {hue: 195, sat: 95};
+    return {hue: h.hue, sat: h.sat, light: 62, edgeHue: h.hue + 27, waitHue: h.hue + 67}; }
   function dotPath(g, x, y, r, rot, sh) {
     sh = sh || shape; g.beginPath();
     if (sh === "circle" || r < 0.9) { g.arc(x, y, r, 0, TAU); return; }
@@ -72,18 +93,21 @@
   class Orb {
     constructor(canvas, opt) {
       this.cv = canvas; this.g = canvas.getContext("2d"); this.opt = Object.assign({dots: 520, scale: 1, dotK: 1, glow: 1, maxDpr: 2, radiusPx: 0}, opt || {});
-      this.dots = sphere(this.opt.dots);
+      this.dotsFor = null; this._dots();
       this.state = "idle"; this.level = 0; this.target = 0; this.burst = 0; this.sw = {thinking: 0, speaking: 0, waiting: 0}; this.rings = []; this.punch = 0;
       this.clock = Math.random() * 20; this.last = 0; this.open = null; this.fade = 1; this.W = 0; this.H = 0; this.dpr = 1;
       this.pts = []; this.visible = true;
       if (window.IntersectionObserver) { this.io = new IntersectionObserver(es => { this.visible = es[es.length - 1].isIntersecting; }); this.io.observe(canvas); }
       orbs.add(this); kick();
     }
+    _st() { return STYLES[this.opt.style] || STYLES[style] || {}; }
+    _L() { return this.opt.color ? (this._lk || (this._lk = lookFor(this.opt.color))) : LOOK; }
+    _dots() { const n = Math.round(this.opt.dots * (this._st().n || 1)); if (this.dotsFor !== n) { this.dots = sphere(n); this.dotsFor = n; } }
     setState(s) { if (s === "working") s = "thinking"; if (s !== this.state) { this.state = s; if (s === "speaking") this.burst = 0.5; } }
     pulse(amount) { this.burst = Math.min(1, this.burst + (amount == null ? 0.35 : amount)); }
-    ring(hue) { this.rings.push({t0: this.clock, hue: hue == null ? LOOK.hue : hue}); kick(); }
+    ring(hue) { this.rings.push({t0: this.clock, hue: hue == null ? this._L().hue : hue}); kick(); }
     ack() { this.punch = 1; this.ring(); }
-    done() { this.ring(LOOK.hue); this.setState("idle"); }
+    done() { this.ring(this._L().hue); this.setState("idle"); }
     destroy() { orbs.delete(this); if (this.io) this.io.disconnect(); }
     _size() {
       const r = this.cv.getBoundingClientRect(), dpr = Math.min(this.opt.maxDpr, window.devicePixelRatio || 1);
@@ -117,8 +141,11 @@
         const spec = lv * (0.55 * Math.abs(Math.sin((lon * 1.5 + lat) * 5 + t * 9)) + 0.45 * Math.abs(Math.sin((lon * 1.5 + lat) * 11 - t * 5)));
         r += spk * q.s * 1.1 * spec * (0.6 + 0.4 * Math.sin(lat * 4 + t * 5));
       }
+      const st = this._st();
+      if (st.rays && q.s > 0.72) r += 0.32 * Math.pow(Math.max(0, Math.sin(t * 1.6 - q.s * 9 + lat * 2)), 6);  // rays pulse out
+      if (st.inner && q.s < 0.28) r *= 0.58;  // an inner shell
       let x = q.bx, y = q.by, z = q.bz;
-      const th = this.sw.thinking;
+      const th = Math.max(this.sw.thinking, st.flow ? 0.45 : 0);
       if (th > 0.01) { // swirl in latitude bands: the poles turn faster than the equator
         const a = lon + t * (1.5 + Math.abs(lat)) * 1.2 * th + th * Math.sin(lat * 6 + t * 2) * 0.25;
         const sx = Math.cos(a) * Math.cos(lat), sz = Math.sin(a) * Math.cos(lat);
@@ -144,10 +171,12 @@
       this.burst *= Math.pow(0.04, dt); // decays within about a second
       this.punch = Math.max(0, this.punch - dt * 2.2);
       this.level += (Math.min(1, target) - this.level) * Math.min(1, dt * 10);
+      this._dots();
       this.draw(t, still ? this.level * 0.4 : this.level);
     }
     draw(t, lv) {
-      const g = this.g, W = this.W, H = this.H, o = this.opt, cx = W / 2, cy = H / 2, S = Math.min(W, H);
+      const g = this.g, W = this.W, H = this.H, o = this.opt, cx = W / 2, cy = H / 2, S = Math.min(W, H), LOOK = this._L(), st = this._st();
+      const glow = o.glow * (st.glow || 1), dotK = o.dotK * (st.dotK || 1), shp = o.shape || shape;
       const R = o.radiusPx ? o.radiusPx * this.dpr : S * 0.24 * o.scale, D = 3.2;
       g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, W, H);
       let op = this.open, ot = 0, out = 1, end = 0;
@@ -160,8 +189,8 @@
       }
       const fadeA = this.fade;
       // halo: cyan in the middle, blue at the edge; brighter while it talks
-      if (o.glow) {
-        const hr = Math.min(R * (2.3 + 0.5 * lv), S / 2), gr = g.createRadialGradient(cx, cy, R * 0.1, cx, cy, hr), k = o.glow * fadeA * (op ? out * 0.8 + 0.2 : 1);
+      if (glow) {
+        const hr = Math.min(R * (2.3 + 0.5 * lv), S / 2), gr = g.createRadialGradient(cx, cy, R * 0.1, cx, cy, hr), k = Math.min(1.4, glow) * fadeA * (op ? out * 0.8 + 0.2 : 1);
         gr.addColorStop(0, col(LOOK.hue, 100, 60, (0.30 + 0.25 * lv) * k));
         gr.addColorStop(0.35, col(LOOK.edgeHue - 10, 95, 52, (0.14 + 0.1 * lv) * k));
         gr.addColorStop(0.7, col(LOOK.edgeHue, 90, 45, 0.05 * k));
@@ -171,7 +200,8 @@
       const yaw = t * 0.18 * (1 + 1.2 * this.sw.thinking), pitch = 0.3 + 0.06 * Math.sin(t * 0.37);
       const cyw = Math.cos(yaw), syw = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
       const k = 0.07, damp = 0.8, pts = this.pts; pts.length = 0;
-      const diag = Math.hypot(W, H), dotR = R * 0.0325 * o.dotK;
+      const diag = Math.hypot(W, H), dotR = R * 0.0325 * dotK;
+      if (st.rings && !op) { this._rings(cx, cy, R, t, lv, fadeA, LOOK); this._core(cx, cy, R, lv, fadeA); return; }
       for (const q of this.dots) {
         const tg = this._shape(q, t, lv);
         if (!q.w) q.w = tg.slice();
@@ -213,13 +243,14 @@
           + (LOOK.waitHue - LOOK.hue) * this.sw.waiting * (0.6 + 0.4 * s);
         const light = LOOK.light + (pr - 0.8) * 50 + Math.min(1, v * 40) * 12;
         let a = (0.1 + 0.55 * (0.4 + 0.6 * s)) * fog * fadeA * 1.25;
+        if (st.rim) a *= 1 + 1.1 * Math.max(0, 1 - Math.abs(z) * 2.2);  // a bright rim at the edge
         let r = dotR * pr * pr * (0.8 + 0.4 * s);
         if (op && op.kind !== "fade") {
           const conv = op.kind === "converge";
           a = (1 - home) * vis * (0.35 + 0.65 * d) + home * a; r = (1 - home) * (conv ? (0.5 + 1.1 * d * d) * this.dpr : 1.1 * this.dpr) + home * r;
           g.fillStyle = home < 0.5 && conv ? col(205, 60, 92, a) : col(hue, LOOK.sat, light, a);
         } else g.fillStyle = col(hue, LOOK.sat, light, a);
-        dotPath(g, px, py, Math.max(0.5, r), s * TAU); g.fill();
+        dotPath(g, px, py, Math.max(0.5, r), s * TAU, shp); g.fill();
       }
       if (!coreDone) this._core(cx, cy, R, lv, coreK * fadeA);
       for (let i = this.rings.length - 1; i >= 0; i--) { // ack / done: a ring opens and fades
@@ -229,10 +260,20 @@
       }
       g.globalCompositeOperation = "source-over";
     }
+    _rings(cx, cy, R, t, lv, a, LK) {  // "Classic rings": tilted rings turning around the core
+      const g = this.g;
+      g.globalCompositeOperation = "lighter"; g.lineWidth = Math.max(1, R * 0.035);
+      for (let i = 0; i < 5; i++) {
+        const tilt = 0.35 + i * 0.55 + t * (0.25 + i * 0.07), rr = R * (0.62 + i * 0.12) * (1 + 0.08 * lv * Math.sin(t * 9 + i));
+        g.strokeStyle = col(LK.hue + i * 7, LK.sat, LK.light + 8 - i * 4, (0.75 - i * 0.1) * a);
+        g.beginPath(); g.ellipse(cx, cy, rr, rr * Math.abs(Math.cos(tilt)) * 0.9 + rr * 0.08, i * 0.6 + t * 0.15, 0, TAU); g.stroke();
+      }
+      g.globalCompositeOperation = "source-over";
+    }
     _core(cx, cy, R, lv, a) {
       if (a <= 0.01) return;
       const g = this.g, cr = R * (0.16 + 0.2 * lv), gr = g.createRadialGradient(cx, cy, 0, cx, cy, cr * 3.2);
-      const H = LOOK.hue, L = LOOK.light;
+      const LOOK = this._L(), H = LOOK.hue, L = LOOK.light;
       [[0, `rgba(255,255,255,${a})`], [0.05, col(H, 95, L + 34, a)], [0.11, col(H, 95, L + 18, 0.85 * a)], [0.2, col(H, 95, L + 6, 0.5 * a)],
        [0.32, col(H, 95, L, 0.26 * a)], [0.48, col(H, 95, L, 0.12 * a)], [0.68, col(H, 95, L, 0.045 * a)], [1, col(H, 95, L, 0)]]
         .forEach(([o, c]) => gr.addColorStop(o, c));
@@ -246,6 +287,10 @@
     shapes: SHAPES.slice(),
     get shape() { return shape; },
     setShape(s) { if (SHAPES.indexOf(s) >= 0) { shape = s; store("theta:dot", s); } },
+    styles: Object.keys(STYLES),
+    get style() { return style; },
+    setStyle(s) { if (STYLES[s]) { style = s; store("theta:style", s); } },
+    setColor(c) { const l = lookFor(c); Object.assign(LOOK, l); for (const o of orbs) o._lk = null; },
     dotPath,
     look: LOOK,
   };

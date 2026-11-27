@@ -44,7 +44,7 @@ async function waitUp(url) {
       const f = path.join(OUT, name + ".png"); await page.screenshot({path: f}); console.log("shot " + f);
       // nothing may stick out sideways (the filter chips scroll on purpose)
       const wide = await page.evaluate(() => [...document.querySelectorAll("#app *")].filter(e => {
-        if (e.closest(".chips, .chp-row, .hf-stack, .hf-row") || !e.getClientRects().length) return false;
+        if (e.closest(".chips, .chp-row, .hf-stack, .hf-row, .lk-row") || !e.getClientRects().length) return false;
         const r = e.getBoundingClientRect(); return r.width && (r.right > innerWidth + 1 || r.left < -1);
       }).map(e => e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + (e.className && e.className.baseVal === undefined ? "." + String(e.className).split(" ")[0] : "")).slice(0, 5));
       check(wide.length === 0, name + ": no horizontal overflow" + (wide.length ? ": " + wide.join(", ") : ""));
@@ -72,6 +72,12 @@ async function waitUp(url) {
     await page.waitForSelector(".chp-row .chp-pill", {timeout: 12000}).catch(() => {});
     check((await page.$$(".chp-row .chp-pill")).length >= 5 && await page.isVisible(".chp-row"), "the chips row shows above the empty chat box");
     await shot("02b-chat-chips");
+    { // a message someone sent, quoted by Theta ("> " lines), shows as a received-message card, sender inside it
+      const q = await page.evaluate(() => { const f = document.querySelector("#thread .cm-quoted"); return f && {text: f.innerText, raw: document.querySelector("#thread").innerText.includes("> Hey")}; });
+      check(q && /Received/i.test(q.text) && /From\s*Sam Rivera/i.test(q.text) && /Email/i.test(q.text) && !q.raw, "a quoted email shows as a Received card with who sent it, no raw > syntax");
+      await page.evaluate(() => document.querySelector("#thread .cm-quoted").scrollIntoView({block: "center"})); await sleep(150);
+      await shot("02c-quoted-email");
+    }
     const usage0 = (await page.$$("#thread .usage .u-txt")).length;
     check(usage0 >= 2, "history replies show their token use");
     await page.fill("#c-text", "Should I buy the new camera now or wait? Compare it for me");
@@ -256,6 +262,16 @@ async function waitUp(url) {
     check((await page.inputValue("#tab-chips .chp-edit textarea")).length > 0, "a chip opens to its steps");
     await page.click("#settings-back");
     await page.click('#tab-root [data-go="general"]');
+    { // Theta's look: live globes to swipe through for color, style, dots and opening (not menus of names)
+      await page.waitForSelector("#tab-general .lk-row .lk-tile canvas", {timeout: 4000}).catch(() => {});
+      const n = await page.$$eval("#tab-general .lk-row", rs => rs.map(r => r.querySelectorAll(".lk-tile canvas").length));
+      check(n.join(",") === "6,6,7,2", "look: color, style, dots and opening each show live previews: " + n.join(","));
+      await page.click("#tab-general .lk-row:nth-of-type(2) .lk-tile:nth-child(3)");
+      check(await page.evaluate(() => ThetaOrb.style === "lumen" && localStorage.getItem("theta:style") === "lumen"), "tapping a style applies it");
+      await page.evaluate(() => document.querySelector("#tab-general .lk-row").scrollIntoView({block: "start"})); await sleep(700);
+      await shot("09k-look");
+      await page.click("#tab-general .lk-row:nth-of-type(2) .lk-tile:nth-child(1)");
+    }
     check((await page.textContent("#set-loc-note")).includes("10 km"), "location note says rounded to about 10 km");
     check(await page.isChecked("#set-usage"), "Show token use is on by default");
     await page.waitForSelector("#set-lessons .lesson", {timeout: 3000}).catch(() => {});

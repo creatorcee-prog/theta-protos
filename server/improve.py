@@ -40,6 +40,13 @@ def _current_model():
         return ""
 
 
+def _family(model):
+    """deepseek-chat and deepseek-reasoner are one family (the router moves between them every few messages); a
+    lesson needs a re-check only when another family (Claude, Gemini...) takes over."""
+    import re
+    return re.split(r"[-/:._]", str(model or "").lower().split("/")[-1])[0]
+
+
 def _counts(rows, cause, after=None, before=None, last=None):
     """(rated, hits): replies with evidence in the window, and how many showed this cause. Evidence is the user's
     ratings plus Theta's own reviews (server/selfcheck.py) of every reply; on a reply the user rated, their word
@@ -119,7 +126,7 @@ def check(now=None):
             status = "early"
         else:
             status = "helping" if rated else "early"  # liked styles: kept while likes keep coming
-        if e.get("model") and model and e["model"] != model and status != "not helping":
+        if e.get("model") and model and _family(e["model"]) != _family(model) and status != "not helping":
             status = "recheck"
         if ent.get("status") != status:
             ent["status"] = status

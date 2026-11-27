@@ -258,14 +258,13 @@ def main():
     from server import tools as _tools
     _rel = _tools.relevant
     _tools.relevant = lambda text: False
-    # ---- think tier: ack first, as its own message
+    # ---- think tier: a "Thinking it through" status while it works, not a canned message in the chat
     s, _, evs = cl.sse({"text": "why should I pick one plan over the other? think it through"}, AUTH)
     names = [e[0] for e in evs]
-    check("think tier SSE order user, route, ack, delta..., done",
-          names[:3] == ["user", "route", "ack"] and names[-1] == "done" and "delta" in names, names)
-    ack = evs[2][1]
-    check("ack is stored Message with meta.ack", ack["role"] == "assistant" and ack["meta"].get("ack") is True
-          and ack["id"] < evs[-1][1]["id"] and "deepseek" not in ack["text"].lower(), ack)
+    check("think tier SSE order user, route, activity, delta..., done (no canned ack)",
+          names[:3] == ["user", "route", "activity"] and "ack" not in names and names[-1] == "done" and "delta" in names, names)
+    check("the status says it's thinking, and isn't stored as a message", evs[2][1].get("text") == "Thinking it through"
+          and "id" in evs[2][1] and "role" not in evs[2][1])
     check("think routed to reasoner", evs[1][1]["model"] == "deepseek-reasoner")
 
     # ---- fallback: first provider fails before any text

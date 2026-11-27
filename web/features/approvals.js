@@ -50,6 +50,8 @@
 .apl-more p { margin: 0 0 4px; }
 .apl-lit { white-space: pre-wrap; }
 /* emails, texts and calls, framed inside Theta's bubble so the words are always visible */
+blockquote.q { margin: 8px 0; padding: 6px 12px; border-left: 3px solid #444; color: #ddd; white-space: pre-wrap; }
+.cm.cm-quoted { margin: 10px 0; }
 .cm { margin-top: 10px; border: 1px solid #3a3a3a; border-radius: 16px; background: #171717; padding: 11px 12px 12px; font-size: 15px; line-height: 1.4; text-align: left; }
 .cm:first-child { margin-top: 0; }
 .cm-head { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
@@ -218,9 +220,10 @@
     text: () => icon("M4 5h16v11H9l-4 3.5V16H4z"),
     text_in: () => icon("M4 5h16v11H9l-4 3.5V16H4z"),
     call: () => icon("M6.6 3.5l3 3.2-1.8 2.4a12 12 0 006.1 6.1l2.4-1.8 3.2 3-1.6 2.6C11 20 4 13 4 5.1z"),
+    message: () => icon("M4 5h16v11H9l-4 3.5V16H4z"),
   };
   const fmtNum = n => (/^\+1\d{10}$/.test(String(n || "")) ? `+1 ${n.slice(2, 5)}-${n.slice(5, 8)}-${n.slice(8)}` : String(n || ""));
-  const KIND = {email: "Email", text: "Text", text_in: "Text", call: "Call"};
+  const KIND = {email: "Email", text: "Text", text_in: "Text", call: "Call", message: "Message"};
   function pill(kind, st) {
     const map = {pending: ["wait", "Waiting for you"], auto: ["good", kind === "call" ? "Calling" : "Sent"],
       done: ["good", kind === "call" ? "Calling" : "Sent"], denied: ["", "Discarded"], failed: ["bad", "Didn't go through"],
@@ -235,8 +238,9 @@
     let p = pill(kind, st); head.append(p);
     box.append(head);
     const line = (label, value) => { const d = el("div", "cm-line"); d.append(el("span", null, label), document.createTextNode(value)); return d; };
-    if (kind === "email") {
-      box.append(line("To", cm.to || ""));
+    if (kind === "email" || kind === "message") {
+      if (st === "in") { if (cm.from) box.append(line("From", cm.from)); }
+      else box.append(line("To", cm.to || ""));
       if (cm.cc) box.append(line("Cc", cm.cc));
       if (cm.subject) box.append(el("div", "cm-subj", cm.subject));
       const body = el("div", "cm-body", cm.body || ""); box.append(body);
@@ -281,6 +285,14 @@
 
   T.decorate((m, row, bubble) => {
     const meta = m.meta || {}, cards = meta.cards || [];
+    if (bubble) {  // a message someone sent, quoted in Theta's reply ("> " lines): a received-message card in place
+      const tl = (meta.tools || []).join(" ");
+      const kind = /gmail|email/.test(tl) ? "email" : /text|sms/.test(tl) ? "text_in" : "message";
+      for (const q of bubble.querySelectorAll("blockquote.q")) {
+        const f = frame({type: "in", comm: {kind, from: q.dataset.from || "", to: q.dataset.from || "", body: q.innerText.trim()}});
+        f.classList.add("cm-quoted"); q.replaceWith(f);
+      }
+    }
     const comms = cards.filter(c => c && c.comm && (c.type === "approval" || c.type === "comm"));
     if (meta.comm) comms.unshift({type: "in", comm: meta.comm});
     const rest = cards.filter(c => c && c.type === "approval" && !c.comm);

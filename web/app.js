@@ -146,9 +146,22 @@
       if ((src.match(/`/g) || []).length % 2) src += "`";
     }
     const frag = document.createDocumentFragment();
-    let para = [], list = null, code = null;
+    let para = [], list = null, code = null, quote = null, quoteLines = [], afterQuote = 0;
     const flush = () => { if (para.length) { const p = el("p"); inline(p, para.join("\n")); frag.append(p); para = []; } };
+    const endQuote = () => { if (quote) { inline(quote, quoteLines.join("\n")); quote = null; quoteLines = []; afterQuote = 2; } };
     for (const line of src.split("\n")) {
+      // "> " lines: a message someone sent, quoted (Theta.decorate turns it into a received-message card)
+      const q = !code && /^\s*>\s?(.*)$/.exec(line);
+      if (q) { flush(); list = null; if (!quote) { quote = el("blockquote", "q"); frag.append(quote); } quoteLines.push(q[1]); continue; }
+      if (quote) endQuote();
+      if (afterQuote && !code) {  // "From: Carson · Supervisor" (or "Name · role" in italics) right after it: who sent it
+        if (!line.trim()) { afterQuote--; continue; }
+        const last = frag.lastChild;
+        if (last && last.tagName === "BLOCKQUOTE" && /^(?:from:|[*_]?[^.!?]{2,60}[*_]?\s+·\s)/i.test(line.trim()) && line.length < 240) {
+          last.dataset.from = line.trim().replace(/^from:\s*/i, "").replace(/[*_]/g, ""); afterQuote = 0; continue;
+        }
+        afterQuote = 0;
+      }
       if (/^\s*```/.test(line)) {
         if (code) { code = null; continue; }
         flush(); list = null; const pre = el("pre"); code = el("code"); pre.append(code); frag.append(pre); continue;
@@ -166,7 +179,7 @@
       if (h) { flush(); list = null; const e = el("h4"); inline(e, h[1]); frag.append(e); continue; }
       list = null; para.push(line);
     }
-    flush();
+    endQuote(); flush();
     mdSources = null;
     return frag;
   }
@@ -250,7 +263,7 @@
   // there's no list, code, heading, image, citation or card in it. Anything longer or detailed stays one bubble
   // (and streams). The parts are the model's own text, cut only at blank lines.
   const SPLIT_PART = 160, SPLIT_MAX = 4, SPLIT_TOTAL = 480;
-  const DETAILED = /```|^\s*(?:[-*•]|\d{1,3}[.)]|#{1,6})\s/m;
+  const DETAILED = /```|^\s*(?:[-*•]|\d{1,3}[.)]|#{1,6}|>)\s/m;  // a quoted message (">") stays with its sender line
   function chatParts(text, meta) {
     text = String(text || "").trim(); meta = meta || {};
     if (!text || (Array.isArray(meta.sources) && meta.sources.length) || meta.task || (Array.isArray(meta.cards) && meta.cards.length) || meta.ack) return [text];

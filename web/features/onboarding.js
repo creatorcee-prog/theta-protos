@@ -131,8 +131,19 @@
   // a card of rows to pick from (Make it yours: color, dots, opening; or warmth, enthusiasm, emoji), then Done
   function choicesCard(c, m, outer, box, key, picked) {
     const vals = {};
+    const live = [];
     for (const r of c.rows || []) {
       vals[r.key] = r.value;
+      if (r.preview && T.lookRow) {  // Make it yours: live globes to swipe through, each showing the whole look
+        const row = el("div", "onb-row onb-look");
+        row.append(el("b", null, r.label));
+        const lr = T.lookRow(r.preview, r.value, v => {
+          if (box.classList.contains("used")) return;
+          vals[r.key] = v; T.applyLook({[r.key]: v}, false); live.forEach(x => x.refresh());
+        }, () => Object.assign({}, vals));
+        live.push(lr); row.append(lr); box.append(row);
+        continue;
+      }
       const row = el("div", "onb-row"), segs = el("div", "onb-segs" + (r.swatch ? " sw" : ""));
       row.append(el("b", null, r.label));
       const btns = (r.options || []).map(o => {

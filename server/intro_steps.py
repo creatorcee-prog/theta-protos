@@ -17,8 +17,12 @@ from . import db
 
 ACCENTS = [("Sky", "#4fd3ff"), ("Violet", "#a78bfa"), ("Mint", "#4ade80"), ("Amber", "#fbbf24"), ("Rose", "#fb7185"),
            ("White", "#f4f4f5")]
-DOTS = [("Circles", "circle"), ("Stars", "star"), ("Diamonds", "diamond"), ("Hexagons", "hexagon"), ("Triangles", "triangle")]
+DOTS = [("Circles", "circle"), ("Stars", "star"), ("Diamonds", "diamond"), ("Hexagons", "hexagon"), ("Triangles", "triangle"),
+        ("Squares", "square"), ("Pentagons", "pentagon")]
 OPENINGS = [("Converge", "converge"), ("Signal", "signal")]
+STYLES = [("Urchin", "urchin"), ("Precision", "precision"), ("Lumen", "lumen"), ("Flow", "flow"), ("Signal", "signal"),
+          ("Rings", "rings")]  # theta-app's avatar styles (web/orb.js draws them)
+_LOOK = (("accent", ACCENTS), ("style", STYLES), ("dot", DOTS), ("opening", OPENINGS))
 LEVELS = [("Less", "less"), ("Default", "default"), ("More", "more")]
 RULES = [("Disagree with me when I'm wrong", "Disagree with me when I'm wrong, and say why."),
          ("Keep answers short", "Keep answers short unless I ask for more."),
@@ -34,16 +38,13 @@ APPS = [("google", "Google: Gmail, Calendar, Drive"), ("bank", "Bank accounts (r
 def look():
     v = db.get_setting("look")
     v = v if isinstance(v, dict) else {}
-    return {"accent": v.get("accent") if v.get("accent") in {c for _, c in ACCENTS} else None,
-            "dot": v.get("dot") if v.get("dot") in {d for _, d in DOTS} | {"square", "pentagon"} else None,
-            "opening": v.get("opening") if v.get("opening") in {o for _, o in OPENINGS} else None}
+    return {k: v.get(k) if v.get(k) in {val for _, val in opts} else None for k, opts in _LOOK}
 
 
 def save_look(body):
     cur = look()
-    for k, allowed in (("accent", {c for _, c in ACCENTS}), ("dot", {d for _, d in DOTS} | {"square", "pentagon"}),
-                       ("opening", {o for _, o in OPENINGS})):
-        if k in body and body[k] in allowed:
+    for k, opts in _LOOK:
+        if k in body and body[k] in {val for _, val in opts}:
             cur[k] = body[k]
     db.set_setting("look", cur)
     return cur
@@ -79,15 +80,12 @@ def card(step, s):
     q = lambda **k: dict({"type": "onboarding", "step": step, "dismiss": True, "options": []}, **k)  # noqa: E731
     if step == "look":
         cur = look()
-        return [("Let's make me yours. Pick a color, how my globe's dots look, and how I open the app. You can "
+        return [("Let's make me yours. Swipe through each row and tap the one you like: you'll see it live. You can "
                  "change these any time in Settings > General.",
-                 [q(kind="choices", rows=[
-                     {"key": "accent", "label": "Color", "swatch": True, "value": cur["accent"] or ACCENTS[0][1],
-                      "options": [{"label": n, "value": c} for n, c in ACCENTS]},
-                     {"key": "dot", "label": "Dots", "value": cur["dot"] or "circle",
-                      "options": [{"label": n, "value": d} for n, d in DOTS]},
-                     {"key": "opening", "label": "Opening", "value": cur["opening"] or "converge",
-                      "options": [{"label": n, "value": o} for n, o in OPENINGS]}], done="Looks good")])]
+                 [q(kind="choices", rows=[  # preview: the app shows each option as a live globe to swipe through
+                     {"key": k, "label": label, "preview": k, "swatch": k == "accent",
+                      "value": cur[k] or opts[0][1], "options": [{"label": n, "value": v} for n, v in opts]}
+                     for (k, opts), label in zip(_LOOK, ("Color", "Style", "Dots", "Opening"))], done="Looks good")])]
     if step == "vibe":
         from . import account
         p = account.personalize()

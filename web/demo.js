@@ -16,6 +16,8 @@
     ["assistant", "Morning. Light day:\n\n- **10:30** dentist (leave by 10:05, there's roadwork on Colfax)\n- **2:00** call with Sam about the hub\n- Trash goes out tonight\n\nThe dentist is the only thing with a hard edge.", {model: "deepseek-chat", tier: "quick", usage: {in: 2841, out: 64, cached: 2304, cost_usd: 0.0003, model: "deepseek-chat"}}],
     ["user", "Remind me what I spent on groceries this month"],
     ["assistant", "**$412** so far in November, about $60 under where you usually are by the 24th. Biggest single run was King Soopers on the 9th ($96).", {model: "deepseek-reasoner", tier: "think", usage: {in: 3120, out: 418, cached: 2816, cost_usd: 0.0011, model: "deepseek-reasoner"}}],
+    ["user", "What did Sam say about Saturday?"],
+    ["assistant", "Sam's in for Saturday and bringing the ladder:\n\n> Hey! Are we still on for the hub install this Saturday? I can bring the ladder and the extra cable.\n\nFrom: Sam Rivera · sam@example.com\n\nWant me to tell him 10 works?", {model: "deepseek-chat", tier: "quick", tools: ["gmail_search", "gmail_read"]}],
     ["assistant", "Sorted your newsletters", {task: {title: "Sorted 214 newsletters into Later", state: "done"}}],
     ["assistant", "Evening brief: nothing urgent. Your package from the camera shop lands tomorrow before noon, and it's going down to **14°F** tonight, so the hose bib might want a cover.", {proactive: true, source: "brief", level: 3}],
   ];

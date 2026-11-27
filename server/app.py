@@ -39,7 +39,6 @@ TICK_SECONDS = 300
 JOB_SECONDS = 30   # due reminders are checked this often (a "remind me in 2 minutes" can't wait 5)
 PING_SECONDS = 15
 APPROVAL_TTL = agent.APPROVAL_TTL  # 24 h
-TOOL_ACK = "On it."
 _APPROVE_TEXT = re.compile(r"^\s*(approve|deny):(\d{1,12})\s*$", re.I)
 
 BOTS = [{"id": "theta", "name": "Theta",
@@ -403,11 +402,8 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
         emit("ack", db.add_message(bot, "assistant", note, {"ack": True, "progress": True, "tier": route.tier,
                                                             **tag, "reply_to": user["id"]}))
 
-    def on_tool_start(_calls):  # ack-then-result for tool turns: the first step called a tool
-        if not acked["done"]:
-            acked["done"] = True
-            emit("ack", db.add_message(bot, "assistant", TOOL_ACK, {"ack": True, "tier": route.tier, "tool": True,
-                                                                    "reply_to": user["id"]}))
+    def on_tool_start(_calls):  # no stock "On it." when the model went straight to a tool: the status line shows it
+        acked["done"] = True
 
     from . import runtime
     msgs = resume or _build(history, text, bot, context=tools.context_block(bot))
@@ -591,10 +587,9 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None, files
         ack_text = persona.ack(route.tier, text, live=live, seed=user["id"])
         if _use_tools(text, images, route) or (fblock and not images):
             try:
-                # a search turn's canned line ("Checking live sources now", or "I can't check live") would
-                # guess at what the tools will do; the model's own line before its first call says it instead
-                _agent_turn(bot, mtext, history, user, route, None if route.tier == "search" else ack_text,
-                            emit, log_row, t0, tag=tag, tainted=bool(fblock))
+                # no canned line ("Good one. Thinking it through now."): the model's own line before its first
+                # call is the one acknowledgement, and the "Thinking it through" status covers the wait until then
+                _agent_turn(bot, mtext, history, user, route, None, emit, log_row, t0, tag=tag, tainted=bool(fblock))
                 replied = True
             except models.ModelError as e:
                 log_row["error"] = str(e)[:300]
@@ -606,9 +601,9 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None, files
             why = route.why if i == 0 else f"{route.why}; fallback after: {last_err}"[:200]
             emit("route", {"model": model, "provider": provider, "tier": route.tier, "why": why})
             if i == 0:
-                if ack_text:
-                    emit("ack", db.add_message(bot, "assistant", ack_text, {"ack": True, "tier": route.tier,
-                                                                             "reply_to": user["id"]}))
+                if ack_text:  # a slow tier: a status line while it thinks, not a canned message in the chat
+                    from . import activity
+                    emit("activity", {"id": "think", "text": activity.THINKING, "state": "start", "kind": "think"})
                 extra, sources = None, []
                 if route.tier == "search":
                     extra, sources = router.search_context(text)

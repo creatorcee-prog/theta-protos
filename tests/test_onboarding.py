@@ -63,11 +63,13 @@ done = [d for e, d in ev if e == "done"][-1]
 check("a typed name for Theta renames it", db.get_setting("bot_name") == "Pip" and onboarding.bot_name() == "Pip")
 check("'Pip it is!' with a Renamed to line", acks and acks[0]["text"].startswith("Pip it is!")
       and acks[0]["meta"]["cards"][0] == {"type": "onboarding_event", "text": "Renamed to Pip", "icon": "pencil"}, acks[:1])
-check("then make it yours: color, dots and opening, as a choices card", "make me yours" in done["text"]
-      and done["meta"]["cards"][0]["kind"] == "choices" and [r["key"] for r in done["meta"]["cards"][0]["rows"]] == ["accent", "dot", "opening"],
+check("then make it yours: color, globe style, dots and opening, as live previews", "make me yours" in done["text"]
+      and done["meta"]["cards"][0]["kind"] == "choices" and [r["key"] for r in done["meta"]["cards"][0]["rows"]] == ["accent", "style", "dot", "opening"]
+      and all(r.get("preview") for r in done["meta"]["cards"][0]["rows"]),
       [a["text"][:30] for a in acks] + [done["text"][:40]])
-st, msgs = onboarding.answer("look", {"accent": "#a78bfa", "dot": "star", "opening": "signal", "bogus": "x"})
-check("the look is saved for every device (unknown keys ignored)", db.get_setting("look") == {"accent": "#a78bfa", "dot": "star", "opening": "signal"})
+st, msgs = onboarding.answer("look", {"accent": "#a78bfa", "style": "lumen", "dot": "star", "opening": "signal", "bogus": "x"})
+check("the look is saved for every device (unknown keys ignored)",
+      db.get_setting("look") == {"accent": "#a78bfa", "style": "lumen", "dot": "star", "opening": "signal"})
 check("then how Theta should talk, with style options", "How should I talk to you?" in msgs[-1]["text"]
       and msgs[-1]["meta"]["cards"][0]["step"] == "style" and len(msgs[-1]["meta"]["cards"][0]["options"]) == 4)
 st, msgs = onboarding.answer("style", "concise")

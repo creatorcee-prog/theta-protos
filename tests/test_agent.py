@@ -436,7 +436,8 @@ def test_app():
         evs = sse(port, "remind me in 2 minutes to stretch")
         names = [e for e, _ in evs if e != "activity"]  # status lines come between; their order is test_activity's
         check("app: tool turn has status lines", sum(1 for e, _ in evs if e == "activity") >= 2)
-        check("app: tool turn SSE order", names[:3] == ["user", "route", "ack"] and "tool" in names
+        check("app: tool turn SSE order (no stock 'On it.' when the model goes straight to a tool)",
+              names[:2] == ["user", "route"] and "ack" not in names and "tool" in names
               and names[-1] == "done" and names.index("tool") < names.index("delta"), names)
         tm = (evs[-1][1].get("meta") or {}).get("timing") or {}
         check("app: the reply keeps how long it took (meta.timing), so 'Took Ns' survives a reload",

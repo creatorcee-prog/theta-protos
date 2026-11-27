@@ -102,10 +102,10 @@ def _context(reply):
     return ask, known()
 
 
-ABILITIES = ("Theta's abilities: reminders (remind_me) notify the user in the chat and by a push to their phone; it "
-             "looks people up in their saved contacts; texts, emails and anything sent to another person or bought "
-             "wait for the user's OK on an approval card; it keeps notes in its memory and a saved plan; it can "
-             "search the web and drive a browser. Undoable changes on the user's own things it may just do.")
+ABILITIES = ("How Theta works: reminders notify the user in the chat and by a push to their phone; texts, emails and "
+             "anything sent to another person or bought wait for the user's OK on an approval card; undoable changes "
+             "on the user's own things it may just do. Its tools (what it can actually do, when the app is "
+             "connected): ")
 
 
 def known():
@@ -116,7 +116,12 @@ def known():
         prof = account.prompt_block()
     except Exception:  # noqa: BLE001
         pass
-    return (prof or "(no profile saved)") + "\n" + ABILITIES
+    try:
+        from . import tools
+        names = ", ".join(sorted(n for n in tools.BY_NAME if n not in ("load_tools", "react")))
+    except Exception:  # noqa: BLE001
+        names = "web search, a browser, reminders, memory, email, calendar, contacts"
+    return (prof or "(no profile saved)") + "\n" + ABILITIES + names + "."
 
 
 def _steps(meta):
