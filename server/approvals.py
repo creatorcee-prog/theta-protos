@@ -1,14 +1,15 @@
 """Which actions wait for the user's Approve tap, and which Theta may just do (Settings > Security > Approvals).
 
-Only what matters asks by default: anything that reaches other people, spends money or can't be undone. Tidy
-actions on the user's own things (DEFAULT_AUTO) run without a tap unless the user turns them off; a calendar change
+Only what matters asks by default: anything that reaches other people, spends money or can't be undone (texts,
+unsubscribing and deleting events included). Undoable tidy actions on the user's own things (the last field in
+POLICY, the one place defaults live) run without a tap unless the user turns them off; a calendar change
 that would email guests still asks unless the user turned that action on themselves. Two kinds, with one guard:
 - tidy actions (trash, unsubscribe, delete or move an event, Drive trash) work on the user's own stuff and can
   mostly be undone; when allowed, they run in any turn.
 - outward actions (email, text, calls, invites, sharing, website submits) reach other people or spend money; when
   allowed, they still need a turn the user typed (not a routine, not a picked-back-up request) in which nothing
   read outside text (mail, web pages, files), so an email can never get Theta to send something on its own.
-Texts keep their own reviewer on top (server/texts.py); their switch is the "texts_auto" setting.
+Texts keep their own reviewer on top (server/texts.py); their switch is the "texts_auto" setting (off by default).
 
     GET  /api/approvals/policy             [{tool, label, what, auto, outward}]
     POST /api/approvals/policy {tool, auto}
@@ -16,21 +17,21 @@ Texts keep their own reviewer on top (server/texts.py); their switch is the "tex
 from . import db
 
 SETTING = "auto_approve"
-POLICY = [  # (tool, label, what it does, outward)
-    ("send_email_draft", "Send emails", "Emails you asked for, from your Gmail", True),
-    ("send_text", "Send texts", "To saved contacts, after a second model reviews each one", True),
-    ("call_someone", "Call people", "Calls to shops, offices and others for you", True),
-    ("calendar_invite", "Send calendar invites", "Google emails each guest", True),
-    ("drive_share", "Share Drive files", "Google emails them the link", True),
-    ("browse_submit", "Submit on websites", "Buying, booking, paying, posting or signing up", True),
-    ("gmail_trash", "Trash emails", "Gmail keeps Trash for 30 days", False),
-    ("gmail_unsubscribe", "Unsubscribe", "From mailing lists you pick", False),
-    ("calendar_delete", "Delete events", "Guests get Google's cancellation", False),
-    ("calendar_move", "Move events", "Guests get the new time", False),
-    ("drive_trash", "Trash Drive files", "Drive keeps its trash for 30 days", False),
+POLICY = [  # (tool, label, what it does, outward, runs without a tap by default)
+    ("send_email_draft", "Send emails", "Emails you asked for, from your Gmail", True, False),
+    ("send_text", "Send texts", "To saved contacts, after a second model reviews each one", True, False),
+    ("call_someone", "Call people", "Calls to shops, offices and others for you", True, False),
+    ("calendar_invite", "Send calendar invites", "Google emails each guest", True, False),
+    ("drive_share", "Share Drive files", "Google emails them the link", True, False),
+    ("browse_submit", "Submit on websites", "Buying, booking, paying, posting or signing up", True, False),
+    ("gmail_trash", "Trash emails", "Gmail keeps Trash for 30 days", False, True),
+    ("gmail_unsubscribe", "Unsubscribe", "From mailing lists you pick", False, False),
+    ("calendar_delete", "Delete events", "Guests get Google's cancellation", False, False),
+    ("calendar_move", "Move events", "Guests get the new time", False, True),
+    ("drive_trash", "Trash Drive files", "Drive keeps its trash for 30 days", False, True),
 ]
-OUTWARD = {t for t, _l, _w, o in POLICY if o}
-DEFAULT_AUTO = {"gmail_trash", "gmail_unsubscribe", "drive_trash", "calendar_delete", "calendar_move"}
+OUTWARD = {t for t, _l, _w, o, _d in POLICY if o}
+DEFAULT_AUTO = {t for t, _l, _w, _o, d in POLICY if d}
 
 
 def _all():
@@ -41,7 +42,7 @@ def _all():
 def on(tool):
     """Is `tool` set to run without a tap?"""
     if tool == "send_text":
-        return db.get_setting("texts_auto") is not False
+        return db.get_setting("texts_auto") is True
     v = _all().get(tool)
     return (tool in DEFAULT_AUTO) if v is None else bool(v)
 
@@ -115,7 +116,7 @@ def allowed(tool, ctx, info, args=None):
 
 
 def policy():
-    return [{"tool": t, "label": label, "what": what, "auto": on(t), "outward": out} for t, label, what, out in POLICY]
+    return [{"tool": t, "label": label, "what": what, "auto": on(t), "outward": out} for t, label, what, out, _d in POLICY]
 
 
 def route(req, start_response):
@@ -137,7 +138,7 @@ ROUTES = {"/api/approvals/policy": route}
 
 
 def context(bot, now):
-    autos = [label for t, label, _w, _o in POLICY if on(t)]
+    autos = [label for t, label, _w, _o, _d in POLICY if on(t)]
     if not autos:
         return ""
     return ("Allowed without a tap (the user's setting): " + ", ".join(autos) + ". Those run right away when the "

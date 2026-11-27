@@ -17,7 +17,7 @@ Python 3.11+, standard library only (`requirements.txt` lists the optional push 
 | Var | What |
 |---|---|
 | `PORT`, `HOST` | listen address (default `0.0.0.0:8780`) |
-| `PROTOS_KEY` | app key (`x-protos-key` header or `protos_key` cookie via `/api/login`). Unset = no auth, local dev only |
+| `PROTOS_KEY` | app key (`x-protos-key` header, or `/api/login` for a session cookie). Unset = no auth, local dev only |
 | `PROTOS_DATA` | data dir for `protos.db` (default `./data`) |
 | `PROTOS_WEB` | web root (default `./web`) |
 | `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | model providers; any subset |

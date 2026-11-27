@@ -84,13 +84,18 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   trash, unsubscribe (one-click link or mailto, never a blind web page), delete and move an event need Approve.
 - Reviewed texts: a send tool may define `auto(args, ctx, info)`; it returns (ok, text) when it handled the call,
   or None for the approval card (setting `ctx["auto_note"]` says why). `send_text` uses it: saved contact, a turn
-  the user typed, nothing untrusted read this turn, and a reviewer model on another provider says send.
-  Incoming texts: POST /api/texts/inbound (the Twilio number's messaging webhook), signed by Twilio.
+  the user typed, nothing untrusted read this turn, and a reviewer model on another provider says send. Off until the
+  user turns on "texts_auto". Incoming texts: POST /api/texts/inbound, always signed (Twilio, or Telnyx with
+  TELNYX_PUBLIC_KEY; without the key, incoming texts are refused). Incoming texts and other untrusted messages reach
+  the model as `<outside_content>` and taint the turn.
 - Full Drive (`server/gdrive.py`): list, folders, move, rename, copy, restore, save a chat photo; trash and share
   need Approve. Needs the full `drive` scope; an older sign-in gets one text with a one-tap reconnect card.
 - Contacts also come from Google Contacts (synced every 12 h, `contacts.readonly`, People API) and from a .vcf
   import (iPhone, iCloud). The user's own entries win over synced ones.
 - Approvals (`server/approvals.py`, Settings > Security > Approvals): each send tool asks first or runs without a tap.
+  Defaults live in POLICY: only undoable tidy actions (trash email, trash Drive files, move events) run without a
+  tap; texts, unsubscribing and deleting events ask. Approvals run only from POST /api/approve (never chat text), and
+  a repeat tap adds nothing to the chat.
   Outward ones (email, text, calls, invites, sharing, websites) only run alone in a turn the user typed that read no
   outside text. Waiting actions are `approval` cards with their own buttons (`web/features/approvals.js`);
   `decide_approval` writes the outcome back onto the card. A send tool's `auto` hook still runs first.

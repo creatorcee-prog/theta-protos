@@ -222,10 +222,14 @@ def main():
     check("login wrong key 401", s == 401)
     s, h, j, _ = cl.req("POST", "/api/login", {"key": "sekret"})
     cookie = h.get("Set-Cookie", "")
-    check("login sets HttpOnly SameSite cookie", s == 200 and "protos_key=sekret" in cookie
-          and "HttpOnly" in cookie and "SameSite=Lax" in cookie, cookie)
-    s, _, _, _ = cl.req("GET", "/api/bots", headers={"Cookie": "protos_key=sekret"})
+    tok = cookie.split("protos_key=", 1)[-1].split(";", 1)[0]
+    check("login sets an HttpOnly SameSite cookie holding a session token, never the key", s == 200 and tok.startswith("s.")
+          and "sekret" not in cookie and "HttpOnly" in cookie and "SameSite=Lax" in cookie, cookie)
+    s, _, _, _ = cl.req("GET", "/api/bots", headers={"Cookie": "protos_key=" + tok})
     check("cookie works", s == 200)
+    s, h, _, _ = cl.req("GET", "/api/bots", headers={"Cookie": "protos_key=sekret"})
+    check("an old cookie holding the key still works and is swapped for a token", s == 200
+          and "protos_key=s." in h.get("Set-Cookie", ""), h)
     s, _, _, _ = cl.req("POST", "/api/chat", {"text": "hi"})
     check("chat needs auth", s == 401)
     AUTH = {"x-protos-key": "sekret"}

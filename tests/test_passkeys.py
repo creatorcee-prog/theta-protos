@@ -192,14 +192,14 @@ def main():
         c.load(raw)
         m = c["protos_key"]
         lower = raw.lower()
-        check("login: same cookie as /api/login", m.value == "k" and m["path"] == "/" and "httponly" in lower and
+        check("login: same cookie as /api/login (a session token, never the key)", m.value.startswith("s.") and m.value != "k" and m["path"] == "/" and "httponly" in lower and
               "samesite=lax" in lower and "secure" in lower and m["max-age"] == str(400 * 86400), raw)
         s, j, _ = call("/api/passkeys", key=None, cookie="protos_key=" + m.value)
         check("login: cookie is accepted by app.authed", s == 200 and "passkeys" in j, (s, j))
         # and it's the very same as what login() gives for the right key
         s2, _, h2 = call("/api/login", "POST", {"key": "k"}, key=None)
         ref = [v for k, v in h2 if k == "Set-Cookie"][0]
-        check("login: cookie attributes identical to login()", sorted(raw.split("; ")) == sorted(ref.split("; ")), (raw, ref))
+        check("login: cookie attributes identical to login()", sorted(raw.split("; ")[1:]) == sorted(ref.split("; ")[1:]), (raw, ref))
     s, j, _ = call("/api/passkeys")
     check("login: last used recorded", j["passkeys"][0]["last_used"], j)
 

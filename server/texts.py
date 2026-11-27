@@ -2,7 +2,7 @@
 provider as calls (server/telco.py: Telnyx with TELNYX_API_KEY and TELNYX_FROM, else Twilio).
 
 Sending, two ways:
-- Reviewed and sent without asking (the "texts_auto" setting, on by default), only when ALL hold: the recipient
+- Reviewed and sent without asking (the "texts_auto" setting, off until the user turns it on), only when ALL hold: the recipient
   is a saved contact, the user typed this request (not a routine, not picking something back up), nothing this
   turn read outside text (mail, web, files: a text an email asked for is never sent this way), Twilio is set up,
   and a second model, the reviewer, says SEND. The reviewer checks it does exactly what they asked and nothing
@@ -157,7 +157,7 @@ def _auto(args, ctx, info):
     """agent hook: (ok, text) when it was sent (or refused outright), None for the approval card."""
     from . import contacts, tools
     ctx = ctx if isinstance(ctx, dict) else {}
-    if db.get_setting(SETTING_AUTO) is False or not configured():
+    if db.get_setting(SETTING_AUTO) is not True or not configured():
         return None
     if not ctx.get("user_id") or ctx.get("routine") or ctx.get("resume"):
         return None

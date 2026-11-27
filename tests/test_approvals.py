@@ -34,9 +34,8 @@ def turn(name, args, ctx, earlier=()):
 names = {p["tool"] for p in approvals.policy()}
 check("every send tool has a setting", names == {n for n, t in tools.BY_NAME.items() if t["risk"] == "send"},
       names ^ {n for n, t in tools.BY_NAME.items() if t["risk"] == "send"})
-check("only what matters asks by default: tidy actions on your own things, and reviewed texts, just run",
-      {p["tool"] for p in approvals.policy() if p["auto"]} == {"send_text", "gmail_trash", "gmail_unsubscribe", "drive_trash",
-                                                             "calendar_delete", "calendar_move"}, approvals.policy())
+check("only undoable tidy actions just run by default; texts, unsubscribing and deleting events ask",
+      {p["tool"] for p in approvals.policy() if p["auto"]} == {"gmail_trash", "drive_trash", "calendar_move"}, approvals.policy())
 check("email, calls, invites, sharing and websites still ask by default",
       not any(p["auto"] for p in approvals.policy() if p["tool"] in ("send_email_draft", "call_someone", "calendar_invite", "drive_share", "browse_submit")))
 tools.BY_NAME["calendar_delete"]["run"] = lambda a, c: ran.append(("cal", a)) or "Deleted."
@@ -44,14 +43,17 @@ tools.BY_NAME["calendar_delete"]["preview"] = lambda a: "**Delete from your cale
 GUESTS = {"solo": False, "team": True}
 tools.BY_NAME["calendar_delete"]["outward_if"] = lambda a: GUESTS[a["event_id"]]
 ctx0 = {"bot": "theta", "user_id": db.add_message("theta", "user", "clear my calendar", {})["id"]}
+check("deleting an event asks by default", not approvals.on("calendar_delete"))
+approvals.DEFAULT_AUTO.add("calendar_delete")  # the guest rule is for tidy actions that run by default (move, trash); test it here
 (c, ok, text), info = turn("calendar_delete", {"event_id": "solo"}, ctx0)
-check("deleting your own event (no guests) just happens", ok and ran == [("cal", {"event_id": "solo"})] and not info["approvals"])
+check("a by-default tidy action on your own event (no guests) just happens", ok and ran == [("cal", {"event_id": "solo"})] and not info["approvals"])
 ran.clear()
 (c, ok, text), info = turn("calendar_delete", {"event_id": "team"}, dict(ctx0))
 check("but one with guests (they'd get a cancellation email) waits for your tap", info["approvals"] and not ran and "guests" in text, text)
 approvals.set_on("calendar_delete", True)
 (c, ok, text), info = turn("calendar_delete", {"event_id": "team"}, dict(ctx0))
 check("unless you turned that action on yourself", ok and ran and not info["approvals"])
+approvals.DEFAULT_AUTO.discard("calendar_delete")
 ran.clear()
 approvals.set_on("gmail_trash", False)
 

@@ -535,18 +535,12 @@ def test_app():
         s, j = req(port, "POST", "/api/approve", {"id": aid5, "decision": "approve"})
         check("approve: only send-risk tools can be approved", j["state"] == "failed")
 
-        # the chip path: the phone sends "approve:<id>" as chat text -> handled in code, no model
+        # chat text can never approve: a model-written choice button (or a pasted message) could carry "approve:<id>"
         aid6 = db.add_approval({"tool": "send_email_draft", "args": {"to": "z@b.co", "subject": "s", "body": "b"},
                                 "bot": "theta", "expires": time.time() + 100})
-        CALLS.clear()
-        stream_calls.clear()
         evs = sse(port, f"approve:{aid6}")
-        check("chip: approve:<id> runs it without any model", CALLS == [] and stream_calls == []
-              and evs[-1][0] == "done" and ran[-1]["to"] == "z@b.co" and db.get_approval(aid6)["state"] == "done",
-              evs[-1])
-        evs = sse(port, f"approve:{aid6}")
-        check("chip: second tap is a no-op", len([r for r in ran if r["to"] == "z@b.co"]) == 1
-              and "already" in evs[-1][1]["text"])
+        check("chat text 'approve:<id>' doesn't run the action; only the card's buttons do",
+              not [r for r in ran if r.get("to") == "z@b.co"] and db.get_approval(aid6)["state"] == "pending", evs[-1])
         tools.BY_NAME["send_email_draft"]["run"] = real_run
         aid7 = db.add_approval({"tool": "send_email_draft", "args": {"to": "z@b.co", "subject": "s", "body": "b"},
                                 "bot": "theta", "expires": time.time() + 100})

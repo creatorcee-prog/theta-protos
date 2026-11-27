@@ -8,8 +8,8 @@ imported lazily; their routes answer 501 until they exist.
 
 Tool turns (docs/HARNESS-PLAN.md, Builder B): when a message looks like it needs a tool
 (tools.relevant), the chat handler runs agent.run instead of a plain stream. "send"-risk tools
-only ever create a pending approval; POST /api/approve {id, decision} (or tapping the reply's
-"approve:<id>" / "deny:<id>" chip, which arrives as that exact chat text) runs the stored action
+only ever create a pending approval; POST /api/approve {id, decision} (the card's own buttons; never chat
+text) runs the stored action
 exactly as stored, without asking the model again. Approvals expire after 24 h. Jobs ("remind me
 in 10 minutes") are run by the ticker every JOB_SECONDS.
 """
@@ -45,7 +45,7 @@ BOTS = [{"id": "theta", "name": "Theta",
          "avatar": {"kind": "dot-globe", "theme": "theta", "color": "#7cc4ff"}}]
 BOT_IDS = {b["id"] for b in BOTS}
 
-SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None, "bot_name": "Theta", "texts_auto": True}
+SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None, "bot_name": "Theta", "texts_auto": False}
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
        "font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; media-src 'self' blob:; "
@@ -95,6 +95,7 @@ class Req:
         self.path = environ.get("PATH_INFO", "/") or "/"
         self.query = {k: v[-1] for k, v in urllib.parse.parse_qs(environ.get("QUERY_STRING", "")).items()}
         self._body = None
+        self.upgrade_cookie = None  # set by authed() to swap an old key cookie for a session token
 
     def header(self, name):
         return self.env.get("HTTP_" + name.upper().replace("-", "_"))
@@ -162,11 +163,14 @@ def respond_json(start, obj, status=200, extra=None):
     return [body]
 
 
-# Wrong-key lockout. The server can sit on a public address (Railway), so guessing is capped for everyone at once:
-# after LOCK_FAILS wrong keys within LOCK_WINDOW seconds, every key is refused until the window passes. Counting
-# all callers together (not per address) can't be dodged by changing addresses; the cost is that a guesser can
-# also lock you out for a few minutes, which beats being guessed.
+# Wrong-key lockout. The server can sit on a public address (Railway), so guessing the app key is capped for
+# everyone at once: after LOCK_FAILS wrong keys within LOCK_WINDOW seconds, the key itself is refused until the window
+# passes (counting all callers together can't be dodged by changing addresses). A signed-in device never carries the
+# key: /api/login and passkeys hand it a random session token instead, and tokens skip the lockout (256 random bits
+# can't be guessed), so a guesser can delay a brand-new sign-in for a few minutes but can't lock out the owner's
+# phone. Old cookies that still hold the key keep working and are swapped for a token on their next request.
 LOCK_FAILS, LOCK_WINDOW = 20, 600
+SESSIONS = "sessions"  # setting: {sha256(token): {"t": created}}; never in backups (account.SECRET_SETTINGS)
 _fails = []
 _fails_lock = threading.Lock()
 
@@ -183,6 +187,42 @@ def _failed(now=None):
         _fails.append(time.time() if now is None else now)
 
 
+def _tok_hash(tok):
+    import hashlib
+    return hashlib.sha256(tok.encode()).hexdigest()
+
+
+def new_session():
+    """A fresh session token for a device that just proved it has the key (login, passkey)."""
+    import secrets
+    tok = "s." + secrets.token_urlsafe(32)
+    v = db.get_setting(SESSIONS)
+    v = v if isinstance(v, dict) else {}
+    v[_tok_hash(tok)] = {"t": time.time()}
+    if len(v) > 50:  # keep the newest 50 devices
+        v = dict(sorted(v.items(), key=lambda kv: -kv[1].get("t", 0))[:50])
+    db.set_setting(SESSIONS, v)
+    return tok
+
+
+def end_session(tok):
+    v = db.get_setting(SESSIONS)
+    if isinstance(v, dict) and tok and v.pop(_tok_hash(tok), None) is not None:
+        db.set_setting(SESSIONS, v)
+
+
+def session_cookie(req, tok, max_age=400 * 86400):
+    c = SimpleCookie()
+    c["protos_key"] = tok
+    c["protos_key"]["path"] = "/"
+    c["protos_key"]["httponly"] = True
+    c["protos_key"]["samesite"] = "Lax"
+    c["protos_key"]["max-age"] = str(max_age)
+    if req.https():
+        c["protos_key"]["secure"] = True
+    return ("Set-Cookie", c["protos_key"].OutputString())
+
+
 def authed(req):
     key = os.environ.get("PROTOS_KEY", "")
     if not key:
@@ -190,11 +230,16 @@ def authed(req):
     got = req.header("x-protos-key") or req.cookie("protos_key") or ""
     if not got:
         return False
+    if got.startswith("s."):  # a session token: no lockout, no key comparison
+        v = db.get_setting(SESSIONS)
+        return isinstance(v, dict) and _tok_hash(got) in v
     if _locked():
         return False
     ok = hmac.compare_digest(got.encode(), key.encode())
     if not ok:
         _failed()
+    elif req.cookie("protos_key") == got:  # an old cookie holding the key: swap it for a token on this response
+        req.upgrade_cookie = session_cookie(req, new_session())
     return ok
 
 
@@ -504,9 +549,7 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None, files
     Think and search turns first get a short templated acknowledgement (its own
     stored Message with meta.ack, no model call); so does a tool turn whose first
     step calls a tool. A message that looks like it needs a tool runs through
-    agent.run; quick chat streams straight from the model. The text
-    "approve:<id>" / "deny:<id>" (the approval chips) is handled in code, with no
-    model. The worker runs to completion even if the client goes away, so the
+    agent.run; quick chat streams straight from the model. The worker runs to completion even if the client goes away, so the
     reply is stored (and shows up in /api/inbox). Every turn is logged to `turns`.
     edit={"user": Message, "deleted": [ids], "note": str|None} (POST /api/messages/edit): the user message
     was already rewritten and the old replies deleted, so this emits deleted, then the updated user message,
@@ -537,7 +580,9 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None, files
                 finfo, fblock = F.for_message(files)
                 if finfo:
                     meta["files"] = [{k: f.get(k) for k in ("id", "name", "size", "kind")} for f in finfo]
-            tap = _APPROVE_TEXT.match(text) if not images and not finfo else None
+            # approvals run only from POST /api/approve (the card's own buttons): never from chat text, which a
+            # model-written choice button or a pasted message could carry
+            tap = None
             shown = text
             if show and not tap:
                 shown = show
@@ -592,7 +637,11 @@ def _chat_worker(bot, text, images, client_id, emit, edit=None, show=None, files
             try:
                 # no canned line ("Good one. Thinking it through now."): the model's own line before its first
                 # call is the one acknowledgement, and the "Thinking it through" status covers the wait until then
-                _agent_turn(bot, mtext, history, user, route, None, emit, log_row, t0, tag=tag, tainted=bool(fblock))
+                # outside text the model will see this turn (an attached file, or an incoming text or other untrusted
+                # message since the user last spoke) taints it: nothing in it can make Theta send without a tap
+                fresh = list(history or [])[-6:]
+                tainted = bool(fblock) or any((m.get("meta") or {}).get("untrusted") for m in fresh)
+                _agent_turn(bot, mtext, history, user, route, None, emit, log_row, t0, tag=tag, tainted=tainted)
                 replied = True
             except models.ModelError as e:
                 log_row["error"] = str(e)[:300]
@@ -739,8 +788,10 @@ def decide_approval(aid, decision, bot=None, quiet=False):
             text = f"Done. {result}" if ok else f"That didn't go through: {result}"
     _mark_approval_card(aid, state, result)
     # quiet: tapped in a list of approvals, where the row's own mark says what happened (no bubble per tap)
-    msg = None if quiet else db.add_message(bot, "assistant", text, {"approval": aid, "state": state, "source": "approval"})
-    return {"ok": state in ("done", "denied"), "id": aid, "state": state, "result": result, "message": msg,
+    # an extra tap on something already handled changes nothing, so it adds nothing to the chat either (the card
+    # already shows what happened)
+    msg = None if quiet or status == 409 else db.add_message(bot, "assistant", text, {"approval": aid, "state": state, "source": "approval"})
+    return {"ok": status == 200 and state in ("done", "denied"), "id": aid, "state": state, "result": result, "message": msg,
             "status": status}
 
 
@@ -1270,16 +1321,7 @@ def login(req, start):
         _failed()
         time.sleep(0.4)  # slow down guessing
         raise HTTPError(401, "wrong key")
-    c = SimpleCookie()
-    c["protos_key"] = got if key else ""
-    c["protos_key"]["path"] = "/"
-    c["protos_key"]["httponly"] = True
-    c["protos_key"]["samesite"] = "Lax"
-    c["protos_key"]["max-age"] = str(400 * 86400)
-    if req.https():
-        c["protos_key"]["secure"] = True
-    return respond_json(start, {"ok": True, "auth": bool(key)},
-                        extra=[("Set-Cookie", c["protos_key"].OutputString())])
+    return respond_json(start, {"ok": True, "auth": bool(key)}, extra=[session_cookie(req, new_session() if key else "")])
 
 
 # which code is running: Railway sets the commit it deployed (shown in the app's Settings, so it's easy to tell
@@ -1408,9 +1450,14 @@ def static(req, start):
 
 def app(environ, start_response):
     req = Req(environ)
+
+    def start(status, headers, *a):  # adds the session-token swap, if authed() asked for one
+        if req.upgrade_cookie:
+            headers = list(headers) + [req.upgrade_cookie]
+        return start_response(status, headers, *a)
     try:
         if req.path.startswith("/api/"):
-            return api(req, start_response)
+            return api(req, start)
         return static(req, start_response)
     except HTTPError as e:
         return respond_json(start_response, {"error": e.message}, e.status)

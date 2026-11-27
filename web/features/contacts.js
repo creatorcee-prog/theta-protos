@@ -130,7 +130,7 @@
   async function load() {
     if (T.state.demo) { render(); return; }
     try { const r = await T.api("/api/contacts"); own = (r && r.contacts) || []; gstat = (r && r.google) || gstat; } catch (e) { /* signed out or offline */ }
-    try { const st = await T.api("/api/settings"); autoOn = !st || st.texts_auto !== false; } catch (e) {}
+    try { const st = await T.api("/api/settings"); autoOn = !!st && st.texts_auto === true; } catch (e) {}
     render();
   }
   render();

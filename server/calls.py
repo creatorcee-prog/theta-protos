@@ -813,9 +813,10 @@ def history_route(req, start_response):
 
 ROUTES = {"/api/calls/settings": settings_route, "/api/calls/test": test_route, "/api/calls/history": history_route}
 def inbound_route(req, start):
-    """Someone called Theta's number (the TeXML application's voice URL): a short line, then hang up. Nothing is
-    read from the request, so it needs no signature."""
-    who = user_name() or "its owner"
+    """Someone called Theta's number (the TeXML application's voice URL): a short line, then hang up. The owner's
+    name is only said on a call the provider signed: this URL is public, and anyone could fetch it to learn the name."""
+    from . import telco
+    who = (user_name() if telco.signed(req) else "") or "its owner"
     return _xml(start, _twiml(_say(f"Hi, you've reached Theta, the assistant for {who}. This line doesn't take calls. "
                                    "Please text this number instead. Goodbye."), "<Hangup/>"))
 

@@ -33,7 +33,7 @@ tests/             test_*.py, stdlib only, run with `python3 tests/test_x.py`
 
 ## Auth
 
-`PROTOS_KEY` (env) is sent as the `x-protos-key` header or the `protos_key` cookie. `/api/login` (POST {key}) sets the cookie (HttpOnly, SameSite=Lax). Everything under `/api/` except `/api/login` and `/api/health` needs it. If `PROTOS_KEY` is unset, auth is off (local dev only); the app prints a warning.
+`PROTOS_KEY` (env) is sent as the `x-protos-key` header or the `protos_key` cookie. `/api/login` (POST {key}) and passkey sign-in set the cookie (HttpOnly, SameSite=Lax) to a random session token, never the key. 20 wrong keys in 10 minutes refuse the key for everyone for a while; session tokens are never locked out. Everything under `/api/` except `/api/login` and `/api/health` needs it. If `PROTOS_KEY` is unset, auth is off (local dev only); the app prints a warning.
 
 ## HTTP API (JSON unless noted)
 

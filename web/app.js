@@ -45,15 +45,34 @@
   const post = (path, body) => api(path, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(body || {})});
   const timeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error("timeout")), ms))]);
 
+  // Is there a Theta server? "ok"; "none" when this page is plain files with no API behind it (a static preview: the
+  // built-in demo is the only thing to show); "down" when the server exists but didn't answer (slow, offline,
+  // restarting). Only "none" may show the demo: a real user must never see made-up data because their server was slow.
   async function detect() {
-    if (S.demo) return;
-    try {
-      const r = await timeout(realFetch("/api/health", {cache: "no-store", credentials: "same-origin"}), 3500);
-      const j = await r.json();
-      if (!r.ok || !j || !j.ok) throw new Error("no api");
-      S.version = j.version || ""; S.build = j.build || "";
-    } catch (e) { S.demo = true; S.demoAuto = true; }
+    if (S.demo) return "ok";
+    let r;
+    try { r = await timeout(realFetch("/api/health", {cache: "no-store", credentials: "same-origin"}), 8000); }
+    catch (e) { return "down"; }
+    let j = null; try { j = await r.json(); } catch (e) {}
+    if (r.ok && j && j.ok) { S.version = j.version || ""; S.build = j.build || ""; return "ok"; }
+    return r.status === 404 || (r.ok && !j) ? "none" : "down";
   }
+  // keep trying a server that's down: every few seconds, sooner when the phone comes back online or the app is opened
+  let retryT = 0, retryMs = 3000;
+  function offline() {
+    S.offline = true; renderHome();
+    dock("offline", {err: true, icon: "i-bell", title: "Can't reach Theta right now", text: "Your messages are safe. I'll keep trying."});
+    clearTimeout(retryT); retryT = setTimeout(reconnect, retryMs); retryMs = Math.min(retryMs * 1.6, 30000);
+  }
+  async function reconnect() {
+    clearTimeout(retryT);
+    const st = await detect();
+    if (st !== "ok") return offline();
+    try { S.offline = false; await loadAll(); retryMs = 3000; dock("offline", null); }
+    catch (e) { if (e instanceof AuthError) showLogin(); else offline(); }
+  }
+  window.addEventListener("online", () => { if (!S.ready && !S.demo) reconnect(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && !S.ready && !S.demo) reconnect(); });
 
   // SSE over a POST: fetch + a ReadableStream reader, parsing event:/data: frames
   async function readSSE(body, on) {
@@ -680,10 +699,10 @@
       // the cursor moves only with what the inbox (or history) returned: a proactive text stored while a reply was
       // streaming has a lower id than that reply, and must not be skipped
       const d = await api(`/api/inbox?since=${S.inboxId}`);
-      dock("offline", null);
+      dock("offline", null); if (S.offline) { S.offline = false; renderHome(); }
       for (const m of d.messages || []) { if (m.id > S.inboxId) S.inboxId = m.id; if (!S.msgs.has(m.id)) incoming(m); }
     } catch (e) {
-      if (!(e instanceof AuthError) && !e.status) dock("offline", {err: true, icon: "i-bell", title: "Can't reach Theta right now", text: "Your messages are safe. I'll keep trying."});
+      if (!(e instanceof AuthError) && !e.status) { dock("offline", {err: true, icon: "i-bell", title: "Can't reach Theta right now", text: "Your messages are safe. I'll keep trying."}); if (!S.offline) { S.offline = true; renderHome(); } }
     }
   }
   function incoming(m) {
@@ -1282,7 +1301,10 @@
     $("home-sub").textContent = last ? (last.role === "user" ? "You: " : "") + last.text.replace(/[*`#]/g, "").replace(/\s+/g, " ").slice(0, 80) : "Your own assistant";
     // the banner slot: something Theta texted you that you haven't seen, else an offer to turn on notifications
     const bn = $("home-banner"); bn.replaceChildren();
-    if (S.unread && S.lastProactive) {
+    if (S.offline) {
+      const t = el("div", "b-txt"); t.append(el("span", null, "Can't reach Theta right now. Your messages are safe; I'll keep trying."));
+      bn.append(svg("i-bell"), t); bn.hidden = false;
+    } else if (S.unread && S.lastProactive) {
       const m = S.lastProactive, t = el("div", "b-txt");
       t.append(el("small", null, "Theta texted you · " + fmtTime(m.t)), el("span", null, m.text.replace(/[*`#]/g, "")));
       const b = el("button", "btn-white", "Open"); b.addEventListener("click", () => openChat(m.id));
@@ -1707,7 +1729,7 @@
     await loadHistory();
     S.ready = true;
     refreshPush();  // keep this phone's push sign-up current (fixes one made with an older server key)
-    if (S.demo && S.demoAuto) dock("demo", {icon: "i-bell", title: "Demo mode", text: "Theta's server isn't reachable, so this is a built-in demo. Nothing you type leaves this page.",
+    if (S.demo && S.demoAuto) dock("demo", {icon: "i-bell", title: "Demo mode", text: "There's no Theta server behind this page, so this is a built-in demo. Nothing you type leaves this page.",
       actions: [["OK", () => dock("demo", null)]]});
     renderHome();
   }
@@ -1720,7 +1742,12 @@
     store("theta:opened", today);
     const opening = new Promise(res => { skip = res; sorb.opening(store("theta:opening") || "converge", res, full ? 1 : 3); });
     splash.addEventListener("click", () => skip(), {once: true});
-    const ready = (async () => { await detect(); try { await loadAll(); } catch (e) { if (!(e instanceof AuthError)) { S.demo = true; S.demoAuto = true; await loadAll().catch(() => {}); } } })();
+    const ready = (async () => {
+      const st = await detect();
+      if (st === "none") { S.demo = true; S.demoAuto = true; }
+      if (st === "down") { renderHome(); offline(); return; }
+      try { await loadAll(); } catch (e) { if (!(e instanceof AuthError)) { renderHome(); offline(); } }
+    })();
     await Promise.all([Promise.race([opening, new Promise(r => setTimeout(r, full ? 4000 : 1500))]), ready]);
     const target = Q.get("m");
     if (!S.authed) showLogin();

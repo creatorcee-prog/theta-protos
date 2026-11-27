@@ -156,12 +156,36 @@ def init(path=None):
         if _path != ":memory:":
             os.makedirs(os.path.dirname(os.path.abspath(_path)), exist_ok=True)
         _gen += 1
-    c = _conn()
+    migrate(_conn())
+
+
+def migrate(c):
+    """Bring a database up to this version's tables and columns (idempotent; also used on a backup before it's
+    restored)."""
     c.executescript(_SCHEMA)
     for table, col, typ in _ADDED:  # databases made before these columns existed
-        cols = {r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+        cols = {r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
         if col not in cols:
             c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+
+
+def columns(c):
+    """{table: set of column names} for every table this version uses."""
+    names = [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    return {t: {r[1] for r in c.execute(f"PRAGMA table_info({t})").fetchall()} for t in names if not t.startswith("sqlite_")}
+
+
+def fits(c):
+    """'' if the database `c` has every table and column this version needs, else what's missing."""
+    ref = sqlite3.connect(":memory:")
+    migrate(ref)
+    need, have = columns(ref), columns(c)
+    ref.close()
+    for t, cols in need.items():
+        miss = cols - have.get(t, set())
+        if miss:
+            return f"{t} has no {', '.join(sorted(miss))}"
+    return ""
 
 
 def _conn():

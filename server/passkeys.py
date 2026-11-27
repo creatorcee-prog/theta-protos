@@ -375,17 +375,8 @@ def login(req, start):
         if FAIL_DELAY:
             time.sleep(FAIL_DELAY)
         return app.respond_json(start, {"ok": False, "error": str(e)}, 401)
-    # the same cookie login() sets, with the same attributes
-    from http.cookies import SimpleCookie
-    c = SimpleCookie()
-    c["protos_key"] = key
-    c["protos_key"]["path"] = "/"
-    c["protos_key"]["httponly"] = True
-    c["protos_key"]["samesite"] = "Lax"
-    c["protos_key"]["max-age"] = str(400 * 86400)
-    if req.https():
-        c["protos_key"]["secure"] = True
-    return app.respond_json(start, {"ok": True}, extra=[("Set-Cookie", c["protos_key"].OutputString())])
+    # a session token, like login() sets (the key itself never goes in a cookie)
+    return app.respond_json(start, {"ok": True}, extra=[app.session_cookie(req, app.new_session())])
 
 
 ROUTES = {

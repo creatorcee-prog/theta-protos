@@ -33,7 +33,7 @@ PROFILE_FIELDS = {"name": 60, "nickname": 40, "photo": 80, "email": 120, "phone"
                   "home": 80, "tz": 64, "about": 1500, "instructions": 1500}
 STYLES = ("default", "concise", "detailed", "casual", "professional")
 LEVELS = ("less", "default", "more")
-SECRET_SETTINGS = ("google", "google_oauth_states", "bank_simplefin", "bank_cache", "vapid", "telnyx_account_sid")
+SECRET_SETTINGS = ("google", "google_oauth_states", "bank_simplefin", "bank_cache", "vapid", "telnyx_account_sid", "sessions")
 BACKUP_EVERY = 3 * 3600   # a backup to Drive this often
 BACKUPS_KEPT = 16          # the newest kept, plus one a day for KEEP_DAILY days
 KEEP_DAILY = 14
@@ -247,6 +247,11 @@ def restore(blob):
             raise ValueError("that file isn't a Theta backup (it has no messages)")
         if src.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise ValueError("that backup is damaged")
+        db.migrate(src)  # a backup from an older version gets this version's new columns, on the copy only
+        bad = db.fits(src)
+        if bad:  # the root cause of a wiped database: never copy over a file this version can't read
+            raise ValueError("that file isn't a Theta backup this version can read (" + bad + ")")
+        src.execute("SELECT id, bot, role, text, meta, t FROM messages LIMIT 1").fetchall()
         live = db._conn()
         keep = live.execute(f"SELECT key, value FROM settings WHERE key IN ({','.join('?' * len(SECRET_SETTINGS))})",
                             SECRET_SETTINGS).fetchall()
@@ -254,11 +259,18 @@ def restore(blob):
         out = sqlite3.connect(safety)
         live.backup(out)
         out.close()
-        src.backup(live)
-        src.close()
-        for k, v in keep:
-            live.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
-        n = live.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        try:
+            src.backup(live)
+            src.close()
+            for k, v in keep:
+                live.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
+            n = live.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            db.migrate(live)
+        except Exception:  # anything going wrong mid-restore puts the database back exactly as it was
+            back = sqlite3.connect(safety)
+            back.backup(live)
+            back.close()
+            raise
         olds = sorted(f for f in os.listdir(db.data_dir()) if f.startswith("before-restore-") and f.endswith(".db"))
         for f in olds[:-3]:  # keep the 3 newest safety copies
             try:
@@ -476,6 +488,8 @@ def logout_route(req, start):
     from .app import HTTPError, respond_json
     if req.method != "POST":
         raise HTTPError(405, "method not allowed")
+    from .app import end_session
+    end_session(req.cookie("protos_key") or "")
     gone = "protos_key=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax" + ("; Secure" if req.https() else "")
     return respond_json(start, {"ok": True}, extra=[("Set-Cookie", gone)])
 

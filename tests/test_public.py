@@ -28,10 +28,14 @@ def call(path, method="GET", body=None, headers=None):
 db.init()
 app.time.sleep = lambda s: None   # the 0.4 s slow-down, skipped in tests
 check("the right key works", call("/api/messages", headers={"x-protos-key": "right-key"})[0] == 200)
+phone = app.new_session()  # a device that signed in before the guessing started
 for i in range(app.LOCK_FAILS):
     call("/api/login", "POST", {"key": "guess%d" % i})
 check("after 20 wrong keys, logins are refused for a while", call("/api/login", "POST", {"key": "right-key"})[0] == 429)
 check("and so is the right key in a header, so guessing can't continue that way", call("/api/messages", headers={"x-protos-key": "right-key"})[0] == 401)
+check("but a signed-in phone isn't locked out by someone else's guessing",
+      call("/api/messages", headers={"cookie": "protos_key=" + phone})[0] == 200)
+check("and a made-up session token gets nothing", call("/api/messages", headers={"cookie": "protos_key=s.madeup"})[0] == 401)
 app._fails[:] = [t - app.LOCK_WINDOW for t in app._fails]
 check("once the window passes, the right key works again", call("/api/login", "POST", {"key": "right-key"})[0] == 200)
 check("no key at all isn't counted as a guess", (call("/api/messages")[0], len([t for t in app._fails if t > 0 and app.time.time() - t < app.LOCK_WINDOW])) == (401, 0))

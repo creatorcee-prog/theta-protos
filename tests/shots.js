@@ -351,6 +351,27 @@ async function waitUp(url) {
     const f = path.join(OUT, "10-login.png"); await p2.screenshot({path: f}); console.log("shot " + f);
     check(e2.length === 0, "login page has no errors" + (e2.length ? ": " + e2.join(" | ") : ""));
 
+    // a server that's down (a 503, then back): never the built-in demo's made-up data, and it reconnects by itself
+    const p4 = await ctx.newPage();
+    let up = false;
+    await p4.route("**/api/**", route => {
+      const u = new URL(route.request().url());
+      if (!up) return route.fulfill({status: 503, json: {error: "restarting"}});
+      if (u.pathname === "/api/health") return route.fulfill({json: {ok: true, version: "0.test"}});
+      if (u.pathname.startsWith("/api/messages")) return route.fulfill({json: {messages: []}});
+      return route.fulfill({json: {}});
+    });
+    await p4.goto(base + "/");
+    await p4.waitForSelector("#home:not([hidden])", {timeout: 12000});
+    await sleep(600);
+    const down = await p4.evaluate(() => ({demo: window.ThetaApp.state.demo, body: document.body.innerText}));
+    check(!down.demo && !/Sam|Dentist/.test(down.body), "a server that's down never shows the demo's made-up data");
+    check(/Can't reach Theta/.test(down.body), "it says it can't reach Theta and keeps trying");
+    up = true;
+    await p4.waitForFunction(() => window.ThetaApp.state.ready, null, {timeout: 15000}).catch(() => {});
+    check(await p4.evaluate(() => window.ThetaApp.state.ready && !window.ThetaApp.state.demo), "and picks up by itself once the server's back");
+    await p4.close();
+
     // a mouse: the "..." beside a bubble opens the bar, Escape closes it and gives focus back
     const dctx = await browser.newContext({viewport: {width: 1100, height: 800}});
     const p3 = await dctx.newPage();

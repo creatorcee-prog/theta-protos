@@ -110,6 +110,18 @@ try:
 except ValueError as e:
     ok = "isn't a Theta backup" in str(e)
 check("another app's database isn't restored", ok)
+# a file with the right table names but the wrong columns (what wiped the database before) changes nothing
+before = db._conn().execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+wrong = os.path.join(tempfile.mkdtemp(), "w.db")
+c = sqlite3.connect(wrong); c.execute("CREATE TABLE messages (x)"); c.execute("CREATE TABLE settings (y)"); c.commit(); c.close()
+try:
+    account.restore(open(wrong, "rb").read()); ok = False
+except ValueError:
+    ok = True
+check("a look-alike file is refused before anything is overwritten", ok
+      and db._conn().execute("SELECT COUNT(*) FROM messages").fetchone()[0] == before and db.get_setting("google"))
+db.add_message("theta", "user", "still works after a refused restore")
+check("and the database still works", db.messages("theta")[-1]["text"].startswith("still works"))
 
 # ---------------------------------------------------------------- Drive backups (Google faked)
 from server import google

@@ -118,6 +118,7 @@ check("routines aren't saved for later", not resume._items())
 from server import models
 os.environ.update(TWILIO_ACCOUNT_SID="AC1", TWILIO_AUTH_TOKEN="t", TWILIO_FROM="+15550001111")
 db.set_setting("texts_sent", {})
+db.set_setting("texts_auto", True)  # off by default since the owner asked for texts to wait for a tap; this tests it on
 sent.clear()
 seen = []
 verdict = {"v": '{"verdict": "send", "reason": "Plain heads-up, matches the request."}'}

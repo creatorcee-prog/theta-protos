@@ -252,10 +252,26 @@ def verify(req, kind="call"):
         ok = _ed25519_ok(req, _raw(req))
         if ok is not None:
             return ok
-        # unsigned: a call URL is a capability (its id is a secret only Telnyx was given); a text needs a signature
-        return kind == "call" or not _env("TELNYX_PUBLIC_KEY")
+        # unsigned: a call URL is a capability (its id is a secret only Telnyx was given); a text always needs a valid
+        # signature, so with no TELNYX_PUBLIC_KEY set, incoming texts are refused (anyone can POST to a public URL)
+        if kind != "call" and not _env("TELNYX_PUBLIC_KEY"):
+            db.set_setting("texts_in_blocked", {"t": time.time(), "why": "TELNYX_PUBLIC_KEY isn't set"})
+        return kind == "call"
     pairs = urllib.parse.parse_qsl(_raw(req).decode("utf-8", "replace"), keep_blank_values=True)
     return calls.verify(req, pairs)
+
+
+def signed(req):
+    """True only for a request the phone provider signed (no fallbacks): for public routes that would otherwise
+    hand anyone on the internet something private."""
+    from . import calls
+    try:
+        if provider() == "telnyx":
+            return _ed25519_ok(req, _raw(req)) is True
+        pairs = urllib.parse.parse_qsl(_raw(req).decode("utf-8", "replace"), keep_blank_values=True)
+        return bool(req.header("x-twilio-signature")) and bool(calls.verify(req, pairs))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def learn(params):
