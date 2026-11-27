@@ -460,7 +460,18 @@ def logout_route(req, start):
     return respond_json(start, {"ok": True}, extra=[("Set-Cookie", gone)])
 
 
-ROUTES = {"/api/account": route, "/api/account/usage": usage_route, "/api/account/backup": backup_route,
+def look_route(req, start):
+    """GET/POST /api/look {accent?, dot?, opening?}: Theta's look, the same on every device."""
+    from . import intro_steps
+    from .app import HTTPError, respond_json
+    if req.method == "POST":
+        intro_steps.save_look(req.json() or {})
+    elif req.method != "GET":
+        raise HTTPError(405, "method not allowed")
+    return respond_json(start, intro_steps.look())
+
+
+ROUTES = {"/api/look": look_route, "/api/account": route, "/api/account/usage": usage_route, "/api/account/backup": backup_route,
           "/api/account/restore": restore_route, "/api/account/drive-backups": drive_list_route,
           "/api/logout": logout_route}
 

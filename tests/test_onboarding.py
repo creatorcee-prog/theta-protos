@@ -63,17 +63,42 @@ done = [d for e, d in ev if e == "done"][-1]
 check("a typed name for Theta renames it", db.get_setting("bot_name") == "Pip" and onboarding.bot_name() == "Pip")
 check("'Pip it is!' with a Renamed to line", acks and acks[0]["text"].startswith("Pip it is!")
       and acks[0]["meta"]["cards"][0] == {"type": "onboarding_event", "text": "Renamed to Pip", "icon": "pencil"}, acks[:1])
-check("then how Theta should talk, with style options", "How should I talk to you?" in done["text"]
-      and done["meta"]["cards"][0]["step"] == "style" and len(done["meta"]["cards"][0]["options"]) == 4,
+check("then make it yours: color, dots and opening, as a choices card", "make me yours" in done["text"]
+      and done["meta"]["cards"][0]["kind"] == "choices" and [r["key"] for r in done["meta"]["cards"][0]["rows"]] == ["accent", "dot", "opening"],
       [a["text"][:30] for a in acks] + [done["text"][:40]])
+st, msgs = onboarding.answer("look", {"accent": "#a78bfa", "dot": "star", "opening": "signal", "bogus": "x"})
+check("the look is saved for every device (unknown keys ignored)", db.get_setting("look") == {"accent": "#a78bfa", "dot": "star", "opening": "signal"})
+check("then how Theta should talk, with style options", "How should I talk to you?" in msgs[-1]["text"]
+      and msgs[-1]["meta"]["cards"][0]["step"] == "style" and len(msgs[-1]["meta"]["cards"][0]["options"]) == 4)
 st, msgs = onboarding.answer("style", "concise")
 check("the style is saved to Personalization", __import__("server.account", fromlist=["x"]).personalize()["style"] == "concise")
+check("then the feel: warmth, enthusiasm, emoji", [r["key"] for r in msgs[-1]["meta"]["cards"][0]["rows"]] == ["warmth", "enthusiasm", "emoji"])
+st, msgs = onboarding.answer("vibe", {"warmth": "more", "emoji": "less"})
+acc = __import__("server.account", fromlist=["x"])
+check("saved to Personalization", acc.personalize()["warmth"] == "more" and acc.personalize()["emoji"] == "less")
+check("then phone and email, as fields", [f["key"] for f in msgs[-1]["meta"]["cards"][0]["fields"]] == ["phone", "email"])
+out = onboarding.typed("it's (435) 555-0101 and cee@example.com", db.add_message("theta", "user", "x"))
+check("typed contact details are understood and saved", out is not None and acc.profile()["phone"] == "+14355550101"
+      and acc.profile()["email"] == "cee@example.com")
+check("then ground rules, as a checklist with your own words too", onboarding.state()["step"] == "instructions")
+onboarding.answer("instructions", ["Disagree with me when I'm wrong, and say why."])
+check("rules land in Profile > Instructions", "Disagree with me" in acc.profile()["instructions"])
+msgs = db.messages("theta", limit=3)
 check("then a little about me, with the notifications question in its card", "A little about me" in msgs[-1]["text"]
       and msgs[-1]["meta"]["cards"][0]["step"] == "notify" and "notification" in msgs[-1]["meta"]["cards"][0]["question"])
 check("the system prompt uses the new name", "named you Pip" in persona.system_prompt())
 check("the question card shows what was picked", "answered" in db.get_message(onboarding.state()["cards"]["me"])["meta"]["cards"][0])
 
 st, msgs = onboarding.answer("notify", "skip")
+check("then alerts near you (Vantage)", st["step"] == "vantage" and msgs[-1]["meta"]["cards"][0]["options"][0]["do"] == "location")
+st, msgs = onboarding.answer("vantage", "on")
+check("on: Theta may text first", db.get_setting("proactive") is True and st["step"] == "apps")
+labels = [o["label"] for o in msgs[-1]["meta"]["cards"][0]["options"]]
+check("then which apps to connect (no Google sign-in here, so no Google)", "Bank accounts (read-only)" in labels
+      and not any(l.startswith("Google") for l in labels))
+st, msgs = onboarding.answer("apps", ["tavily", "bank"])
+check("each app picked shows its setup right there", any("bridge.simplefin.org" in m["text"] for m in msgs)
+      and any((m["meta"].get("cards") or [{}])[0].get("service") == "tavily" for m in msgs))
 check("no Google sign-in on the server: the Gmail step is skipped, and the quiz is offered", st["step"] == "quiz_offer"
       and "quick quiz" in msgs[-1]["text"] and msgs[-1]["meta"]["cards"][0]["step"] == "quiz_offer", [m["text"][:40] for m in msgs])
 st, msgs = onboarding.answer("quiz_offer", "skip")
@@ -97,9 +122,12 @@ check("Run the intro again starts over", st["needed"] and st["step"] == "hello" 
 check("a question typed mid-intro goes to the model", onboarding.typed("what can you do?", None) is None)
 onboarding.answer("hello", "Cee")
 st, msgs = onboarding.answer("me", "skip")
-check("skipping the name keeps the current one", onboarding.bot_name() == "Pip" and st["step"] == "style")
-onboarding.answer("style", "skip")
-st, msgs = onboarding.answer("notify", "on")
+check("skipping the name keeps the current one", onboarding.bot_name() == "Pip" and st["step"] == "look")
+for step in ("look", "style", "vibe", "contact", "instructions"):
+    onboarding.answer(step, "skip")
+onboarding.answer("notify", "on")
+onboarding.answer("vantage", "skip")
+st, msgs = onboarding.answer("apps", ["google"])
 card = msgs[-1]["meta"].get("cards", [{}])[0]
 check("with Google sign-in set up: connect Gmail, with its card", st["step"] == "google" and "Connect Gmail" in msgs[-1]["text"]
       and card.get("type") == "connect" and card.get("action") == "/api/google/start", card)

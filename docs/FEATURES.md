@@ -122,8 +122,11 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   prompt. storage() says whether the data dir is on the Railway volume (wipes are shown, not silent); backups via
   SQLite's backup API with SECRET_SETTINGS removed; restore keeps current secrets and a safety copy; daily Drive
   backups (last 7) with full Drive access; usage from the turns table; /api/logout.
-- Intro and quiz (`server/onboarding.py`, `server/quiz.py`): hello, Theta's name, style (Personalization),
-  notifications, Gmail, then an optional 14-question quiz (tap, pick several, or type; skip any; "stop" ends it).
+- Intro and quiz (`server/onboarding.py`, `server/intro_steps.py`, `server/quiz.py`): hello, Theta's name, Make it yours
+  (accent color, globe dots, opening: the "look" setting, GET/POST /api/look, web/features/look.js), style, feel
+  (warmth, enthusiasm, emoji), phone and email, ground rules (Instructions), notifications, alerts near you (rounded
+  location + texting first), apps to connect (each shows its setup), Google if picked, then an optional 14-question
+  quiz, mostly checklists with "Other" for your own words (skip any; "stop" ends it).
   Answers go to the Profile (occupation, home, "More about you" lines keyed by topic) and Personalization; then a
   summary and chip ideas from the answers (built-ins to switch on, a tailored Morning brief, Meal plan, News digest,
   Catch me up on <interest>, Goal check-in, Keep in touch, Find a time) added with a tap. POST /api/onboarding
@@ -136,6 +139,12 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 - Web search (`router.search_context`): Tavily, else a Bing search read in a private tab of Theta's browser
   (`browser.web_results`, its own session: not on Theta's screen, never saved as sign-ins). `router.search_live()`
   says whether either can run.
+- Files (`server/files.py`): POST /api/files (raw bytes, X-File-Name), text pulled from PDF (pypdf), Word, Excel and
+  text-like files; a chat message's "files" ids put their text in an outside-content frame and taint the turn;
+  file_read; GET /api/files/<id>. Photos: the app uploads its JPEG after the message (attachImages).
+- Self-improvement log (`server/improve.py`, after arXiv 2611.18856): each feedback lesson is recorded as an edit with
+  a prediction and baseline; after 8 newer rated replies it gets a verdict (helping / not helping); one not sticking is
+  stated more strictly; lessons made with another model are marked for a re-check. Shown on each lesson in Settings.
 - Status line (`server/activity.py`): agent.run emits `activity` {id, text, state, kind} per tool call in plain
   words (contact names, page titles, element labels; never bodies, typed text, URL paths or secret-looking text);
   tools add steps through ctx["activity"](text, kind); the texts go on the reply as meta.activity, with

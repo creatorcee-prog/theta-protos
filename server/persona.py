@@ -479,6 +479,13 @@ def feedback_block():
         return ""
     if _fb_cache["v"] != v:
         les = lessons()
-        _fb_cache["text"] = (FEEDBACK_HEAD + "\n" + "\n".join("- " + x["text"] for x in les)) if les else ""
+        lines = [x["text"] for x in les]
+        try:  # the self-improvement log (server/improve.py): note new lessons, and state harder the ones not sticking
+            from . import improve
+            improve.record(les)
+            lines = improve.prompt_notes(les)
+        except Exception:  # noqa: BLE001
+            pass
+        _fb_cache["text"] = (FEEDBACK_HEAD + "\n" + "\n".join("- " + t for t in lines)) if les else ""
         _fb_cache["v"] = v
     return _fb_cache["text"]

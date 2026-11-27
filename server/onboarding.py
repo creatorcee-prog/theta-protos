@@ -34,7 +34,9 @@ from . import db
 
 STATE = "onboarding"
 DONE = "onboarding_done"
-STEPS = ("hello", "me", "style", "notify", "google", "quiz_offer", "quiz", "chips", "first", "done")
+STEPS = ("hello", "me", "look", "style", "vibe", "contact", "instructions", "notify", "vantage", "apps", "google",
+         "quiz_offer", "quiz", "chips", "first", "done")
+SETUP_STEPS = ("look", "vibe", "contact", "instructions", "vantage", "apps")  # server/intro_steps.py
 STYLES = [("Short and to the point", "concise"), ("Detailed when it helps", "detailed"), ("Casual, like a friend", "casual"),
           ("Polished and professional", "professional")]
 DEFAULT_NAME = "Theta"
@@ -123,9 +125,16 @@ FIRST_PLAIN = [
 ]
 
 
+def _steps():
+    from . import intro_steps
+    return intro_steps
+
+
 def script(step, s):
     """[(text, cards)] Theta sends when a step starts."""
     me = bot_name()
+    if step in SETUP_STEPS:
+        return _steps().card(step, s)
     if step == "hello":
         return [(f"Hi! I'm {me}, your new personal assistant. I can help with your work and everyday life, and "
                  "take things off your plate.", []),
@@ -352,6 +361,13 @@ def _apply(step, ans, s, now, typed_msg=None):
                             [{"type": "onboarding_event", "text": f"Renamed to {name}", "icon": "pencil"}]))
         else:
             out.append(_say("me", f"{name} it is." + (f" Good to meet you, {who}." if who else "")))
+    elif step in SETUP_STEPS:
+        try:
+            for text, cards in _steps().apply(step, ans, s):
+                out.append(_say(step, text, cards))
+        except ValueError as e:
+            raise Bad(str(e)) from None
+        s["answers"].setdefault(step, "done")
     elif step == "style":
         if ans not in {v for _, v in STYLES}:
             raise Bad("pick one of the styles")
@@ -385,8 +401,8 @@ def _next(step, s=None):
     s = s or {"answers": {}}
     i = STEPS.index(step) + 1
     nxt = STEPS[i] if i < len(STEPS) else "done"
-    if nxt == "google" and (not _gmail_ready() or _gmail_on()):
-        nxt = "quiz_offer"  # nothing to connect (no Google sign-in on the server), or it's connected already
+    if nxt == "google" and (not _gmail_ready() or _gmail_on() or "google" not in (s["answers"].get("apps") or [])):
+        nxt = "quiz_offer"  # not picked, nothing to connect (no Google sign-in on the server), or connected already
     if nxt == "quiz" and s["answers"].get("quiz_offer") != "yes":
         nxt = "first"
     if nxt == "chips" and not _resolve(_quiz().ideas(s.get("quiz", {}).get("answers", {}))) \
@@ -476,7 +492,8 @@ def answer(step, ans, now=None, typed_msg=None, q=None):
             label = "Skipped"
         else:
             out += _apply(step, ans, s, now, typed_msg)
-            label = (f"{len(ans)} added" if isinstance(ans, list) else str(ans))[:40]
+            label = ("Saved" if isinstance(ans, dict) else
+                     (f"{len(ans)} added" if step == "chips" else f"{len(ans)} picked") if isinstance(ans, list) else str(ans))[:40]
         _mark(s, step, answered=label)
         _advance(s, now, out)
         _save(s)
@@ -520,6 +537,14 @@ def typed(text, user_msg, now=None):
         if re.match(r"^(no|nah|later|maybe later|not now|skip)\b", t):
             return answer("quiz_offer", "skip", now, typed_msg=user_msg)[1]
         return None
+    if step in SETUP_STEPS:
+        val = _steps().typed(step, text)
+        if val is None:
+            return None
+        try:
+            return answer(step, val, now, typed_msg=user_msg)[1]
+        except Bad:
+            return None
     if step in ("style", "chips"):
         return None
     if step in ("google", "notify"):
@@ -603,7 +628,9 @@ def route(req, start_response):
         elif body.get("step"):
             ans = body.get("answer")
             if isinstance(ans, list):
-                ans = [str(a)[:40] for a in ans[:12]]
+                ans = [str(a)[:300] for a in ans[:12]]
+            elif isinstance(ans, dict):
+                ans = {str(k)[:20]: str(v)[:200] for k, v in list(ans.items())[:8]}
             st, msgs = answer(str(body["step"]), ans, q=str(body.get("q") or "") or None)
         else:
             raise HTTPError(400, "send {start: true}, {step, answer} or {reset: true}")

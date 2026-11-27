@@ -18,8 +18,10 @@ from . import db
 
 # kind: text (typed), one (tap one), many (tap several, then Done)
 QUESTIONS = [
-    {"id": "work", "kind": "text", "q": "What do you do? Work, school, whatever fills your weekdays.",
-     "ph": "e.g., nurse, CS student, I run a bakery"},
+    {"id": "work", "kind": "one", "other": True, "q": "What fills your weekdays?",
+     "opts": [("Student", "student"), ("A job", "employed"), ("My own business", "business"),
+              ("Freelance or creative work", "freelance"), ("Between jobs", "between"), ("Retired", "retired")],
+     "ph": "or type it, e.g. nurse, product designer"},
     {"id": "home", "kind": "text", "q": "Where's home? A city is plenty.", "ph": "e.g., St. George, Utah"},
     {"id": "start", "kind": "one", "q": "When does your day usually start?",
      "opts": [("Before 6", "05:30"), ("6 to 8", "07:00"), ("8 to 10", "09:00"), ("Later than that", "10:30")]},
@@ -31,12 +33,20 @@ QUESTIONS = [
     {"id": "time", "kind": "many", "q": "What eats time you'd rather spend elsewhere? Pick any.",
      "opts": [("Email", "email"), ("Scheduling", "schedule"), ("Bills and money", "money"),
               ("Shopping and errands", "shopping"), ("Planning meals", "meals"), ("Keeping up with news", "news")]},
-    {"id": "people", "kind": "text", "q": "Who do you talk to most? Names and who they are.",
-     "ph": "e.g., Ana (sister), Marco (boss), Jess (best friend)"},
-    {"id": "goals", "kind": "text", "q": "What are you working toward right now?",
-     "ph": "e.g., saving for a car, a half marathon in April, finishing my thesis"},
-    {"id": "interests", "kind": "text", "q": "What do you follow or love? Teams, hobbies, shows, topics.",
-     "ph": "e.g., the Utah Jazz, climbing, F1, AI news"},
+    {"id": "people", "kind": "many", "other": True, "q": "Who matters most day to day? Pick any, or type names.",
+     "opts": [("Partner", "partner"), ("Kids", "kids"), ("Parents", "parents"), ("Siblings", "siblings"),
+              ("Roommates", "roommates"), ("Coworkers", "coworkers"), ("Close friends", "friends")],
+     "ph": "e.g., Ana (sister), Marco (boss)"},
+    {"id": "goals", "kind": "many", "other": True, "q": "What are you working toward right now?",
+     "opts": [("Getting fit", "fitness"), ("Saving money", "saving"), ("A career move", "career"),
+              ("Learning something new", "learning"), ("Better habits", "habits"), ("A big project", "project"),
+              ("Travel", "travel")],
+     "ph": "e.g., a half marathon in April"},
+    {"id": "interests", "kind": "many", "other": True, "q": "What do you follow or love?",
+     "opts": [("Sports", "sports"), ("Music", "music"), ("Gaming", "gaming"), ("Tech and AI", "tech"),
+              ("Cooking", "cooking"), ("The outdoors", "outdoors"), ("Movies and TV", "screen"), ("Reading", "reading"),
+              ("Investing", "investing")],
+     "ph": "add specifics, e.g. the Utah Jazz, climbing"},
     {"id": "brief", "kind": "many", "q": "If I sent you a morning brief, what should be in it?",
      "opts": [("Weather", "weather"), ("My calendar", "calendar"), ("Important email", "email"),
               ("News headlines", "news"), ("Scores for my teams", "sports"), ("No brief for me", "none")]},
@@ -44,8 +54,10 @@ QUESTIONS = [
      "opts": [("A heads-up well before", "early"), ("Right on time", "ontime"), ("Only for important stuff", "few")]},
     {"id": "money", "kind": "one", "q": "Want help keeping an eye on money?",
      "opts": [("Yes, a weekly check-in", "weekly"), ("Just watch my subscriptions", "subs"), ("No thanks", "no")]},
-    {"id": "food", "kind": "text", "q": "Any food preferences or allergies I should know?",
-     "ph": "e.g., vegetarian, no peanuts, I hate cilantro"},
+    {"id": "food", "kind": "many", "other": True, "q": "Any food preferences or allergies?",
+     "opts": [("No restrictions", "none"), ("Vegetarian", "vegetarian"), ("Vegan", "vegan"), ("Gluten-free", "gluten"),
+              ("Dairy-free", "dairy"), ("Nut allergy", "nuts")],
+     "ph": "or type, e.g. I hate cilantro"},
     {"id": "else", "kind": "text", "q": "Last one: anything else I should know about you?",
      "ph": "e.g., I'm a night owl, I have a dog named Juniper"},
 ]
@@ -68,9 +80,16 @@ def label(qid, value):
     """The words for a stored answer (an option's label, or the typed text)."""
     q = BY_ID.get(qid) or {}
     labels = dict((v, k) for k, v in q.get("opts") or [])
+    one = lambda v: str(v)[7:] if str(v).startswith("other: ") else labels.get(v, str(v))  # noqa: E731
     if isinstance(value, list):
-        return ", ".join(labels.get(v, str(v)) for v in value)
-    return labels.get(value, str(value))
+        return ", ".join(one(v) for v in value)
+    return one(value)
+
+
+def others(value):
+    """The words they typed themselves ("other: ..."), joined."""
+    vals = value if isinstance(value, list) else [value]
+    return ", ".join(str(v)[7:] for v in vals if str(v).startswith("other: "))
 
 
 def card(qid, n, total):
@@ -84,6 +103,10 @@ def card(qid, n, total):
     else:
         c["options"] = [{"label": k, "answer": v} for k, v in q["opts"]]
         c["multi"] = q["kind"] == "many"
+        if q.get("other"):
+            c["other"] = True
+            c["placeholder"] = q.get("ph", "")
+            c["hint"] = "Pick, or type your own in the chat"
     c["stop"] = True
     return c
 
@@ -102,7 +125,8 @@ def parse_typed(qid, text):
         return _clean(t)
     low = t.lower()
     words = set(re.findall(r"[a-z0-9']+", low))
-    letters_only = re.fullmatch(r"[a-z](\s*(,|and|&)?\s*[a-z])*\W*", low) is not None  # "b" or "a, c" or "a and d"
+    toks = [x for x in re.split(r"[\s,&.;]+|\band\b", low) if x]
+    letters_only = bool(toks) and all(len(x) == 1 and x.isalpha() for x in toks)  # "b" or "a, c" or "a and d"
     picks = []
     for i, (k, v) in enumerate(q["opts"]):
         letter = chr(97 + i)
@@ -110,7 +134,11 @@ def parse_typed(qid, text):
         if (letters_only and letter in words) or k.lower() in low or keys & words:
             picks.append(v)
     if not picks:
-        return None
+        if not q.get("other") or len(t) > 300 or t.endswith("?"):
+            return None
+        return ["other: " + _clean(t)] if q["kind"] == "many" else "other: " + _clean(t, 80)
+    if q.get("other") and q["kind"] == "many" and not letters_only and len(t.split()) > len(picks) * 3:
+        picks.append("other: " + _clean(t))  # "my sister Ana and coworkers": keep their words too, names matter
     return picks if q["kind"] == "many" else picks[0]
 
 
@@ -131,11 +159,11 @@ def apply(qid, value):
     if value in (None, "", "skip", []):
         return
     if qid == "work":
-        account.save_profile({"occupation": _clean(value, 80)})
+        account.save_profile({"occupation": _clean(label("work", value), 80)})
     elif qid == "home":
         account.save_profile({"home": _clean(value, 80)})
     elif qid in ("people", "goals", "interests", "food", "else"):
-        _about_set(ABOUT_KEYS[qid], _clean(value, 300))
+        _about_set(ABOUT_KEYS[qid], _clean(label(qid, value), 300))
     elif qid == "reminders":
         _about_set(ABOUT_KEYS[qid], REMIND_WORDS.get(value, _clean(value, 80)))
     elif qid == "start":
@@ -161,13 +189,15 @@ def ideas(ans):
     time_ = set(ans.get("time") or [])
     brief = [b for b in (ans.get("brief") or []) if b != "none"]
     start = ans.get("start") if re.fullmatch(r"\d\d:\d\d", str(ans.get("start") or "")) else None
-    interests = _clean(ans.get("interests") or "", 120)
-    goals = _clean(ans.get("goals") or "", 160)
-    people = _clean(ans.get("people") or "", 200)
+    iv = ans.get("interests") or []
+    interests = _clean(others(iv) or label("interests", iv) if iv else "", 120)
+    teams = _clean(others(iv), 80) if iv else ""
+    goals = _clean(label("goals", ans["goals"]), 160) if ans.get("goals") else ""
+    people = _clean(label("people", ans["people"]), 200) if ans.get("people") else ""
     if brief:
         parts = {"weather": "Weather where they are: high, low, anything to plan around", "calendar": "Today's calendar, with times",
                  "email": "Email that needs them (at most 3, one line each)", "news": "3 news headlines that matter",
-                 "sports": "Last night's scores and today's games for " + (interests or "their teams")}
+                 "sports": "Last night's scores and today's games for " + (teams or "their teams")}
         at = f" around {_t(start)}" if start else ""
         out.append({"id": "morning-brief", "name": "Morning brief", "icon": "☀️", "builtin": True,
                     "when": "They ask for their brief or a rundown of the day.",
@@ -190,7 +220,7 @@ def ideas(ans):
                               "avoiding early mornings and late evenings unless they said otherwise.\n3. When they "
                               "pick one, add it to the calendar; if others are invited, draft the invite for their OK.")})
     if "meals" in time_:
-        food = _clean(ans.get("food") or "", 120)
+        food = _clean(label("food", ans["food"]), 120) if ans.get("food") and ans["food"] != ["none"] else ""
         out.append({"id": "meal-plan", "name": "Meal plan", "icon": "🥘",
                     "when": "They ask what to cook, want a meal plan or a grocery list.",
                     "prompt": "Plan my dinners for this week.",
@@ -206,8 +236,8 @@ def ideas(ans):
                     "steps": (f"1. Search the last 24 hours of news, weighted to {topic}.\n2. Pick the 5 stories "
                               "that matter most, one or two lines each, with sources cited.\n3. Skip celebrity "
                               "gossip and repeats of yesterday's stories.")})
-    if interests:
-        first = re.split(r",| and |;", interests)[0].strip()[:40]
+    if teams or (isinstance(iv, list) and "sports" in iv):
+        first = re.split(r",| and |;", teams)[0].strip()[:40] if teams else "my teams"
         if first:
             out.append({"id": "catch-up-" + re.sub(r"[^a-z0-9]+", "-", first.lower()).strip("-")[:30],
                         "name": f"Catch me up on {first}", "icon": "⚡",

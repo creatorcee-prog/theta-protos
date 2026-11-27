@@ -55,6 +55,18 @@
 .chi-row.on .chi-dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
 .onb-box.used .chi-row { pointer-events: none; }
 .onb-box.used .chi-row:not(.on) { opacity: .45; }
+.onb-row { padding: 8px 0 4px; }
+.onb-row > b { display: block; font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 6px; }
+.onb-segs { display: flex; flex-wrap: wrap; gap: 6px; }
+.onb-segs button { padding: 7px 12px; border-radius: 999px; background: #2a2a2c; color: var(--text); font-size: 14.5px; border: 1px solid transparent; }
+.onb-segs button.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, #2a2a2c); }
+.onb-segs.sw button { width: 32px; height: 32px; padding: 0; border: 2px solid transparent; box-shadow: inset 0 0 0 2px #232325; }
+.onb-segs.sw button.on { border-color: #fff; background: inherit; }
+.onb-field { display: flex; align-items: center; gap: 10px; border-top: 1px solid #2c2c2c; }
+.onb-field:first-of-type { border-top: 0; }
+.onb-field label { width: 62px; color: var(--muted); font-size: 15px; flex: none; }
+.onb-field input { flex: 1; min-width: 0; background: none; border: 0; color: var(--text); font-size: 16px; padding: 12px 0; outline: none; }
+.onb-box.used .onb-segs button, .onb-box.used .onb-field input { pointer-events: none; opacity: .7; }
 .cards-added { display: flex; align-items: center; gap: 6px; color: #4cd07d; font-size: 15px; font-weight: 500; }
 .cards-added svg { width: 16px; height: 16px; }
 `;
@@ -96,6 +108,15 @@
     return r;
   }
   const DO = {
+    async location() { // flip Settings' location switch (it asks the phone for the rounded spot), and texting first
+      const sw = $("set-loc"), pro = $("set-proactive");
+      if (pro && !pro.checked) { pro.checked = true; pro.dispatchEvent(new Event("change")); }
+      if (!sw) return "off";
+      if (sw.checked) return "on";
+      sw.checked = true; sw.dispatchEvent(new Event("change"));
+      for (let i = 0; i < 80; i++) { await new Promise(r => setTimeout(r, 250)); if (!sw.checked) return "off"; if (!/Finding you/.test(($("set-loc-note") || {}).textContent || "")) break; }
+      return sw.checked ? "on" : "off";
+    },
     async push() { // flip the Settings switch, which runs the app's own subscribe flow (needs this tap)
       const sw = $("set-push");
       if (!sw) return "off";
@@ -107,8 +128,69 @@
   };
 
   // ---------------------------------------------------------------- cards
+  // a card of rows to pick from (Make it yours: color, dots, opening; or warmth, enthusiasm, emoji), then Done
+  function choicesCard(c, m, outer, box, key, picked) {
+    const vals = {};
+    for (const r of c.rows || []) {
+      vals[r.key] = r.value;
+      const row = el("div", "onb-row"), segs = el("div", "onb-segs" + (r.swatch ? " sw" : ""));
+      row.append(el("b", null, r.label));
+      const btns = (r.options || []).map(o => {
+        const b = el("button", o.value === r.value ? "on" : null, r.swatch ? "" : o.label); b.type = "button";
+        if (r.swatch) { b.style.background = o.value; b.setAttribute("aria-label", o.label); b.title = o.label; }
+        b.addEventListener("click", () => {
+          if (box.classList.contains("used")) return;
+          vals[r.key] = o.value; btns.forEach(x => x.classList.toggle("on", x === b));
+          if (c.step === "look" && T.applyLook) T.applyLook({[r.key]: o.value}, false); // see it right away
+        });
+        segs.append(b); return b;
+      });
+      row.append(segs); box.append(row);
+    }
+    const foot = el("div", "onb-foot"), skip = el("button", null, "Skip"), done = el("button", "onb-done", c.done || "Done");
+    skip.type = done.type = "button";
+    const go = async ans => {
+      if (box.classList.contains("used")) return;
+      box.classList.add("used"); T.store(key, "1");
+      try { if (c.step === "look" && ans !== "skip" && T.applyLook) T.applyLook(ans, false); await call({step: c.step, answer: ans}); }
+      catch (e) { box.classList.remove("used"); T.store(key, ""); T.toast((e && e.message) || "That didn't go through.", 3600); }
+    };
+    skip.addEventListener("click", () => go("skip")); done.addEventListener("click", () => go(Object.assign({}, vals)));
+    foot.append(skip, done); box.append(foot); outer.append(box);
+    if (picked) box.classList.add("used");
+    return outer;
+  }
+  // a card of fields (phone, email), then Save; typing them in the chat works too
+  function fieldsCard(c, m, outer, box, key, picked) {
+    const ins = {};
+    for (const f of c.fields || []) {
+      const row = el("div", "onb-field"), lab = el("label", null, f.label), inp = el("input");
+      inp.type = f.type || "text"; inp.value = f.value || ""; inp.placeholder = f.placeholder || ""; inp.autocomplete = f.autocomplete || "off";
+      inp.id = "onb-" + (m && m.id) + "-" + f.key; lab.htmlFor = inp.id; ins[f.key] = inp;
+      row.append(lab, inp); box.append(row);
+    }
+    const foot = el("div", "onb-foot"), skip = el("button", null, "Skip"), done = el("button", "onb-done", c.done || "Save");
+    skip.type = done.type = "button";
+    const go = async ans => {
+      if (box.classList.contains("used")) return;
+      box.classList.add("used"); T.store(key, "1");
+      try { await call({step: c.step, answer: ans}); }
+      catch (e) { box.classList.remove("used"); T.store(key, ""); T.toast((e && e.message) || "That didn't save.", 4000); }
+    };
+    skip.addEventListener("click", () => go("skip"));
+    done.addEventListener("click", () => { const a = {}; for (const [k, i] of Object.entries(ins)) if (i.value.trim()) a[k] = i.value.trim(); go(Object.keys(a).length ? a : "skip"); });
+    foot.append(skip, done); box.append(foot); outer.append(box);
+    if (picked) box.classList.add("used");
+    return outer;
+  }
+
   T.card("onboarding", (c, m) => {
     const outer = el("div", "onb"), box = el("div", "onb-box");
+    if (c.kind === "choices" || c.kind === "fields") {
+      const key = "onb:" + (m && m.id) + ":" + c.step, picked = c.answered || T.store(key);
+      if (c.question) box.append(el("div", "onb-q", c.question));
+      return (c.kind === "choices" ? choicesCard : fieldsCard)(c, m, outer, box, key, picked);
+    }
     const opts = Array.isArray(c.options) ? c.options : [];
     const key = "onb:" + (m && m.id) + ":" + c.step;
     const picked = c.answered || T.store(key);
@@ -146,10 +228,15 @@
       box.append(b);
     });
     // the quiz's footer: Done (for pick-several), Skip (for typed questions), and Stop quiz
-    if (c.stop || c.multi) {
+    if (c.stop || c.multi || c.other) {
       const foot = el("div", "onb-foot");
       if (!opts.length) { const sk = el("button", null, "Skip"); sk.type = "button"; sk.addEventListener("click", () => answer({label: "Skipped", answer: "skip"})); foot.append(sk); }
       if (c.stop) { const st = el("button", null, "Stop quiz"); st.type = "button"; st.addEventListener("click", () => answer({label: "Stopped", answer: "stop"})); foot.append(st); }
+      if (c.other) {
+        const ot = el("button", null, "Other…"); ot.type = "button";
+        ot.addEventListener("click", () => { const ta = $("c-text"); if (ta) { ta.placeholder = c.placeholder || "Type your answer"; ta.focus(); } });
+        foot.append(ot);
+      }
       if (c.multi) {
         doneBtn = el("button", "onb-done", "Done"); doneBtn.type = "button"; doneBtn.disabled = true;
         doneBtn.addEventListener("click", () => {

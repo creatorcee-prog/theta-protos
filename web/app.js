@@ -1518,7 +1518,10 @@
     }
     for (const l of list) {
       const r = el("div", "row-set lesson"), t = el("div", "txt"); t.append(el("b", null, l.text));
-      if (l.n > 1) t.append(el("span", null, `From ${l.n} replies`));
+      const STATUS = {helping: "Working: you've flagged this less since", "not helping": "Not sticking yet: Theta now applies it more strictly",
+        early: "Too early to tell", recheck: "Learned with another model: Theta is checking it still holds"};
+      const sub = [l.n > 1 ? `From ${l.n} replies` : "", STATUS[l.status] || ""].filter(Boolean).join(" · ");
+      if (sub) t.append(el("span", null, sub));
       const x = el("button", "btn-dark", "Remove"); x.type = "button"; x.setAttribute("aria-label", "Remove lesson: " + l.text);
       x.addEventListener("click", async () => {
         x.disabled = true;

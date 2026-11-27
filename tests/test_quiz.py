@@ -36,21 +36,23 @@ def open_q():
 onboarding.start()
 onboarding.answer("hello", "Cee")
 onboarding.answer("me", "skip")
-onboarding.answer("style", "skip")
-st, msgs = onboarding.answer("notify", "skip")
-check("after notifications, the quiz is offered (Gmail isn't set up here)", st["step"] == "quiz_offer"
+for step in ("look", "style", "vibe", "contact", "instructions", "notify", "vantage"):
+    onboarding.answer(step, "skip")
+st, msgs = onboarding.answer("apps", "skip")
+check("after the setup steps, the quiz is offered (Gmail isn't set up here)", st["step"] == "quiz_offer"
       and str(N) in msgs[-1]["text"])
 st, msgs = onboarding.answer("quiz_offer", "yes")
 c = msgs[-1]["meta"]["cards"][0]
 check("yes: the first question comes as a text with its card", st["step"] == "quiz" and msgs[-1]["text"] == quiz.QUESTIONS[0]["q"]
       and c["q"] == "work" and c["count"] == f"1 of {N}" and c.get("stop"))
 check("while it waits, the model is told which question is open", "quiz" in onboarding.context("theta", 0)
-      and "What do you do?" in onboarding.context("theta", 0))
+      and "What fills your weekdays?" in onboarding.context("theta", 0))
 
 # typed answers, caught before the model
 m = user("I'm a product designer at a startup")
 out = onboarding.typed("I'm a product designer at a startup", m)
-check("a typed answer is taken, and Theta moves on", out and open_q() == "home" and account.profile()["occupation"].startswith("I'm a product designer"))
+check("a typed answer is taken (as their own words), and Theta moves on", out and open_q() == "home"
+      and account.profile()["occupation"].startswith("I'm a product designer"))
 check("the card for it says what was answered", "answered" in db.get_message(onboarding.state()["quiz_cards"]["work"])["meta"]["cards"][0])
 check("a question for Theta isn't taken as the answer", onboarding.typed("wait, why do you need my city?", user("x")) is None
       and open_q() == "home")

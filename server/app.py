@@ -1011,7 +1011,15 @@ def edit_message(req, start):
 
 
 def _lesson_list():
-    return [{"id": x["id"], "text": x["text"], "n": x["n"], "t": x["t"]} for x in persona.lessons()]
+    les = persona.lessons()
+    try:  # whether each one is working (server/improve.py)
+        from . import improve
+        improve.record(les)
+        st = improve.summary()
+    except Exception:  # noqa: BLE001
+        st = {}
+    return [{"id": x["id"], "text": x["text"], "n": x["n"], "t": x["t"], "status": (st.get(x["id"]) or {}).get("status")}
+            for x in les]
 
 
 def feedback_route(req, start):
