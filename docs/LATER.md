@@ -19,7 +19,6 @@
 
 ## Later features
 - Slack connector.
-- Password vault: Bitwarden or 1Password, read through placeholders the model never sees.
 - Tighten the browser's address checks: DNS rebinding, WebSockets, and the first hop of a redirect.
 - Show the leave-by time in 12-hour format.
 - Theta's own Linux box: move from Railway by copying `protos.db` (deploy/README.md).
