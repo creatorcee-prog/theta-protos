@@ -434,6 +434,8 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
              "steps": info.get("steps") or 0}
     if info.get("tools"):
         rmeta["tools"] = info["tools"]
+    if info.get("activity"):  # "Took 6s · read your inbox, drafted an email" under the reply
+        rmeta["activity"] = list(info["activity"])[:40]
     if approvals:
         rmeta["approvals"] = [a["id"] for a in approvals]
     if info.get("sources"):

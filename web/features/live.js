@@ -50,6 +50,8 @@
 .live-shot img { width: 64px; height: 64px; object-fit: cover; object-position: top; border-radius: 9px; flex: none; background: #111; }
 .live-shot b { display: block; font-size: 14px; font-weight: 600; }
 .live-shot span { display: block; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.activity-line.browse { cursor: pointer; }
+.activity-line.browse .al-txt::after { content: " · Watch"; color: var(--accent); }
 .live-sites { font-size: 13.5px; color: var(--muted); padding: 4px 0 10px; line-height: 1.45; }
 `;
   document.head.append(style);
@@ -195,6 +197,8 @@
   new MutationObserver(() => { if (root.hidden) stop(); else { start(); hidePip(true); } }).observe(root, {attributes: true, attributeFilter: ["hidden"]});
   document.addEventListener("visibilitychange", () => { if (!sheetVisible()) stop(); else if (!root.hidden) start(); });
   T.menu("Theta's screen", "i-image", "live");
+  // tapping the status line while Theta browses ("Clicking “Showtimes”") opens its screen
+  document.addEventListener("click", e => { const a = e.target.closest && e.target.closest(".activity-line.browse"); if (a) { hidePip(true); T.open("live"); } });
 
   // ---------------------------------------------------------------- the floating live picture while Theta browses
   const pip = el("button", "live-pip"); pip.type = "button"; pip.hidden = true; pip.setAttribute("aria-label", "Theta's screen, live. Tap to watch or take over.");

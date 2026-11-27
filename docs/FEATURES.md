@@ -116,6 +116,9 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   (OP_SERVICE_ACCOUNT_TOKEN), Bitwarden through the `bw` CLI (`server/bitwarden.py`: BW_CLIENTID/BW_CLIENTSECRET
   log in, BW_PASSWORD unlocks, BW_FOLDER limits it; TOTP codes computed from the seed, RFC 6238). Logins are used
   only on a page whose host matches the item's saved website; values never reach the model.
+- Status line (`server/activity.py`): agent.run emits `activity` {id, text, state, kind} per tool call in plain
+  words (contact names, page titles, element labels; never bodies, typed text, URL paths or secret-looking text);
+  tools add steps through ctx["activity"](text, kind); the texts go on the reply as meta.activity.
 - Theta's screen (`server/live.py`, `web/features/live.js`): /api/live (state), /api/live/frame.jpg (CDP JPEG,
   scaled, ≤4 fps), /api/live/act (the user's own taps, typing, keys, scroll, back, reload, goto; a page's confirm()
   comes back to the user, and only their OK accepts it), /api/live/signins (list, DELETE signs out). A floating

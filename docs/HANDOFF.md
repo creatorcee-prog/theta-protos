@@ -120,7 +120,9 @@ later).
 ## In the middle of (paused, saved, not running)
 - **Theta's screen (the live view) is done and live**, rebuilt from the paused `75eb145` work: a floating live
   picture while a turn browses, a full screen the user can drive, the last picture on the reply, and lasting
-  sign-ins. Still paused from `75eb145`: the honest `activity` stream events and `meta.timing` line.
+  sign-ins. The status line is live too (`server/activity.py`): "Drafting “Rent” to Sam", "Opening megaplex.com",
+  "Reading Megaplex Theatres", "Clicking “Showtimes”" while Theta works, and "Took 8s · opened …, read …" under
+  the reply (meta.activity). Nothing from `75eb145` is left to restore.
 - **Stage 5 C onboarding is done and live** (rebuilt, not restored from `75eb145`): an in-chat intro shaped like
   Grok Bot's (`server/onboarding.py`, `web/features/onboarding.js`): hello and their name (typed), a name for
   the assistant (lettered A/B/C card, or typed; the `bot_name` setting renames header, home, composer and the
@@ -147,15 +149,14 @@ later).
    - Passwords: `OP_SERVICE_ACCOUNT_TOKEN` (1Password) or `BW_CLIENTID`, `BW_CLIENTSECRET`, `BW_PASSWORD` (Bitwarden)
 
    Then re-run the live walkthrough with screenshots.
-2. **Resume the paused work:** the activity events and "Took 6s" timing line from `75eb145`.
-3. **From `docs/LATER.md`:**
+2. **From `docs/LATER.md`:**
    - **Slack connector**
    - **Tighter browser address checks:** DNS rebinding, WebSockets, the first hop of a redirect.
    - **12-hour time** in the leave-by text.
    - **A native iPhone app** (Capacitor): removes iOS's keyboard bar and gives full haptics. Needs an Apple
      developer account.
    - **Move to the Linux box** once it's fixed.
-4. **Small known issues:**
+3. **Small known issues:**
    - The "Save as a workflow" chip names the workflow from the raw message.
    - The research helpers and the search tier can't check the live web until Tavily is set.
 

@@ -269,7 +269,11 @@
     getting: "got", running: "ran", planning: "planned", sorting: "sorted", adding: "added", saving: "saved", creating: "created",
     asking: "asked", loading: "loaded", summarizing: "summarized", generating: "generated", drawing: "drew", taking: "took",
     filling: "filled", clicking: "clicked", scrolling: "scrolled", moving: "moved", updating: "updated", reviewing: "reviewed",
-    comparing: "compared", fetching: "fetched", watching: "watched", listening: "listened", thinking: "thought", reacting: "reacted"};
+    comparing: "compared", fetching: "fetched", watching: "watched", listening: "listened", thinking: "thought", reacting: "reacted",
+    typing: "typed", choosing: "chose", picking: "picked", signing: "signed", setting: "set", archiving: "archived", trashing: "trashed",
+    texting: "texted", pressing: "pressed", waiting: "waited", going: "went", attaching: "attached", removing: "removed",
+    renaming: "renamed", copying: "copied", sharing: "shared", unsubscribing: "unsubscribed", marking: "marked", restoring: "restored",
+    forgetting: "forgot", remembering: "remembered", digging: "dug", using: "used"};
   function pastTense(t) {
     t = String(t || "").trim(); const m = /^([A-Za-z]+)(.*)$/.exec(t);
     if (!m) return t;

@@ -493,6 +493,7 @@ html.kb #home .banner { display: none; }
 .pending-row { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .activity-line { font-size: 12.5px; color: #8b8b90; margin: 2px 0 0 4px; font-variant-numeric: tabular-nums; cursor: default; }
 .activity-line.idle { opacity: .7; }
+.activity-line.live { font-size: 14px; color: #a8a8ae; margin-top: 4px; }
 /* bubble effects */
 .msg.fx-slam { animation: fxSlam .7s cubic-bezier(.2, 1.4, .4, 1); }
 .msg.fx-loud { animation: fxLoud 1.1s ease; }

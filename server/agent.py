@@ -21,7 +21,7 @@ import re
 import threading
 import time
 
-from . import db, models, persona, tools
+from . import activity, db, models, persona, tools
 
 MAX_STEPS = 10
 TOOL_SECONDS = 20
@@ -159,9 +159,15 @@ def _run_tools(calls, ctx, emit, info, deadline):
     """Run one step's calls; returns [(call, ok, text)] in call order."""
     results = [None] * len(calls)
     threads = []
+    act = info.get("_act")
     for i, c in enumerate(calls):
         name = c["name"]
         info["tools"].append(name)
+        if act is not None:
+            try:
+                act.call(c, ctx)
+            except Exception:  # noqa: BLE001  status text never breaks a turn
+                pass
         tool = tools.BY_NAME.get(name)
         if tool is not None and tool["risk"] == "send" and not callable(tool.get("auto")):
             done = _auto_run(c, ctx, emit, info)  # the user set this action to run without a tap
@@ -245,8 +251,11 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
     A failure after that returns what there is, with info["error"] set."""
     info = info if info is not None else {}
     info.update(steps=0, tools=[], usage={}, approvals=[], sources=[], emitted=False, side_effects=False,
-                ttft=None, cost_usd=0.0, tried=[])
+                ttft=None, cost_usd=0.0, tried=[], activity=[])
     ctx = ctx if isinstance(ctx, dict) else {}  # shared with the caller: tools add cards and images to it
+    act = activity.Activity(emit, info["activity"])  # "Drafting an email to Sam" under the working globe
+    ctx["activity"] = act.reporter()
+    info["_act"] = act
     ctx.setdefault("sources", info["sources"])
     info["sources"] = ctx["sources"]
     specs = tools.specs()
@@ -336,4 +345,5 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
         info["emitted"] = True
         emit("delta", {"text": tail})
     info["cost_usd"] = models.cost(info.get("model"), info["usage"], info.get("provider"))
+    info.pop("_act", None)
     return cleaner.text()

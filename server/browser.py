@@ -289,6 +289,28 @@ def _key(ctx):
     return str((ctx or {}).get("bot") or "theta")
 
 
+def ref_label(ctx, ref):
+    """The label of an element from the latest snapshot (for the status line). Reads only; any thread."""
+    s = _engine.sessions.get(_key(ctx))
+    e = (s.els.get(str(ref or "").strip()) if s is not None else None) or {}
+    return e.get("label") or ""
+
+
+def current_url(ctx):
+    s = _engine.sessions.get(_key(ctx))
+    return (s.url or "") if s is not None else ""
+
+
+def _say(ctx, text):
+    """One more line for the status line ("Reading Megaplex Theatres"), when the turn listens."""
+    fn = (ctx or {}).get("activity")
+    if callable(fn) and text:
+        try:
+            fn(text, "browse")
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _watch(s, page):
     """Dialogs (alert, confirm, prompt) on a page: noted for the result, and dismissed, except while an approved
     submit or the user's own tap runs (then a confirm is accepted: the person said yes to that step)."""
@@ -700,6 +722,7 @@ def _browse_open(args, ctx):
         title, text, els = _snap(s)
         return _render(s, title, text, els, find), title, s.page.url, text
     out, title, final_url, text = _engine.call(work)
+    _say(ctx, f"Reading {title.strip()}" if (title or "").strip() else "")
     try:  # a link card for the page Theta opened, every time (https pages only)
         from . import cards
         cards.auto(ctx, "link", {"url": final_url, "title": title or final_url,
@@ -845,6 +868,7 @@ def _browse_act(args, ctx):
         if s is None or not s.page.url.startswith("http"):
             raise ToolError("no page is open in this conversation (pages close after 5 idle minutes); "
                             "call browse_open first")
+        start_title = s.title
         done = []
         for i, a in enumerate(actions):
             do = str(a.get("do") or "").lower()
@@ -973,6 +997,8 @@ def _browse_act(args, ctx):
                 raise ToolError((f"Did: {'; '.join(done)}. Then " if done else "") + f"action {i + 1} stopped: {err}") \
                     from None
         title, text_, els = _snap(s)
+        if title and title != start_title:
+            _say(ctx, f"Reading {title.strip()}")  # a new page after a click
         return _render(s, title, text_, els, head=f"Did: {'; '.join(done)}.\n")
     return _engine.call(work)
 
