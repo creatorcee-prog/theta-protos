@@ -313,7 +313,14 @@ asked = []
 w.session.send_client_content = lambda **k: asked.append(k) or asyncio.sleep(0)
 new_call("c9", kind="me"); calls._update("c9", state="live", t_answer=time.time(), message="hi")
 t9 = time.time(); ev9 = asyncio.run(telnyx("c9", frames=5))
-d9 = [x for x in db.get_setting("livecall_diag") if x["call"] == "c9"][0]
+# the server thread saves the call's diagnostics just after the phone side hangs up: wait for it (reading at once lost
+# the race about one run in five)
+for _ in range(50):
+    d9 = [x for x in (db.get_setting("livecall_diag") or []) if x["call"] == "c9"]
+    if d9:
+        break
+    time.sleep(0.1)
+d9 = d9[0] if d9 else {"ms": {}, "audio_out": 0}
 check("a prewarmed call plays its opening at once and isn't asked for it again", d9["ms"].get("prewarmed")
       and d9["audio_out"] >= 1 and not any("Say your opening" in str(k) for k in asked), d9)
 
