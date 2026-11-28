@@ -46,7 +46,9 @@ MODEL = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.8-live")
 FRAME = 640             # 20 ms of 16 kHz 16-bit audio, the frame size sent to Telnyx
 SILENCE_SECONDS = 40    # nobody's said anything for this long: end the call
 _open = set()           # call ids with a stream right now (one each)
-AFFECTIVE = os.environ.get("GEMINI_AFFECTIVE", "1") != "0"  # see connect()
+# affective dialog stays off unless asked for (GEMINI_AFFECTIVE=1): on gemini-3.8-live the session accepted it, then
+# closed straight away, so live calls heard nothing (the reason was swallowed; see _talk)
+AFFECTIVE = os.environ.get("GEMINI_AFFECTIVE", "0") == "1"
 MAX_PRESSES = 20
 DISCLOSE_WITHIN = 12    # seconds for Gemini to say the opening once Telnyx is ready, or the call ends
 
@@ -315,6 +317,7 @@ class Bridge:
                         self.sent_s, self.first_out = 0.0, None
                         continue
                     if self.ending or (said and calls._BYE.search(said)):
+                        self.diag["end"] = self.diag["end"] or "Theta said goodbye"
                         await self._drain()
                         self.closed.set()
                         return
@@ -432,7 +435,19 @@ class Bridge:
         self.closed.set()
         for t in tasks + [done]:
             t.cancel()
-        await asyncio.gather(*tasks, done, return_exceptions=True)
+        results = await asyncio.gather(*tasks, done, return_exceptions=True)
+        # why it ended, in the diagnostics and the log: a task that raised (Gemini closing the session with a code and
+        # reason, a bad config, a dropped socket) used to vanish here
+        names = ("telnyx", "gemini", "watchdog")
+        for name, r in zip(names, results):
+            if isinstance(r, BaseException) and not isinstance(r, asyncio.CancelledError):
+                self.diag["error"] = f"{name}: {type(r).__name__}: {str(r)[:300]}"
+                self.diag["end"] = self.diag["end"] or f"{name} failed"
+                break
+        else:
+            first = next((n for n, t in zip(names, tasks) if t.done() and not t.cancelled()), "")
+            if first and not self.diag["end"]:
+                self.diag["end"] = {"gemini": "Gemini closed the session", "telnyx": "the phone line closed"}.get(first, first)
 
 
 async def ws_endpoint(websocket):

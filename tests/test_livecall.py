@@ -256,6 +256,18 @@ p = {hz: goertzel(smp, hz) for hz in (220, 440, 1000, 3000)} if smp else {}
 check("a PCMU 8 kHz caller reaches Gemini as clean 16 kHz audio (the 220 Hz tone, not noise)", smp and max(p, key=p.get) == 220
       and p[220] > 20 * max(p[h] for h in (440, 1000, 3000)) and len(heard) == 4 * 160 * (len(got_pcm)), p)
 
+# when Gemini closes the session (a rejected config, say), the reason is kept, not swallowed
+class Refused(FakeSession):
+    async def receive(self):
+        raise RuntimeError("1007 invalid frame payload data: enable_affective_dialog is not supported")
+        yield
+FAKE = Refused(); FAKE.cid = "c7"
+new_call("c7", kind="me"); calls._update("c7", state="live", t_answer=time.time(), message="hi")
+asyncio.run(telnyx("c7", frames=5))
+d = db.get_setting("livecall_diag")[0]
+check("why a live call ended is recorded (Gemini's error, not just 'hung up')", d["call"] == "c7" and "1007" in d.get("error", ""), d)
+check("affective dialog is off unless asked for", livecall.AFFECTIVE is False)
+
 # ---- the voice setting and samples
 check("30 voices, Puck by default", len(livevoice.VOICES) == 30 and livevoice.DEFAULT_VOICE == "Puck")
 try:

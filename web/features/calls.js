@@ -227,7 +227,7 @@
     const dg = state.live_diag || [];
     diagBox.textContent = dg.length ? "Last live calls:\n" + dg.map(d => `${new Date(d.t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})} ${d.kind}, ${d.seconds}s: `
       + `heard ${d.frames_in} frames (${d.held} held before the opening), sent ${d.to_gemini} to Gemini, ${d.audio_out} audio back, `
-      + `transcripts ${d.heard} in / ${d.said} out, byte order ${d.order}, ended: ${d.end}`
+      + `transcripts ${d.heard} in / ${d.said} out, byte order ${d.order}, ended: ${d.end}` + (d.error ? `\n   error: ${d.error}` : "")
       + (d.opening ? `\n   opening heard as: "${d.opening}"` : "")).join("\n") : "";
     // with live calls on, the other voice only speaks on a call that couldn't go live
     vr.s.textContent = state.live ? "Used only when a call can't go live (the turn-by-turn kind)."

@@ -119,8 +119,8 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   /api/calls/voice_sample?voice= plays a sample made by the same model, cached). Gemini says the opening too, from
   fixed text; nothing the caller says reaches it until then, and the call ends unless Gemini's own transcript of its
   first turn has the disclosure word for word (or within 12 s). The prompt is written for speech (casual, contractions, no
-  script lines like "How can I assist you"), with affective dialog on (Gemini matches the caller's tone; if the model
-  or API version refuses it, the call opens again without it; GEMINI_AFFECTIVE=0 turns it off). Keypad (DTMF): the
+  script lines like "How can I assist you"), with affective dialog off (gemini-3.8-live accepted it and then closed the
+  session; GEMINI_AFFECTIVE=1 tries it). Keypad (DTMF): the
   live model's one tool, press_keys {digits, why}, for phone menus; sent with Telnyx send_dtmf when the call's control
   id works, else as in-band tones (`server/callaudio.py`); 0-9 * # and w/W pauses, at most 20 per call, each logged in
   the transcript. Orders and charges only exactly as the approved purpose says, never card details. Both sides are transcribed into the call's turns. In code:
