@@ -227,12 +227,13 @@ blockquote.q { margin: 8px 0; padding: 6px 12px; border-left: 3px solid #444; co
   function pill(kind, st) {
     const map = {pending: ["wait", "Waiting for you"], auto: ["good", kind === "call" ? "Calling" : "Sent"],
       done: ["good", kind === "call" ? "Calling" : "Sent"], denied: ["", "Discarded"], failed: ["bad", "Didn't go through"],
-      expired: ["", "Expired"], draft: ["", "Draft in Gmail"], in: ["", "Received"]};
+      expired: ["", "Expired"], draft: ["", "Draft in Gmail"], in: ["", "Received"],
+      mine: ["", "Draft"], quote: ["", "Quoted"]};
     const [cls, text] = map[st] || ["", st];
     return el("span", "cm-pill " + cls, text);
   }
   function frame(c) {
-    const cm = c.comm || {}, kind = cm.kind || "email", st = c.type === "in" ? "in" : (c.type === "comm" ? (c.state || "draft") : stateOf(c));
+    const cm = c.comm || {}, kind = cm.kind || "email", st = ["in", "mine", "quote"].includes(c.type) ? c.type : (c.type === "comm" ? (c.state || "draft") : stateOf(c));
     const box = el("div", "cm cm-" + kind), head = el("div", "cm-head");
     head.append((ICON[kind] || ICON.email)(), el("span", null, KIND[kind] || "Message"));
     let p = pill(kind, st); head.append(p);
@@ -240,6 +241,7 @@ blockquote.q { margin: 8px 0; padding: 6px 12px; border-left: 3px solid #444; co
     const line = (label, value) => { const d = el("div", "cm-line"); d.append(el("span", null, label), document.createTextNode(value)); return d; };
     if (kind === "email" || kind === "message") {
       if (st === "in") { if (cm.from) box.append(line("From", cm.from)); }
+      else if (st === "quote" || (st === "mine" && !cm.to)) {}
       else box.append(line("To", cm.to || ""));
       if (cm.cc) box.append(line("Cc", cm.cc));
       if (cm.subject) box.append(el("div", "cm-subj", cm.subject));
@@ -252,10 +254,10 @@ blockquote.q { margin: 8px 0; padding: 6px 12px; border-left: 3px solid #444; co
       }
     } else if (kind === "text" || kind === "text_in") {
       const who = (cm.number && cm.number === cm.to ? fmtNum(cm.to) : (cm.to || "")) + (cm.number && cm.number !== cm.to ? " · " + fmtNum(cm.number) : "");
-      box.append(line(kind === "text_in" ? "From" : "To", who));
+      if (who) box.append(line(kind === "text_in" ? "From" : "To", who));
       box.append(el("div", "cm-sms " + (kind === "text_in" ? "in" : "out"), cm.body || ""));
     } else {
-      box.append(line("To", (cm.to || "") + (cm.number && cm.number !== cm.to ? " · " + fmtNum(cm.number) : "")));
+      if (cm.to || cm.number) box.append(line("To", (cm.to || "") + (cm.number && cm.number !== cm.to ? " · " + fmtNum(cm.number) : "")));
       if (cm.body) box.append(el("div", "cm-body", cm.body));
     }
     if (st === "failed" && c.result) box.append(el("div", "cm-why", human(c.result)));
@@ -289,7 +291,12 @@ blockquote.q { margin: 8px 0; padding: 6px 12px; border-left: 3px solid #444; co
       const tl = (meta.tools || []).join(" ");
       const kind = /gmail|email/.test(tl) ? "email" : /text|sms/.test(tl) ? "text_in" : "message";
       for (const q of bubble.querySelectorAll("blockquote.q")) {
-        const f = frame({type: "in", comm: {kind, from: q.dataset.from || "", to: q.dataset.from || "", body: q.innerText.trim()}});
+        // which way it goes: a named sender means it came in; "here's a draft / what I'd send" just before it means it's
+        // Theta's own words going out (it was labelled Received); neither, and it's just a quote
+        const from = q.dataset.from || "", prev = q.previousElementSibling, lead = prev ? prev.textContent.slice(-200) : "";
+        const mine = !from && /\b(draft|I'?d send|I'?ll send|I can send|reply with|here'?s (?:what|a|the|my))\b/i.test(lead);
+        const st = from ? "in" : mine ? "mine" : "quote", k = mine && kind === "text_in" ? "text" : kind;
+        const f = frame({type: st, comm: {kind: k, from, to: "", body: q.innerText.trim()}});
         f.classList.add("cm-quoted"); q.replaceWith(f);
       }
     }

@@ -19,6 +19,10 @@
   css.textContent = `
 .lk-row { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; padding: 2px 2px 4px; margin: 0 -2px; }
 .lk-row::-webkit-scrollbar { display: none; }
+/* more tiles off to the side: fade that edge, so it reads as a row that scrolls rather than a cut-off tile */
+.lk-row.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+.lk-row.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px); mask-image: linear-gradient(90deg, transparent, #000 36px); }
+.lk-row.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
 .lk-tile { flex: none; width: 86px; scroll-snap-align: start; display: grid; justify-items: center; gap: 4px; padding: 6px 4px 8px; border-radius: 18px;
   background: #1a1a1c; border: 2px solid transparent; color: var(--muted); font-size: 0.7647rem; }
 .lk-tile.on { border-color: var(--accent); color: var(--text); }
@@ -54,6 +58,10 @@
       tiles.push({b, orb, opt});
     }
     row.refresh = () => { for (const t of tiles) if (t.orb) { Object.assign(t.orb.opt, t.opt()); t.orb._lk = null; } };
+    const edges = () => { const max = row.scrollWidth - row.clientWidth;
+      row.classList.toggle("more-l", row.scrollLeft > 2); row.classList.toggle("more-r", max > 2 && row.scrollLeft < max - 2); };
+    row.addEventListener("scroll", edges, {passive: true});
+    if (window.ResizeObserver) new ResizeObserver(edges).observe(row); else requestAnimationFrame(edges);
     return row;
   }
   T.lookRow = lookRow;

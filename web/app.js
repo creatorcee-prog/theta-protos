@@ -125,6 +125,21 @@
     }
     return out.length ? out : null;
   }
+  // "a claim [1]." drew the pill and then a lone "." (often wrapped onto its own line): put the stop first, "a claim. [1]",
+  // with a no-break space so the pill stays with its sentence
+  const CITE_PUNCT = /[ \t]*(\[\d{1,2}(?:\s*,\s*\d{1,2})*\])(?!\()([.,;:!?]+)/g;
+  // markdown as the plain words someone reads (search results showed "> ", "[text](https://...)", "- " and "[1]")
+  function plainText(src) {
+    return String(src || "")
+      .replace(/```[^\n]*\n?/g, "")
+      .replace(/!?\[([^\]\n]+)\]\([^)\s]+\)/g, "$1")
+      .replace(/[ \t]*\[\d{1,2}(?:\s*,\s*\d{1,2})*\]/g, "")
+      .replace(/^\s*\|?[\s:|-]*-{3,}[\s:|-]*$/gm, "")
+      .replace(/^\s*(?:>\s?|#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|\|)/gm, "")
+      .replace(/\s*\|\s*$/gm, "").replace(/\s*\|\s*/g, " · ")
+      .replace(/(\*\*|__|~~|`|\*)/g, "")
+      .replace(/\s+/g, " ").trim();
+  }
   // ---- cite: end
   function pill(c) {
     const a = el("a", "cite", c.label); a.href = c.url; a.target = "_blank"; a.rel = "noopener noreferrer";
@@ -133,6 +148,7 @@
   let mdSources = null; // the sources of the message md() is building
   function inline(parent, text, depth) {
     depth = depth || 0;
+    if (mdSources && mdSources.length) text = text.replace(CITE_PUNCT, "$2\u00a0$1");
     let last = 0, m;
     const re = new RegExp(INLINE.source, "g");
     while ((m = re.exec(text))) {
@@ -1400,7 +1416,7 @@
     for (const m of hits) {
       const r = el("button", "result"); r.setAttribute("role", "listitem");
       r.append(el("small", null, (m.role === "user" ? "You" : "Theta") + " · " + new Date(m.t * 1000).toLocaleDateString([], {month: "short", day: "numeric"}) + " " + fmtTime(m.t)));
-      const s = el("span"), text = m.text.replace(/[*`#]/g, ""), i = text.toLowerCase().indexOf(q), from = Math.max(0, i - 40);
+      const s = el("span"), text = plainText(m.text), i = text.toLowerCase().indexOf(q), from = Math.max(0, i - 40);
       s.append((from ? "…" : "") + text.slice(from, i), el("mark", null, text.slice(i, i + q.length)), text.slice(i + q.length, i + q.length + 120));
       r.append(s);
       r.addEventListener("click", () => { $("home-search").value = ""; runSearch(); openChat(m.id); });

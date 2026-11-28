@@ -144,7 +144,11 @@
       const spk = this.sw.speaking;
       if (spk > 0.01) {
         const spec = lv * (0.55 * Math.abs(Math.sin((lon * 1.5 + lat) * 5 + t * 9)) + 0.45 * Math.abs(Math.sin((lon * 1.5 + lat) * 11 - t * 5)));
-        r += spk * q.s * 1.1 * spec * (0.6 + 0.4 * Math.sin(lat * 4 + t * 5));
+        // soft-capped: at full level with the start-of-speech burst the spikes reached about 2.1x the radius and, with
+        // the spring's overshoot, flew past the halo to the canvas edge. tanh keeps small motion as it was and stops
+        // the peaks near 1.5x
+        const sp = spk * q.s * 1.1 * spec * (0.6 + 0.4 * Math.sin(lat * 4 + t * 5));
+        r += 0.5 * Math.tanh(sp / 0.5);
       }
       const st = this._st();
       if (st.rays && q.s > 0.72) r += 0.32 * Math.pow(Math.max(0, Math.sin(t * 1.6 - q.s * 9 + lat * 2)), 6);  // rays pulse out

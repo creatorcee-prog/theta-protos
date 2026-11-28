@@ -50,7 +50,9 @@
 .hf-tile { flex: 0 0 210px; text-align: left; background: #1b1b1d; border-radius: 18px; overflow: hidden; color: var(--text); text-decoration: none;
   display: flex; flex-direction: column; position: relative; }
 .hf-tile .img { height: 112px; background: #26262a center/cover no-repeat; }
-.hf-tile .img.none { display: grid; place-items: center; font-size: 2rem; }
+.hf-tile .img.none { display: grid; place-items: center; color: var(--muted);
+  background: radial-gradient(120% 90% at 30% 20%, color-mix(in srgb, var(--accent) 16%, #26262a), #1e1e21); }
+.hf-tile .img.none svg { width: 34px; height: 34px; opacity: .85; }
 .hf-tile .tx { padding: 10px 12px 12px; }
 .hf-tile small { display: block; color: var(--muted); font-size: 0.7059rem; text-transform: uppercase; letter-spacing: .02em; }
 .hf-tile b { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 0.8824rem; font-weight: 500; line-height: 1.3; margin-top: 3px; }
@@ -93,7 +95,6 @@
 
   const mid = document.querySelector("#home .home-mid"); if (!mid) return;
   const feed = el("div", "hf"); feed.setAttribute("aria-label", "Home"); mid.append(feed);
-  const ICON = {deal: "🏷️", news: "📰", watch: "🎬", place: "📍", idea: "💡", update: "✅"};
   const host = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return ""; } };
   const NS = "http://www.w3.org/2000/svg";
   const PATHS = {
@@ -101,6 +102,14 @@
     vantage: ["M12 3.5a8.5 8.5 0 110 17 8.5 8.5 0 010-17z", "M3.5 12h17M12 3.5c2.6 2.4 3.9 5.2 3.9 8.5s-1.3 6.1-3.9 8.5c-2.6-2.4-3.9-5.2-3.9-8.5s1.3-6.1 3.9-8.5z"],
     recommended: ["M4 7h10M18 7h2M4 17h4M12 17h8", "M16 5a2 2 0 110 4 2 2 0 010-4zM10 15a2 2 0 110 4 2 2 0 010-4z"],
     chips: ["M6 5h2.5a2.7 2.7 0 010 5.5H6A2.7 2.7 0 016 5zM15.5 5H18a2.7 2.7 0 010 5.5h-2.5a2.7 2.7 0 010-5.5zM6 13.5h4.5a2.7 2.7 0 010 5.5H6a2.7 2.7 0 010-5.5z"],
+    // found-tile placeholders, drawn like the other icons (they were emoji, which looked off beside the line icons)
+    deal: ["M3.5 12.2V4.5a1 1 0 011-1h7.7a1 1 0 01.7.3l7.8 7.8a1 1 0 010 1.4l-7.7 7.7a1 1 0 01-1.4 0l-7.8-7.8a1 1 0 01-.3-.7z", "M8 7a1 1 0 110 2 1 1 0 010-2z"],
+    news: ["M5 4.5h11a1 1 0 011 1V19a1.5 1.5 0 003 0V9h-3", "M5 4.5V18a1.5 1.5 0 001.5 1.5H18.5", "M8 8.5h6M8 12h6M8 15.5h4"],
+    watch: ["M4.5 5.5h15a1 1 0 011 1v11a1 1 0 01-1 1h-15a1 1 0 01-1-1v-11a1 1 0 011-1z", "M10 9.2v5.6l4.6-2.8z"],
+    place: ["M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0113 0c0 5.4-6.5 11-6.5 11z", "M12 7.5a2.5 2.5 0 110 5 2.5 2.5 0 010-5z"],
+    idea: ["M9 17.5h6M10 20.5h4", "M12 3.5a6 6 0 00-3.6 10.8c.4.3.6.8.6 1.3v1.9h6v-1.9c0-.5.2-1 .6-1.3A6 6 0 0012 3.5z"],
+    update: ["M12 3.5a8.5 8.5 0 110 17 8.5 8.5 0 010-17z", "M8.3 12.3l2.5 2.5 5-5.2"],
+    found: ["M12 3.5l1.9 5.2 5.6.3-4.4 3.5 1.5 5.4L12 14.8l-4.6 3.1 1.5-5.4L4.5 9l5.6-.3z"],
     weather: ["M12 8a4 4 0 110 8 4 4 0 010-8z", "M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"],
   };
   const icon = k => { const s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true");
@@ -126,7 +135,7 @@
     const a = el(it.url ? "a" : "div", "hf-tile");
     if (it.url) { a.href = it.url; a.target = "_blank"; a.rel = "noopener noreferrer"; }
     const img = el("div", "img" + (it.image ? "" : " none"));
-    if (it.image) img.style.backgroundImage = `url("${it.image.replace(/"/g, "%22")}")`; else img.textContent = ICON[kind] || "✨";
+    if (it.image) img.style.backgroundImage = `url("${it.image.replace(/"/g, "%22")}")`; else img.append(icon(PATHS[kind] ? kind : "found"));
     const tx = el("div", "tx"), sm = el("small", null, (it.source || host(it.url) || kind) + (kind && kind !== "news" ? " · " + kind : ""));
     if (it.match) sm.append(el("span", "tag", "· for you"));
     tx.append(sm, el("b", null, it.title)); if (it.price) tx.append(el("span", "price", it.price));

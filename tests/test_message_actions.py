@@ -274,11 +274,13 @@ def main():
 const fs = require("fs"), src = fs.readFileSync(process.argv[1], "utf8");
 const m = /\/\/ ---- cite: start[^\n]*\n([\s\S]*?)\/\/ ---- cite: end/.exec(src);
 if (!m) { console.log(JSON.stringify({err: "no cite block"})); process.exit(0); }
-const f = new Function(m[1] + "; return {citeParts, domain};")();
+const f = new Function(m[1] + "; return {citeParts, domain, plainText, CITE_PUNCT};")();
 const S = [{title: "Reuters", url: "https://www.reuters.com/x"}, {title: "Bad", url: "javascript:alert(1)"}];
 console.log(JSON.stringify({
   a: f.citeParts("[1]", S), b: f.citeParts("[2]", S), c: f.citeParts("[3]", S), d: f.citeParts("[1, 3]", S),
   e: f.domain("https://www.bbc.co.uk/news"), g: f.domain("http://x.test"),
+  p: f.plainText("> Hey **Cee**, see [the doc](https://x.com/a) [1].\n- one\n| a | b |\n|---|---|\n## Head"),
+  q: "It rose 4% [1]. Then [2, 3]!".replace(f.CITE_PUNCT, "$2\u00a0$1"),
 }));
 """
         r = subprocess.run([node, "-e", js, os.path.join(ROOT, "web", "app.js")], capture_output=True, text=True,
@@ -294,6 +296,10 @@ console.log(JSON.stringify({
         check("cite: unknown [n] stays text", got.get("c") is None, got)
         check("cite: [1, 3] with one unknown stays text", got.get("d") is None, got)
         check("cite: domain() drops www and refuses http", got.get("e") == "bbc.co.uk" and got.get("g") is None, got)
+        check("search snippets are plain words: no quote marks, link syntax, list markers, citations or table rules",
+              got.get("p") == "Hey Cee, see the doc. one a · b Head", got.get("p"))
+        check("cite: the full stop goes before the pill, not alone after it",
+              got.get("q") == "It rose 4%.\u00a0[1] Then!\u00a0[2, 3]", got.get("q"))
     else:
         print("SKIP cite pill logic (no node)")
 
