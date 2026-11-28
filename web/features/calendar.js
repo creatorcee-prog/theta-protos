@@ -155,7 +155,7 @@
       }
       agenda.replaceChildren(el("h4", null, ymd(day) === today ? "Today" : day.toLocaleDateString([], {weekday: "long", month: "long", day: "numeric"})));
       const list = events.filter(e => onDay(e, day)).sort((a, b) => (b.all_day - a.all_day) || (new Date(a.start) - new Date(b.start)));
-      if (!list.length) agenda.append(el("p", "empty", info.loading ? "Loading…" : "Nothing on this day."));
+      if (!list.length) agenda.append(info.loading ? el("p", "empty", "Loading…") : T.empty("i-cal", "Nothing on this day", "A free day. Tap + to add something, or ask Theta to plan it."));
       for (const e of list) agenda.append(row(e));
       const notes = [];
       if (info.google_note) notes.push(info.google_note);

@@ -323,13 +323,15 @@ blockquote.q { margin: 8px 0; padding: 6px 12px; border-left: 3px solid #444; co
       });
       sw.append(inp, el("i")); r.append(t, sw); g.append(r);
     }
-    if (!rows.length) g.append(el("p", "fine", "Loading…"));
+    if (!rows.length) g.append(loaded ? T.empty("i-shield", "Nothing to set yet", T.state.demo ? "On Theta, each kind of action that reaches other people is listed here: ask first, or let Theta just do it."
+      : "Once Theta can send email, texts or calls, each one is listed here.") : el("p", "fine", "Loading…"));
     if (!fine.isConnected) g.after(fine);
   }
+  let loaded = false;
   async function load() {
-    if (T.state.demo) { rows = []; render(); return; }
+    if (T.state.demo) { rows = []; loaded = true; render(); return; }
     try { rows = await T.api("/api/approvals/policy"); } catch (e) {}
-    render();
+    loaded = true; render();
   }
   render();
   const sheet = document.getElementById("settings");

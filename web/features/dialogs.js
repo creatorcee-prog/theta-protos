@@ -17,6 +17,12 @@
   const CLOSERS = ["[data-close]", ":scope > .sheet-head button[aria-label='Close']", "#gif-close", "#fx-close", "#viewer-close", "#voice-close"];
   const FOCUSABLE = "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
   const open = [];   // overlays now showing, newest last: {el, from}
+  // focus moved into a sheet shows the keyboard focus ring only when the keyboard was used to get there (a tap
+  // that opened Settings drew a blue ring round its close button)
+  let byKeys = false;
+  document.addEventListener("keydown", () => { byKeys = true; }, true);
+  document.addEventListener("pointerdown", () => { byKeys = false; }, true);
+  const focusOpt = () => ({preventScroll: true, focusVisible: byKeys});
   const visible = e => !e.hidden && e.getClientRects().length > 0;
   const focusables = e => [...e.querySelectorAll(FOCUSABLE)].filter(x => x.offsetParent !== null && !x.closest("[hidden]"));
 
@@ -35,8 +41,8 @@
     requestAnimationFrame(() => {
       if (e.hidden || e.contains(document.activeElement)) return;
       const first = e.id === "menu" ? e.querySelector("[role=menuitem]") : (e.querySelector("[autofocus]") || focusables(e)[0]);
-      if (first) first.focus({preventScroll: true});
-      else { if (!e.hasAttribute("tabindex")) e.tabIndex = -1; e.focus({preventScroll: true}); }
+      if (first) first.focus(focusOpt());
+      else { if (!e.hasAttribute("tabindex")) e.tabIndex = -1; e.focus(focusOpt()); }
     });
   }
   function closed(e) {
@@ -45,7 +51,7 @@
     const [{from}] = open.splice(i, 1);
     setInert();
     if (from && from.isConnected && !from.closest("[hidden]") && document.activeElement && (e.contains(document.activeElement) || document.activeElement === document.body)) {
-      try { from.focus({preventScroll: true}); } catch (err) {}
+      try { from.focus(focusOpt()); } catch (err) {}
     }
   }
   function close(e) {
@@ -76,7 +82,7 @@
       const a = document.activeElement, e = modal.el;
       if (e.hidden || (a && a !== document.body && e.contains(a) && !a.closest("[hidden]") && a.offsetParent !== null)) return;
       const f = focusables(e)[0];
-      if (f) f.focus({preventScroll: true});
+      if (f) f.focus(focusOpt());
     });
   }
   watch.observe(app, {attributes: true, attributeFilter: ["hidden"], subtree: true, childList: true});

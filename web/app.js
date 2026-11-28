@@ -1396,7 +1396,7 @@
     $("home").querySelector(".home-mid").hidden = !!q;
     if (!q) { box.hidden = true; return; }
     const hits = [...S.msgs.values()].filter(m => (m.text || "").toLowerCase().includes(q)).sort((a, b) => b.id - a.id).slice(0, 30);
-    if (!hits.length) box.append(el("p", "empty", "Nothing in your chat matches that."));
+    if (!hits.length) box.append(Theta.empty("i-search", "No matches", "Nothing in your chat has those words. Try fewer, or ask Theta.", ["Ask Theta", () => { openChat(); }]));
     for (const m of hits) {
       const r = el("button", "result"); r.setAttribute("role", "listitem");
       r.append(el("small", null, (m.role === "user" ? "You" : "Theta") + " · " + new Date(m.t * 1000).toLocaleDateString([], {month: "short", day: "numeric"}) + " " + fmtTime(m.t)));
@@ -1845,6 +1845,13 @@
     emit(ev, data) { for (const fn of (listeners[ev] || [])) { try { fn(data, {}); } catch (err) { console.error(err); } } },
     close() { if (history.state && history.state.sheet) history.back(); else render({v: view}); },
     // a full-screen sheet like Settings: returns {root, body, foot}; onOpen(root) runs each time it opens
+    // an empty state, the same everywhere: an icon in a soft circle, a short title, a line of help, an optional button
+    empty(icon, title, text, action) {
+      const box = el("div", "empty-state"), ic = el("div", "es-icon"); ic.append(svg(icon || "i-sparkle"));
+      box.append(ic, el("b", null, title)); if (text) box.append(el("p", null, text));
+      if (action) { const b = el("button", "btn-dark", action[0]); b.type = "button"; b.addEventListener("click", action[1]); box.append(b); }
+      return box;
+    },
     sheet(id, title, onOpen) {
       if (!$(id)) {
         const root = el("section", "sheet full"); root.id = id; root.hidden = true;

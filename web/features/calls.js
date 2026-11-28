@@ -329,7 +329,8 @@
     if (!T.state.demo) { try { calls = (await T.api("/api/calls/history")).calls || []; } catch (e) { /* offline */ } }
     hist.pill.textContent = calls.length ? calls.length + (calls.length === 1 ? " call" : " calls") : "";
     hist.body.replaceChildren();
-    if (!calls.length) { hist.body.append(el("p", "empty", T.state.demo ? "Demo mode: calls show here on Theta." : "No calls yet. Every call Theta makes shows here with its transcript.")); return; }
+    if (!calls.length) { hist.body.append(T.empty("i-phone", "No calls yet", T.state.demo ? "Calls show here on Theta, each with its transcript."
+      : "Every call Theta makes or takes shows here, with who, how long, how it went and the transcript.", ["Make a test call", () => { T.close(); T.open("settings", "connections"); }])); return; }
     for (const c of calls) {
       const other = c.kind === "other";
       const row = el("button", "ch-row"); row.type = "button";
@@ -352,7 +353,7 @@
       hist.body.append(row, tr);
     }
   }
-  T.menu("Call history", "i-bell", "callhist");
+  T.menu("Call history", "i-phone", "callhist");
   const hr = row("Call history", "Every call Theta makes, with who, how long, how it went and the full transcript.");
   const hb = el("button", "btn-dark", "Open"); hb.type = "button"; hb.addEventListener("click", () => T.open("callhist"));
   hr.r.append(hb); g.append(hr.r);

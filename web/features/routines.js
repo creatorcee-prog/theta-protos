@@ -178,5 +178,5 @@
   }
 
   sheet = T.sheet("routines", "Routines & workflows", () => { showForm = false; render(); refresh(); });
-  T.menu("Routines", "i-bell", "routines");
+  T.menu("Routines", "i-repeat", "routines");
 })();
