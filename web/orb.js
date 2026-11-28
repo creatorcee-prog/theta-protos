@@ -9,7 +9,8 @@
  *   "waiting"  waiting on you: the dots gather in a little and take Theta's indigo accent
  *   done()     settle: a soft ring, then back to idle
  * Openings (for the splash): "converge" (dots start as stars and glide into the globe, nearest first) and
- * "signal" (rings of dots pulse out like a broadcast, then come home as the globe's latitudes).
+ * "signal" (rings of dots pulse out like a broadcast, then come home as the globe's latitudes). The glass styles
+ * (web/orb8.js) always "ignite": a spark that blooms into the sphere with rings of light rippling out.
  * Dot shapes (theta-app's "Voice and tools > Dots"): circle, triangle, square, diamond, pentagon, hexagon, star.
  * Styles (theta-app's avatar styles): urchin (the default), precision (fine and dense), lumen (an inner shell and a
  * bright rim), flow (always gently streaming), signal (rays that pulse out), rings (the classic rings).
@@ -121,7 +122,10 @@
     // ---- openings
     opening(kind, done, speed) {
       kind = kind === "signal" ? "signal" : "converge";
-      if (this._st().g8) { this.fade = 0; this.open = {kind: "fade", t0: performance.now(), done, speed: speed > 0 ? speed : 1}; kick(); return; } // glass styles fade in
+      if (this._st().g8) {  // glass styles ignite (a fade with Reduce Motion)
+        const ig = !reduceQ.matches;
+        this.fade = ig ? 1 : 0; this.open = {kind: ig ? "ignite" : "fade", t0: performance.now(), done, speed: speed > 0 ? speed : 1}; kick(); return;
+      }
       speed = speed > 0 ? speed : 1;
       if (reduceQ.matches) { this.fade = 0; this.open = {kind: "fade", t0: performance.now(), done, speed}; kick(); return; }
       this.open = {kind, t0: performance.now(), done, sky: [], speed};
@@ -198,6 +202,37 @@
       this._dots();
       this.draw(t, still ? this.level * 0.4 : this.level);
     }
+    // the glass styles' opening, "ignite": a pinpoint of light sparks in the middle, the glass sphere blooms out of it
+    // on a spring (a touch past full size, then back) while it unwinds a quarter turn and the light inside spins up and
+    // settles, and two rings of light (the theme color, then a companion hue) ripple out from it. About 1.9 s at
+    // speed 1. The glass draws itself with absolute transforms, so it's drawn to a second canvas and scaled from there.
+    _ignite(g, ot, t, lv, sty) {
+      const W = this.W, H = this.H, cx = W / 2, cy = H / 2, S = Math.min(W, H), L = this._L();
+      const p = Math.max(0, Math.min(1, (ot - 0.22) / 1.15)), e = 1 - Math.pow(1 - p, 3);
+      const sc = p <= 0 ? 0 : 1 - 0.88 * Math.exp(-5 * p) * Math.cos(7 * p);
+      if (p > 0) {
+        const oc = this._oc || (this._oc = document.createElement("canvas"));
+        if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
+        const og = oc.getContext("2d"); og.setTransform(1, 0, 0, 1, 0, 0); og.clearRect(0, 0, W, H);
+        ThetaOrb8.draw(this, og, sty, t + 2.4 * e, Math.max(lv, 0.9 * (1 - p)));
+        g.save(); g.globalAlpha = Math.min(1, p * 2.4); g.translate(cx, cy); g.rotate(-(1 - e) * 1.2); g.scale(sc, sc);
+        g.drawImage(oc, -cx, -cy); g.restore();
+      }
+      g.save(); g.globalCompositeOperation = "lighter";
+      const sa = ot < 0.22 ? ot / 0.22 : Math.max(0, 1 - (ot - 0.22) / 0.6);  // the spark
+      if (sa > 0) {
+        const sr = S * (0.03 + 0.12 * Math.min(1, ot / 0.45)), gr = g.createRadialGradient(cx, cy, 0, cx, cy, sr);
+        gr.addColorStop(0, `rgba(255,255,255,${0.95 * sa})`); gr.addColorStop(0.25, col(L.hue, 100, 75, 0.7 * sa)); gr.addColorStop(1, col(L.hue, 100, 60, 0));
+        g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, sr, 0, TAU); g.fill();
+      }
+      for (const [delay, hue] of [[0.3, L.hue], [0.44, L.hue + 135]]) {  // the rings
+        const q = (ot - delay) / 0.95; if (q <= 0 || q >= 1) continue;
+        const rr = S * (0.1 + 0.4 * (1 - Math.pow(1 - q, 2))), a = (1 - q) * (1 - q);
+        g.lineWidth = S * 0.035 * (1 - q) + 1; g.strokeStyle = col(hue, 100, 62, 0.16 * a); g.beginPath(); g.arc(cx, cy, rr, 0, TAU); g.stroke();
+        g.lineWidth = S * 0.006 * (1 - q) + 0.5; g.strokeStyle = col(hue, 100, 80, 0.7 * a); g.beginPath(); g.arc(cx, cy, rr, 0, TAU); g.stroke();
+      }
+      g.restore();
+    }
     draw(t, lv) {
       const g = this.g, W = this.W, H = this.H, o = this.opt, cx = W / 2, cy = H / 2, S = Math.min(W, H), LOOK = this._L(), st = this._st();
       const glow = o.glow * (st.glow || 1), dotK = o.dotK * (st.dotK || 1), shp = o.shape || shape;
@@ -206,12 +241,13 @@
       let op = this.open, ot = 0, out = 1, end = 0;
       if (op) {
         ot = (performance.now() - op.t0) / 1000 * (op.speed || 1);
-        end = op.kind === "signal" ? 2.9 : op.kind === "converge" ? 2.7 : 0.5;
+        end = op.kind === "signal" ? 2.9 : op.kind === "converge" ? 2.7 : op.kind === "ignite" ? 1.45 : 0.5;
         if (op.kind === "fade") this.fade = Math.min(1, ot / 0.5);
         out = Math.max(0, Math.min(1, (ot - end) / 0.4)); // how far the globe has taken over
         if (ot > end + 0.45) { const d = op.done; this.open = null; op = null; this.fade = 1; if (d) setTimeout(d, 0); }
       }
       const fadeA = this.fade;
+      if (st.g8 && window.ThetaOrb8 && op && op.kind === "ignite") { this._ignite(g, ot, t, lv, o.style && STYLES[o.style] ? o.style : style); return; }
       if (st.g8 && window.ThetaOrb8) { // a Generation 8 style: light in glass (web/orb8.js)
         g.save(); g.globalAlpha = fadeA; ThetaOrb8.draw(this, g, o.style && STYLES[o.style] ? o.style : style, t, lv); g.restore(); return;
       }

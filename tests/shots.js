@@ -437,6 +437,15 @@ async function waitUp(url) {
         check(left > 0, "the mouse wheel scrolls a sideways row on desktop: " + left);
       } else check(false, "found a sideways row on Home to scroll");
     }
+    { // the glass styles' opening (ignite) plays and hands over, with no errors
+      const ms = await p3.evaluate(() => new Promise(res => {
+        const c = document.createElement("canvas"); c.style.cssText = "position:fixed;left:0;top:0;width:200px;height:200px;z-index:99"; document.body.append(c);
+        const o = ThetaOrb.mount(c, {style: "ribbons"}), t0 = performance.now();
+        o.opening("converge", () => { const k = o.open; res(Math.round(performance.now() - t0)); o.destroy(); c.remove(); }, 1);
+        setTimeout(() => res(-1), 5000);
+      }));
+      check(ms > 1200 && ms < 3000, "the glass globe's opening plays and finishes: " + ms + " ms");
+    }
     { // the keyboard: Escape closes a sheet and focus returns to the button that opened it
       await p3.focus("#home-me"); await p3.keyboard.press("Enter"); await sleep(500);
       await p3.keyboard.press("Escape"); await sleep(500);
