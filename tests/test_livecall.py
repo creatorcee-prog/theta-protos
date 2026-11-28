@@ -110,7 +110,7 @@ FAKE = FakeSession()
 
 
 @contextlib.asynccontextmanager
-async def fake_connect(instruction, voice_name="Puck"):
+async def fake_connect(instruction, voice_name="Puck", affective=False):
     FAKE.instruction, FAKE.voice = instruction, voice_name
     yield FAKE
 livecall.connect = fake_connect
@@ -182,6 +182,8 @@ turns = calls.get_call("c3")["turns"]
 check("both sides land in the call's transcript", any(t["who"] == "them" and "arc lamp" in t["text"] for t in turns)
       and any(t["who"] == "theta" and "Goodbye" in t["text"] for t in turns), turns)
 check("and Theta's goodbye ended the call (the socket closed by itself)", events and not livecall._open)
+check("the model is told to sound like a person, not a script", "not a call center" in FAKE.instruction
+      and "How can I assist you" in FAKE.instruction)
 check("the model is told to open with the exact disclosure and has no tools", "word for word" in FAKE.instruction
       and calls._opening(calls.get_call("c3")) in FAKE.instruction and "no tools" in FAKE.instruction)
 FAKE = FakeSession(opening_ok=False)

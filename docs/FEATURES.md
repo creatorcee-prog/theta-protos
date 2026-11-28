@@ -118,7 +118,9 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   preset voices (`server/livevoice.py`, Settings > Apps > Phone calls > Live call voice, default Puck; GET
   /api/calls/voice_sample?voice= plays a sample made by the same model, cached). Gemini says the opening too, from
   fixed text; nothing the caller says reaches it until then, and the call ends unless Gemini's own transcript of its
-  first turn has the disclosure word for word (or within 12 s). Both sides are transcribed into the call's turns. In code:
+  first turn has the disclosure word for word (or within 12 s). The prompt is written for speech (casual, contractions, no
+  script lines like "How can I assist you"), with affective dialog on (Gemini matches the caller's tone; if the model
+  or API version refuses it, the call opens again without it; GEMINI_AFFECTIVE=0 turns it off). Both sides are transcribed into the call's turns. In code:
   5-minute cap and 40 s of silence end with a goodbye, Theta's goodbye hangs up once it's played, a voicemail
   greeting ends it, "don't record me" stops the recording, and there are no tools on a live call. L16 byte order is
   detected from the first second of speech (Telnyx documents little-endian). Otherwise calls stay turn by turn.
