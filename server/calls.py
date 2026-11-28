@@ -973,6 +973,9 @@ def inbound_route(req, start):
     params = telco.read(req) if req.method == "POST" else dict(req.query)
     frm = normalize(params.get("From") or params.get("from") or "")
     owner = bool(signed and frm and user_phone() and frm == normalize(user_phone()))
+    from .app import log  # proof in Railway's log that Telnyx reached Theta (endless ringing means it never did)
+    log(f"incoming call: {req.method}, from {'the user' if owner else 'someone else'}, "
+        f"{'signed' if signed else 'unsigned (set TELNYX_PUBLIC_KEY to recognize the user)'}")
     now = _now()
     n = _c().execute("SELECT COUNT(*) FROM calls WHERE kind = 'inbound' AND t > ?", (_day_start(now),)).fetchone()[0]
     if n >= INBOUND_DAILY:
