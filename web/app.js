@@ -242,14 +242,25 @@
   // ---------------------------------------------------------------- views and history
   const views = ["splash", "login", "home", "chat"];
   let view = "splash";
+  // a wide window (a desktop browser) shows Home and the chat side by side instead of one phone column
+  const WIDE = matchMedia("(min-width: 1000px) and (min-height: 520px)");
+  const pair = n => WIDE.matches && (n === "home" || n === "chat");
   function show(name) {
     if (view === name) return;
+    const wasShown = !$(name).hidden;
     view = name;
-    for (const v of views) { const e = $(v); if (v === "splash") continue; e.hidden = v !== name; }
-    const e = $(name); e.classList.remove("enter"); void e.offsetWidth; e.classList.add("enter");
-    if (name === "chat") { markRead(); requestAnimationFrame(() => { toBottom(false); }); }
-    if (name === "home") renderHome();
+    for (const v of views) { const e = $(v); if (v === "splash") continue; e.hidden = !(v === name || (pair(name) && (v === "home" || v === "chat"))); }
+    const e = $(name);
+    if (!wasShown) { e.classList.remove("enter"); void e.offsetWidth; e.classList.add("enter"); }
+    if (name === "chat" || (pair(name) && !wasShown)) { markRead(); requestAnimationFrame(() => { toBottom(false); }); }
+    if (name === "home" || pair(name)) renderHome();
   }
+  function applyWide() {
+    document.documentElement.classList.toggle("wide", WIDE.matches);
+    if (view === "home" || view === "chat") { const v = view; view = null; show(v); }
+  }
+  WIDE.addEventListener("change", applyWide);
+  document.documentElement.classList.toggle("wide", WIDE.matches);
   const SHEETS = ["settings"];
   function render(st) {
     $("toast").hidden = true;  // a toast belongs to the screen it was shown on

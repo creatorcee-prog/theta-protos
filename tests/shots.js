@@ -421,6 +421,22 @@ async function waitUp(url) {
     const e3 = []; p3.on("pageerror", e => e3.push(String(e)));
     await p3.goto(base + "/?demo=1");
     await p3.waitForSelector("#home:not([hidden])", {timeout: 8000});
+    { // a wide window shows Home and the chat side by side
+      await sleep(600);
+      const w = await p3.evaluate(() => { const h = document.getElementById("home").getBoundingClientRect(), c = document.getElementById("chat").getBoundingClientRect();
+        return {both: !document.getElementById("chat").hidden, side: c.left >= h.right - 1 && c.width > 300}; });
+      check(w.both && w.side, "a desktop window shows Home and the chat side by side" + (w.both && w.side ? "" : ": " + JSON.stringify(w)));
+      { const f = path.join(OUT, "12-desktop-two-pane.png"); await p3.screenshot({path: f}); console.log("shot " + f); }
+      // a row that scrolls sideways moves with the mouse wheel (it looked cut off: a wheel only went up and down)
+      const box = await p3.evaluate(() => { for (const e of document.querySelectorAll("#home *")) { const ox = getComputedStyle(e).overflowX;
+        if ((ox === "auto" || ox === "scroll") && e.scrollWidth > e.clientWidth + 20 && e.offsetParent) { e.scrollIntoView({block: "center"}); e.id = e.id || "shots-row";
+          const r = e.getBoundingClientRect(); return {id: e.id, x: r.left + r.width / 2, y: r.top + r.height / 2}; } } return null; });
+      if (box) {
+        await p3.mouse.move(box.x, box.y); await p3.mouse.wheel(0, 240); await sleep(300);
+        const left = await p3.evaluate(id => document.getElementById(id).scrollLeft, box.id);
+        check(left > 0, "the mouse wheel scrolls a sideways row on desktop: " + left);
+      } else check(false, "found a sideways row on Home to scroll");
+    }
     { // the keyboard: Escape closes a sheet and focus returns to the button that opened it
       await p3.focus("#home-me"); await p3.keyboard.press("Enter"); await sleep(500);
       await p3.keyboard.press("Escape"); await sleep(500);

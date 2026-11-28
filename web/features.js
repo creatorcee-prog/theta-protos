@@ -10,6 +10,7 @@
   FEATURES.push("models"); // Settings > General > Models
   FEATURES.push("bank"); // Settings > Apps > Bank accounts
   FEATURES.push("account", "chips", "look", "home", "chiphub", "progress");
+  FEATURES.push("desktop"); // a mouse can scroll the sideways rows (wheel and drag)
   FEATURES.push("dialogs"); // Escape, focus, inert background and swipes for every sheet and menu // home: the smart stack, finds, chips and top stories // look: theme color, the globe's dots, the opening, on every device // Settings: profile, personalization, memory, usage, data; chips (skills)
   for (const f of FEATURES) {
     const s = document.createElement("script");

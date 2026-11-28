@@ -470,6 +470,13 @@ html.no-usage .usage.bare:not(:has(.voted)) { display: none; }
   /* on a big screen, keep the phone column */
   #app { left: 50%; width: 430px; transform: translateX(-50%); border-left: 1px solid #1f1f1f; border-right: 1px solid #1f1f1f; }
 }
+/* a desktop window (html.wide, app.js): Home on the left, the chat beside it, each its phone width or a little more.
+   Sheets still cover both, like a modal. */
+html.wide #app { width: min(1120px, 100vw - 48px); }
+html.wide #home { right: auto; width: 420px; border-right: 1px solid #1f1f1f; }
+html.wide #chat { left: 421px; }
+html.wide #chat-back { visibility: hidden; }
+html.wide #chat .thread, html.wide #chat .composer-wrap > * { max-width: 720px; margin-left: auto; margin-right: auto; }
 
 /* keyboard up (set by app.js): the home bar is hidden behind the keyboard, so its padding would only leave a gap */
 html.kb { --sab: 0px; }
