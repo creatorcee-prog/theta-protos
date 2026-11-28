@@ -53,9 +53,11 @@
   }
   function lookFor(c) { const h = hexHue(c) || {hue: 195, sat: 95};
     return {hue: h.hue, sat: h.sat, light: 62, edgeHue: h.hue + 27, waitHue: h.hue + 67}; }
-  function dotPath(g, x, y, r, rot, sh) {
-    sh = sh || shape; g.beginPath();
-    if (sh === "circle" || r < 0.9) { g.arc(x, y, r, 0, TAU); return; }
+  function dotPath(g, x, y, r, rot, sh) { g.beginPath(); addDot(g, x, y, r, rot, sh); }
+  // one dot added to the current path (many dots of one color are filled together: see draw)
+  function addDot(g, x, y, r, rot, sh) {
+    sh = sh || shape;
+    if (sh === "circle" || r < 0.9) { g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU); return; }
     if (sh === "star") {
       const R = r * 1.5, ri = R * 0.45;
       for (let i = 0; i < 10; i++) { const a = (rot || 0) + i * Math.PI / 5 - Math.PI / 2, rr = i % 2 ? ri : R;
@@ -105,7 +107,7 @@
     _st() { return STYLES[this.opt.style] || STYLES[style] || {}; }
     _L() { return this.opt.color ? (this._lk || (this._lk = lookFor(this.opt.color))) : LOOK; }
     _dots() { const n = Math.round(this.opt.dots * (this._st().n || 1)); if (this.dotsFor !== n) { this.dots = sphere(n); this.dotsFor = n; } }
-    setState(s) { if (s === "working") s = "thinking"; if (s !== this.state) { this.state = s; if (s === "speaking") this.burst = 0.5; } }
+    setState(s) { if (s === "working") s = "thinking"; if (s !== this.state) { this.state = s; this._restDrawn = false; if (s === "speaking") this.burst = 0.5; kick(); } }
     pulse(amount) { this.burst = Math.min(1, this.burst + (amount == null ? 0.35 : amount)); }
     ring(hue) { this.rings.push({t0: this.clock, hue: hue == null ? this._L().hue : hue}); kick(); }
     ack() { this.punch = 1; this.ring(); }
@@ -161,9 +163,21 @@
       if (!cv.isConnected) { this.destroy(); return; }
       if (cv.offsetParent === null && getComputedStyle(cv).position !== "fixed") return; // hidden
       if (!this.visible || document.hidden) return;
+      if (cv.closest("[inert]")) return;  // under an open sheet (dialogs.js makes what's behind inert): nobody sees it
+      // at rest (no state, ring, opening or pulse in progress) the globe only drifts: 30 frames a second is plenty, and
+      // with Reduce Motion it holds still (one frame, then nothing until something happens). Measured before: 21-26%
+      // of the main thread at rest, every frame redrawn at 60 fps
+      const sig = [this.opt.style, this.opt.shape, this.opt.color, style, shape, LOOK.hue, this.cv.clientWidth].join();  // a look change redraws
+      const busy = sig !== this._sig || this.state !== "idle" || this.rings.length || this.open || this.burst > 0.01 || this.punch > 0 || this.level > 0.02
+        || this.sw.thinking > 0.02 || this.sw.speaking > 0.02 || this.sw.waiting > 0.02;
+      const still = reduceQ.matches;
+      if (!busy) {
+        if (still && this._restDrawn && this.W) return;
+        if (ms - (this._drawnAt || 0) < 1000 / 30 - 2) return;
+      }
+      this._restDrawn = !busy; this._drawnAt = ms; this._sig = sig;
       this._size();
       const dt = Math.min(0.05, (ms - (this.last || ms)) / 1000); this.last = ms;
-      const still = reduceQ.matches;
       this.clock += dt * (still ? 0.35 : 1);
       const t = this.clock;
       // states ease in and out
@@ -242,8 +256,12 @@
       }
       let coreDone = false;
       const coreK = op ? out : 1;
+      // at rest and while talking (no opening), dots of nearly the same color are filled together, one fill per color,
+      // back half, then the core, then the front half. With additive light the order within a half doesn't change
+      // the picture; it was 520 separate color strings and fills a frame (most of the globe's CPU, measured)
+      const batch = op ? null : [new Map(), new Map()];
       for (const [px, py, z, pr, s, v, home, vis, d] of pts) {
-        if (!coreDone && z < 0) { this._core(cx, cy, R, lv, coreK * fadeA); coreDone = true; }
+        if (!batch && !coreDone && z < 0) { this._core(cx, cy, R, lv, coreK * fadeA); coreDone = true; }
         const fog = Math.max(0.12, Math.min(1, 0.62 - z * 0.55));
         const hue = LOOK.hue + s * 18 - 9 + Math.max(0, z) * (LOOK.edgeHue - LOOK.hue) + 25 * this.sw.thinking * Math.sin(s * 9 + t * 2)
           + (LOOK.waitHue - LOOK.hue) * this.sw.waiting * (0.6 + 0.4 * s);
@@ -255,8 +273,24 @@
           const conv = op.kind === "converge";
           a = (1 - home) * vis * (0.35 + 0.65 * d) + home * a; r = (1 - home) * (conv ? (0.5 + 1.1 * d * d) * this.dpr : 1.1 * this.dpr) + home * r;
           g.fillStyle = home < 0.5 && conv ? col(205, 60, 92, a) : col(hue, LOOK.sat, light, a);
+        } else if (batch) {
+          const key = `${Math.round(hue / 3) * 3}|${Math.round(light / 3) * 3}|${Math.round(a * 30)}`, m = batch[z < 0 ? 1 : 0];
+          let list = m.get(key); if (!list) m.set(key, list = []);
+          list.push(px, py, Math.max(0.5, r), s * TAU);
+          continue;
         } else g.fillStyle = col(hue, LOOK.sat, light, a);
         dotPath(g, px, py, Math.max(0.5, r), s * TAU, shp); g.fill();
+      }
+      if (batch) {
+        for (let half = 0; half < 2; half++) {
+          if (half === 1) { this._core(cx, cy, R, lv, coreK * fadeA); coreDone = true; }
+          for (const [key, list] of batch[half]) {
+            const [h, l, a30] = key.split("|");
+            g.fillStyle = col(+h, LOOK.sat, +l, a30 / 30); g.beginPath();
+            for (let i = 0; i < list.length; i += 4) addDot(g, list[i], list[i + 1], list[i + 2], list[i + 3], shp);
+            g.fill();
+          }
+        }
       }
       if (!coreDone) this._core(cx, cy, R, lv, coreK * fadeA);
       for (let i = this.rings.length - 1; i >= 0; i--) { // ack / done: a ring opens and fades
