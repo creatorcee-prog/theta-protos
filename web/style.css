@@ -589,3 +589,14 @@ html.kb #home .banner { display: none; }
 
 /* developer details (Settings > General > Developer details): only for the account that runs Theta */
 html:not(.dev) .dev-only, html:not(.dev) .usage:not(.edited):not(.bare), html:not(.dev) details.sim { display: none !important; }
+
+/* tap targets: at least 44pt everywhere (Apple's minimum). Pills and buttons grow to 44; small icon buttons keep their
+   look and get a larger invisible hit area; switches take taps a little above and below the track */
+.btn-dark, .btn-white, .acc-pill, .chip, .chp-pill, .onb-segs button, .hf-chips button, .hp, .tab-panel select, .sheet select { min-height: 44px; }
+.c-btn { min-width: 44px; min-height: 44px; }
+.chp-txt { min-height: 44px; }
+.switch input { inset: -6px -4px; }
+.mem-line button, .hf-tile .x, .banner .round, .tab-panel button.x { position: relative; }
+.mem-line button::before, .hf-tile .x::before, .banner .round::before { content: ""; position: absolute; inset: -12px; }
+.hf-tile .x { position: absolute; }
+details > summary { min-height: 44px; display: flex; align-items: center; }
