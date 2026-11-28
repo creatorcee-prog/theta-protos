@@ -18,7 +18,13 @@ outlines, wire or beads caps "frontier look" at 70. On this scale the approved G
 | 3 | 78.5 | 76.9 | 70.9 | 67.5 | 71.9 | 72.1 |
 | 4 | 80.5 | 77.0 | 68.5 | 69.3 | 73.2 | 71.1 |
 | 5 | 81.7 | 80.1 | 68.6 (dropped) | 71.5 | 76.3 | 71.1 |
-| 6 | not graded (the grader hit the account's usage limit; resend after it resets) | | | | | |
+| 6 | 73.0 | 72.5 | (dropped) | 66.0 | 69.5 | 61.5 |
+
+Round 6 came from a new, harsher grader: asked to score the Gen 7.2 reference on the same rubric, it gave 67.5 (earlier
+graders put 7.2 at about 80), so its scale runs about 12 points lower. Against the reference, Ribbons went from +1.7 in
+round 5 to +5.5 and Horizon from about 0 to +5. Its main asks: Ribbons' listening reads as an eye; Horizon's speaking
+zig-zag reads as cracked glass; the cores are hard white dots; moods (concerned, sleepy) both read magenta; the glass
+needs a Fresnel rim; alert needs a pulse inside, not just a rim tint.
 
 Saved for later (in the lab's "Saved for later" shelf, code kept): 8.3 Aurora (dropped after round 5: sleepy and
 speaking kept reading as cut-out fins) and 8.7 Prism (dropped after round 1: read as flat polygons).
