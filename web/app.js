@@ -973,6 +973,12 @@
   ta.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && HOVER.matches) { e.preventDefault(); form.requestSubmit(); } });
   // the thread's bottom space follows the message box's real height (it grows with text, photos and chips), so
   // the newest message always scrolls clear of it
+  // Home's bottom bar (search, plus the banner when there is one) floats over the feed: the feed keeps exactly its
+  // height free, so the banner never hides the last cards (it was a fixed 150px)
+  const hbot = document.querySelector("#home .home-bottom");
+  if (hbot && window.ResizeObserver) new ResizeObserver(() => {
+    const h = Math.ceil(hbot.getBoundingClientRect().height); if (h) document.documentElement.style.setProperty("--home-bottom-h", h + "px");
+  }).observe(hbot);
   const cwrap = document.querySelector(".composer-wrap");
   if (cwrap && window.ResizeObserver) {
     new ResizeObserver(() => {

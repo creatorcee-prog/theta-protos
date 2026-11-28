@@ -14,7 +14,7 @@
   const css = document.createElement("style");
   css.textContent = `
 #home .home-mid { bottom: 0; overflow-y: auto; overflow-x: hidden; align-content: start; -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(var(--sab) + 150px); scrollbar-width: none; }
+  padding-bottom: calc(var(--home-bottom-h, calc(var(--sab) + 150px)) + 16px); scrollbar-width: none; }
 #home .home-mid::-webkit-scrollbar { display: none; }
 #home.has-feed .home-bottom { padding-top: 30px; background: linear-gradient(to bottom, transparent, var(--bg) 30px); }
 #home.has-feed .home-orb-wrap { width: 170px; height: 170px; margin: -22px 0 -26px; }
@@ -24,6 +24,11 @@
 #home.lay-satellites .home-orb-wrap { width: 190px; height: 190px; }
 #home.lay-today .home-orb-wrap { width: 160px; height: 160px; }
 #home.hs-s .home-orb-wrap { transform: scale(1.1); } #home.hs-l .home-orb-wrap { transform: scale(.9); }
+/* the three sizes look different, not just hold more or fewer cards: Compact is tight and small, Large roomy and big */
+#home.hs-s .hx { padding: 9px 12px; border-radius: 16px; } #home.hs-s .hx b { font-size: 0.88rem; } #home.hs-s .hx span, #home.hs-s .hx .ev { font-size: 0.8rem; }
+#home.hs-s .hgrid, #home.hs-s .hlist { gap: 7px; } #home.hs-s .hb .c { width: 42px; height: 42px; }
+#home.hs-l .hx { padding: 16px 18px; border-radius: 24px; } #home.hs-l .hx b { font-size: 1.12rem; } #home.hs-l .hx span, #home.hs-l .hx .ev { font-size: 0.95rem; }
+#home.hs-l .hgrid, #home.hs-l .hlist { gap: 14px; } #home.hs-l .hb .c { width: 58px; height: 58px; } #home.hs-l .hb .c svg { width: 26px; height: 26px; }
 .hf { width: 100%; max-width: 560px; padding: 0 16px; box-sizing: border-box; display: grid; gap: 4px; margin-top: 10px; }
 .hf-hello { text-align: left; padding: 2px 4px 6px; }
 .hf-hello small { display: block; color: var(--muted); font-size: 0.7647rem; letter-spacing: .02em; text-transform: uppercase; }
