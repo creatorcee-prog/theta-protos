@@ -121,12 +121,15 @@ class WebApp(unittest.TestCase):
 class VersionInStep(unittest.TestCase):
     def test_app_and_server_versions_match(self):
         import re as _re
-        app = open(os.path.join(WEB, "app.js")).read()
-        srv = open(os.path.join(WEB, "..", "server", "__init__.py")).read()
+        with open(os.path.join(WEB, "app.js")) as f:
+            app = f.read()
+        with open(os.path.join(WEB, "..", "server", "__init__.py")) as f:
+            srv = f.read()
         a = _re.search(r'APP_VERSION = "([^"]+)"', app).group(1)
         s = _re.search(r'__version__ = "([^"]+)"', srv).group(1)
         self.assertEqual(a, s, "bump web/app.js APP_VERSION and server/__init__.py __version__ together")
-        self.assertIn('id="login-ver"', open(os.path.join(WEB, "index.html")).read())
+        with open(os.path.join(WEB, "index.html")) as f:
+            self.assertIn('id="login-ver"', f.read())
 
 
 if __name__ == "__main__":

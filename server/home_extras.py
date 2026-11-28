@@ -87,8 +87,9 @@ def refresh_today(now):
         evs, _ = gcal.events_between(today, today + datetime.timedelta(days=1), now)
         out = []
         for e in evs[:8]:
-            when = "All day" if e.get("all_day") else persona.local_now(datetime.datetime.fromisoformat(e["start"]).timestamp()).strftime("%-I:%M %p")
-            out.append({"title": e.get("title") or "Event", "when": when, "location": e.get("location") or ""})
+            ts = 0 if e.get("all_day") else datetime.datetime.fromisoformat(e["start"]).timestamp()
+            when = "All day" if e.get("all_day") else persona.local_now(ts).strftime("%-I:%M %p")
+            out.append({"title": e.get("title") or "Event", "when": when, "t": ts, "location": e.get("location") or ""})
         db.set_setting("home_today", {"day": time.strftime("%Y-%m-%d"), "events": out})
     except Exception:  # noqa: BLE001  no calendar connected, or it's down
         pass
@@ -136,7 +137,7 @@ def reminders_today(now):
         for j in db.jobs("pending", limit=50):
             if j.get("kind") == "remind" and float(j.get("due_t") or 0) <= end:
                 when = persona.local_now(float(j["due_t"])).strftime("%-I:%M %p") if float(j["due_t"]) > now else "Due now"
-                out.append({"text": (j.get("payload") or {}).get("text") or "Reminder", "when": when})
+                out.append({"text": (j.get("payload") or {}).get("text") or "Reminder", "when": when, "t": float(j["due_t"])})
     except Exception:  # noqa: BLE001
         pass
     return out[:5]

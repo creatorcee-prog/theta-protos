@@ -151,10 +151,14 @@
       return b;
     }
     if (k === "today") {
-      if (!t.reminders.length && !t.events.length) return null;
+      // reminders, plus today's events only when the calendar card isn't showing them already; soonest first
+      const withEvents = !(d.order || []).includes("calendar");
+      const list = t.reminders.map(r => [r.t || 0, r.when, r.text]).concat(withEvents ? t.events.map(e => [e.t || 0, e.when, e.title]) : [])
+        .sort((a, b) => a[0] - b[0]);
+      if (!list.length) return null;
       const b = btn("", () => toChat());
-      b.append(el("small", null, "Today"));
-      const items = t.reminders.map(r => [r.when, r.text]).concat(t.events.map(e => [e.when, e.title])).slice(0, big ? 4 : 2);
+      b.append(el("small", null, withEvents ? "Today" : "Reminders today"));
+      const items = list.map(x => [x[1], x[2]]).slice(0, big ? 4 : 2);
       for (const [w, x] of items) { const r = el("div", "ev"); r.append(el("em", null, w), document.createTextNode(x)); b.append(r); }
       return b;
     }
@@ -249,7 +253,8 @@
   }
   function today(d, size) {
     const kids = [], t = d.today || {events: [], reminders: []};
-    const items = t.events.map(e => [e.when, e.title]).concat(t.reminders.map(r => [r.when, r.text]));
+    const items = t.events.map(e => [e.t || 0, e.when, e.title]).concat(t.reminders.map(r => [r.t || 0, r.when, r.text]))
+      .sort((a, b) => a[0] - b[0]).map(x => [x[1], x[2]]);  // one line, soonest first
     if (items.length) { const row = el("div", "hf-row"); for (const [w, x] of items) { const p = el("button", "hp"); p.type = "button"; p.append(el("em", null, w), document.createTextNode(x)); p.addEventListener("click", () => T.open("calendar")); row.append(p); } kids.push(row); }
     const list = el("div", "hlist"); list.style.marginTop = "10px";
     cards(d, d.order.filter(k => !["calendar", "today", "vantage", "chips"].includes(k)), PER[size] - 1, false).forEach(c => list.append(c));
@@ -330,7 +335,9 @@
       found: [{id: "a", kind: "deal", title: "Arc floor lamp, lowest of 4 stores", price: "$89", source: "Lamp Shop"},
         {id: "b", kind: "news", title: "Jazz win in overtime behind 41 from Markkanen", source: "ESPN"}],
       news: [{title: "Storms expected across the Mountain West this weekend", source: "NPR", match: true}, {title: "Markets close higher on rate hopes", source: "BBC"}],
-      today: {events: [{title: "Dentist", when: "3:30 PM"}, {title: "Call with Sam", when: "5:00 PM"}], reminders: [{text: "Trash goes out", when: "8:00 PM"}]},
+      today: (() => { const at = h => { const x = new Date(); x.setHours(h, h % 1 * 60, 0, 0); return x.getTime() / 1000; };
+        return {events: [{title: "Dentist", when: "3:30 PM", t: at(15.5)}, {title: "Call with Sam", when: "5:00 PM", t: at(17)}],
+          reminders: [{text: "Trash goes out", when: "8:00 PM", t: at(20)}, {text: "Take vitamins", when: "9:00 AM", t: at(9)}]}; })(),
       weather: {temp: 34, condition: "light snow", hi: 38, lo: 21, unit: "F"},
       recommended: {items: [{key: "backups", title: "Turn on Drive backups", sub: "A copy every 3 hours", action: "settings:connections"}, {key: "push", title: "Let Theta text you", sub: "Reminders on your phone", action: "settings:notifications"}], done: 5, total: 7},
       order: ["approvals", "calendar", "today", "weather", "found", "recommended", "stories", "vantage"],
