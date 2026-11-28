@@ -63,6 +63,19 @@
 .ag-actions { display: flex; gap: 10px; }
 .ag-actions .ag-save { flex: 1; min-height: 50px; border-radius: var(--r-pill); background: var(--text); color: var(--bg); font-weight: 600; }
 .ag-actions .ag-del { min-height: 50px; padding: 0 18px; border-radius: var(--r-pill); background: var(--fill); color: var(--bad-text); }
+.ag-addr { font: 500 var(--fs-sm)/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-2); margin: -6px 2px 0; user-select: all; }
+.wk { width: 100%; max-width: 560px; padding: 0 16px; box-sizing: border-box; margin-top: 8px; display: grid; gap: 6px; }
+.wk-h { display: flex; align-items: baseline; justify-content: space-between; margin: 4px 2px 2px; }
+.wk-h h3 { margin: 0; font-size: var(--fs-callout); font-weight: 600; }
+.wk-h span { font-size: var(--fs-xs); color: var(--muted); }
+.wk-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 6px 6px 12px; border-radius: var(--r-m); background: var(--fill); text-align: left; width: 100%; }
+.wk-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--ag); }
+.wk-row.running .wk-dot { animation: wkPulse 1.2s ease-in-out infinite; box-shadow: 0 0 10px var(--ag); }
+@keyframes wkPulse { 50% { opacity: .35; } }
+.wk-t { flex: 1; min-width: 0; display: grid; justify-items: start; text-align: left; }
+.wk-t b { font-size: var(--fs-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-t small { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-stop { flex: none; min-height: 36px; padding: 0 12px; border-radius: var(--r-pill); background: var(--fill-2); font-size: var(--fs-s); }
 html[data-agent]:not([data-agent="theta"]) #chat-name { border-color: color-mix(in srgb, var(--agc, var(--accent)) 50%, transparent); }
 `;
   document.head.append(css);
@@ -91,6 +104,47 @@ html[data-agent]:not([data-agent="theta"]) #chat-name { border-color: color-mix(
     nb.addEventListener("click", () => editor(null));
     row.append(nb);
   }
+  // ---- Home: background workers, running and lately finished (server/workers.py)
+  const wk = el("div", "wk"); wk.hidden = true; row.after(wk);
+  let wkT = 0, wkData = null;
+  const ago = t => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 1 ? "just now" : m < 60 ? m + " min ago" : Math.round(m / 60) + " h ago"; };
+  async function loadWorkers() {
+    clearTimeout(wkT);
+    if (!T.state.ready && !T.state.demo) { wkT = setTimeout(loadWorkers, 2000); return; }
+    try { wkData = await T.api("/api/workers"); } catch (e) { wkData = null; }
+    renderWorkers();
+    const running = wkData && wkData.jobs.some(j => j.state === "running");
+    wkT = setTimeout(loadWorkers, running ? 4000 : 60000);
+  }
+  function renderWorkers() {
+    wk.replaceChildren();
+    const day = Date.now() / 1000 - 86400, jobs = ((wkData && wkData.jobs) || []).filter(j => j.state === "running" || (j.ended || j.started) > day).slice(0, 5);
+    wk.hidden = !jobs.length; if (!jobs.length) return;
+    const h = el("div", "wk-h"); h.append(el("h3", null, "Workers"));
+    if (T.state.dev && wkData) h.append(el("span", null, `${(wkData.spent_usd * 100).toFixed(1)}¢ of ${(wkData.cap_usd * 100).toFixed(0)}¢ today · DeepSeek`));
+    else if (wkData && wkData.left_usd < 0.003) h.append(el("span", null, "Resting until tomorrow"));
+    wk.append(h);
+    for (const j of jobs) {
+      const ag = T.agents.list().find(a => a.id === j.agent) || {}, r = el("div", "wk-row " + j.state);
+      r.style.setProperty("--ag", ag.color || "var(--accent)");
+      const t = el("button", "wk-t"); t.type = "button";
+      const state = {running: "working…", done: "done", stopped: "stopped", failed: "didn't finish"}[j.state] || j.state;
+      t.append(el("b", null, j.title), el("small", null, `${j.address} · ${state}${j.ended ? " · " + ago(j.ended) : ""}`));
+      t.setAttribute("aria-label", `${j.title}, ${state}, by ${ag.name || j.agent}`);
+      t.addEventListener("click", () => T.agents.open(j.agent));
+      r.append(el("span", "wk-dot"), t);
+      if (j.state === "running") {
+        const st = el("button", "wk-stop", "Stop"); st.type = "button";
+        st.addEventListener("click", async () => { st.disabled = true; try { await T.post(`/api/workers/${encodeURIComponent(j.id)}/stop`, {}); toast("Stopping. What it has so far will be posted."); } catch (e) { toast("It already finished."); } loadWorkers(); });
+        r.append(st);
+      }
+      wk.append(r);
+    }
+  }
+  setTimeout(loadWorkers, 1500);
+  addEventListener("protos:inbox", () => setTimeout(loadWorkers, 300));
+  T.on("done", () => setTimeout(loadWorkers, 500));  // a reply that started a worker
+
   T.on("agents", data => {
     renderRow();
     const a = T.agents.list().find(x => x.id === T.agents.current());
@@ -152,7 +206,9 @@ html[data-agent]:not([data-agent="theta"]) #chat-name { border-color: color-mix(
     allB.addEventListener("click", () => { f.apps = f.apps == null ? [] : null; fill(); });
     name.addEventListener("input", () => { f.name = name.value; }); about.addEventListener("input", () => { f.about = about.value; });
     instr.addEventListener("input", () => { f.instructions = instr.value; });
-    form.append(field("Name", name), field("What it's for", about), field("Instructions", instr));
+    form.append(field("Name", name));
+    if (a && a.address) { const ad = el("p", "ag-addr", a.address); ad.title = "This agent's address: other agents hand it jobs here"; form.append(ad); }
+    form.append(field("What it's for", about), field("Instructions", instr));
     const cw = el("div", "ag-f"); cw.append(el("span", "ag-l", "Color"), colors); form.append(cw, appWrap);
     const acts = el("div", "ag-actions"), save = el("button", "ag-save", a ? "Save" : "Make agent"); save.type = "submit";
     acts.append(save);

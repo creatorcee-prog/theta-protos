@@ -9,7 +9,7 @@
   const msgs = [];
   let bot = "theta";  // the chat a demo turn belongs to (agents: each has its own)
   const add = (role, text, meta, t) => { const m = {id: nextId++, bot, role, text, t: t || now(), meta: meta || {}}; msgs.push(m); return m; };
-  const agents = [];  // the demo's own agents (server/agents.py keeps the real ones)
+  const agents = [], started = Date.now();  // the demo's own agents (server/agents.py keeps the real ones)
 
   // a little history, so the chat isn't empty
   const H = now() - 3600 * 20;
@@ -141,10 +141,18 @@
     await sleep(60 + Math.random() * 80);
     if (p === "/api/health") return json({ok: true, version: "demo"});
     if (p === "/api/login") return json({ok: true});
-    if (p === "/api/bots" && method === "GET") return json([{id: "theta", name: "Theta", builtin: true, avatar: {kind: "globe"}}].concat(agents));
+    if (p === "/api/bots" && method === "GET") return json([{id: "theta", name: "Theta", builtin: true, address: "theta@home", avatar: {kind: "globe"}}].concat(agents));
+    if (p === "/api/workers" && method === "GET") {  // two sample jobs: one finished, one working for its first 25 s
+      const t0 = Math.round(started / 1000), run = Date.now() - started < 25000;
+      return json({spent_usd: 0.0123, cap_usd: 0.05, left_usd: 0.0377, rig: "home", jobs: [
+        {id: "jd2", agent: "theta", address: "w2.theta@home", title: "Compare 5 standing desks", state: run ? "running" : "done", started: t0, ended: run ? null : t0 + 25, cost: 0.004},
+        {id: "jd1", agent: "theta", address: "w1.theta@home", title: "Sort newsletters into Later", state: "done", started: t0 - 3600, ended: t0 - 3400, cost: 0.0083}]});
+    }
+    if (p.startsWith("/api/workers/") && method === "POST") return json({ok: true});
     if (p === "/api/bots" && method === "POST") {
       const name = String(body.name || "").trim(); if (!name) return json({error: "a name is 1 to 24 letters"}, 400);
-      const a = {id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + (agents.length + 1), name, color: body.color || "#4cd07d", about: body.about || "",
+      const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + (agents.length + 1);
+      const a = {id, address: id + "@home", name, color: body.color || "#4cd07d", about: body.about || "",
                  instructions: body.instructions || "", apps: body.apps === undefined ? null : body.apps, builtin: false};
       agents.push(a); return json(a);
     }

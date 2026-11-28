@@ -42,8 +42,10 @@ def _stored():
 
 
 def all_agents():
-    """Theta first, then the user's agents in the order they were made."""
-    return [dict(THETA)] + [dict(a, builtin=False) for a in _stored()]
+    """Theta first, then the user's agents in the order they were made. Each has an address like an email
+    (server/workers.py: `job-hunter@home`), after OpenRig's seats."""
+    from .workers import address
+    return [dict(THETA, address=address("theta"))] + [dict(a, builtin=False, address=address(a["id"])) for a in _stored()]
 
 
 def ids():
@@ -127,8 +129,13 @@ def allows(agent_id, tool_name):
 def prompt_block(agent_id):
     """Who this agent is, for the system prompt (stable across turns). Empty for Theta."""
     a = get(agent_id)
+    try:
+        from .workers import directory
+        team = directory(agent_id) if len(all_agents()) > 1 else ""
+    except Exception:  # noqa: BLE001
+        team = ""
     if not a or a.get("builtin"):
-        return ""
+        return team
     lines = [f"You are {a['name']}, one of the user's agents in the Theta app. Wherever these instructions say "
              f"Theta, they mean you, {a['name']}. Theta is their main assistant and other agents exist beside you; "
              "you share what you remember about the user, not your chats."]
@@ -140,5 +147,7 @@ def prompt_block(agent_id):
     if a.get("apps") is not None:
         names = [APPS[k][0] for k in a["apps"]]
         lines.append("Apps you may use: " + (", ".join(names) if names else "none beyond search, memory and "
-                     "reminders") + ". For anything else, say it's a job for Theta (they can ask Theta in its chat).")
+                     "reminders") + ". For anything else, hand it to Theta with agent_send (theta@home).")
+    if team:
+        lines.append(team)
     return "\n\n".join(lines)

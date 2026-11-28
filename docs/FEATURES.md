@@ -266,3 +266,13 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   stays the main button and always opens Theta; a row under it opens each agent (with a count of replies waiting)
   and "New agent", which has ready-made starts (Job hunter, Coach, Money, Trip planner, Study buddy). Edit or remove
   one from its chat's ... menu or by long-pressing its button; removing hides its chat but keeps the messages.
+- Workers and addresses (`server/workers.py`), after OpenRig's seats (github.com/mvschwarz/openrig): every agent
+  has an address like an email, `job-hunter@home` (Theta is `theta@home`), and its prompt lists the team's.
+  `start_job {title, goal}` hands a long job to a background worker at its own address (`w3.job-hunter@home`), which
+  runs the agent's apps unattended (sends still wait as approval cards) and posts the result in that agent's chat
+  with a push; `agent_send {to, message}` hands a job to another agent by address, and the answer comes back to
+  both chats; `jobs` lists them and stops one. Every worker runs on DeepSeek. All workers, the research helpers
+  included, share one daily budget, setting "subagent_daily_usd" (default $0.05): a worker stops before any step that
+  could take the day past it, and none starts once it's used. GET /api/workers, POST /api/workers/<id>/stop. Home
+  shows a Workers list under the agents (running and the last day's), with Stop; developer accounts also see the
+  day's spend.

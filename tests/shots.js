@@ -499,6 +499,10 @@ async function waitUp(url) {
       await sleep(400);
       { const f = path.join(OUT, "15-agent-chat.png"); await pa.screenshot({path: f}); console.log("shot " + f); }
       await pa.click("#chat-back"); await pa.waitForSelector("#home:not([hidden])"); await sleep(400);
+      await pa.waitForSelector(".wk .wk-row", {timeout: 6000}).catch(() => {});
+      const wkr = await pa.evaluate(() => [...document.querySelectorAll(".wk .wk-row small")].map(e => e.textContent));
+      check(wkr.length >= 1 && wkr.every(t => /^w\d+\.[a-z0-9-]+@home · /.test(t)), "Home lists the workers, each at its own address: " + JSON.stringify(wkr));
+      await pa.evaluate(() => document.querySelector(".ag-row").scrollIntoView({block: "start"})); await sleep(300);
       { const f = path.join(OUT, "16-home-agents.png"); await pa.screenshot({path: f}); console.log("shot " + f); }
       await pa.click("#home-bot"); await pa.waitForSelector("#chat:not([hidden])"); await sleep(600);
       const back = await pa.evaluate(() => ({name: document.querySelector("#chat-name span").textContent,

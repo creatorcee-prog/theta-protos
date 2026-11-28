@@ -12,7 +12,9 @@ of time is reported as such and dropped. Everything the workers read is outside 
 (tools.wrap) for them, and the merged result is marked untrusted for the main model.
 
 Spend: models.cost of every call is added to the day's total (setting "subagent_spend"); once it reaches
-setting "subagent_daily_usd" (default 0.50) research refuses until tomorrow. The usage of a run is in the
+setting "subagent_daily_usd" (default 0.05, shared with the background workers in server/workers.py) research
+refuses until tomorrow, and each angle stops before a step that could take the day past it. Every helper runs on
+DeepSeek. The usage of a run is in the
 output's last line and in ctx["research_usage"] (a list, one entry per research call in the turn).
 
 Note on time: agent.py gives every tool TOOL_SECONDS (20 s) before abandoning it. Until it honours a per-tool
@@ -29,7 +31,7 @@ READ_TOOLS = ("web_search", "history_search", "drive_search", "drive_read", "gma
 STEPS = 4
 SECONDS = 60
 MAX_TOKENS = 700
-DEFAULT_DAILY_USD = 0.50
+DEFAULT_DAILY_USD = 0.05  # five cents a day for every worker together (research helpers and server/workers.py)
 ANGLE_CHARS = 1800
 
 _lock = threading.Lock()
@@ -81,14 +83,14 @@ def _spend(usd, now):
 
 
 def _route():
-    from . import models, router
-    cands = [c for c in router.candidates("quick") if models.supports_tools(c[0])]
-    if not cands:
-        raise _err("no tool-capable model is configured, so research can't run; answer from what you know")
-    return cands[0]
+    """DeepSeek, always (the owner's rule for every worker)."""
+    from . import models
+    if "deepseek" not in models.available():
+        raise _err("research helpers run on DeepSeek, and this server has no DeepSeek key; answer from what you know")
+    return ("deepseek", models.default_model("deepseek"))
 
 
-def run_angle(question, angle, provider, model, budget_s, now, asked=""):
+def run_angle(question, angle, provider, model, budget_s, now, asked="", usd_limit=None):
     """One worker. Returns {"angle", "text", "sources", "usage", "cost", "steps", "tools", "ok", "error"}."""
     from . import models, tools
     allowed = allowed_tools()
@@ -111,6 +113,10 @@ def run_angle(question, angle, provider, model, budget_s, now, asked=""):
             left = deadline - time.monotonic()
             if left < min(2.0, budget_s / 4):
                 out["error"] = "ran out of time"
+                break
+            spent_here = models.cost(model, out["usage"], provider)
+            if usd_limit is not None and spent_here + max(0.0012, spent_here / max(1, step) * 1.3) > usd_limit:
+                out["error"] = "the day's worker budget ran out"  # a step now could take the day past the cap
                 break
             usage = {}
             res = models.call(provider, model, msgs, specs or None, MAX_TOKENS,
@@ -171,6 +177,12 @@ def research(question, angles, ctx=None, now=None):
                    "or from what you know")
     provider, model = _route()
     budget = _budget()
+    try:  # what's left of the day's pool, minus what running background workers have used so far
+        from .workers import left as _left
+        remaining = _left(now)
+    except Exception:  # noqa: BLE001
+        remaining = max(0.0, cap - spent_today(now))
+    share = remaining / max(1, len(angles))
     results = [None] * len(angles)
 
     # each helper also gets the user's own words, not just Theta's one-line restatement: details the restatement
@@ -178,7 +190,7 @@ def research(question, angles, ctx=None, now=None):
     asked = str((ctx or {}).get("user_text") or "")[:1500]
 
     def work(i, a):
-        results[i] = run_angle(question, a, provider, model, budget, now, asked)
+        results[i] = run_angle(question, a, provider, model, budget, now, asked, usd_limit=share)
     threads = [threading.Thread(target=work, args=(i, a), name=f"research-{i}", daemon=True)
                for i, a in enumerate(angles)]
     t0 = time.monotonic()

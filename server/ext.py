@@ -22,7 +22,7 @@ import re
 import sys
 import threading
 
-FEATURES = ("google", "gcal", "routines", "workflows", "subagents", "media", "browser", "calls", "passkeys")
+FEATURES = ("google", "gcal", "routines", "workflows", "subagents", "workers", "media", "browser", "calls", "passkeys")
 FEATURES += ("reactions", "uploads", "gifs")  # stage 5, builder A: tapbacks, photos, GIFs
 FEATURES += ("live",)  # Theta's screen: watch its browser work and take over (server/live.py)
 FEATURES += ("account", "chips", "files", "runtime", "home", "chiphub", "drivesync", "progress", "home_extras")  # Settings: profile, personalization, storage and backups; chips (skills)
