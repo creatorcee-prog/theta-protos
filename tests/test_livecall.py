@@ -267,6 +267,11 @@ asyncio.run(telnyx("c7", frames=5))
 d = db.get_setting("livecall_diag")[0]
 check("why a live call ended is recorded (Gemini's error, not just 'hung up')", d["call"] == "c7" and "1007" in d.get("error", ""), d)
 check("affective dialog is off unless asked for", livecall.AFFECTIVE is False)
+check("each call records the gap between the caller stopping and Theta's first audio",
+      all("reply_ms" in x for x in db.get_setting("livecall_diag") if x["call"] in ("c5", "c6")))
+src = open(livecall.__file__).read()
+check("end of speech is tuned for phone calls (high sensitivity, short silence)", "END_SENSITIVITY_HIGH" in src
+      and livecall.SILENCE_MS <= 400)
 
 # ---- the voice setting and samples
 check("30 voices, Puck by default", len(livevoice.VOICES) == 30 and livevoice.DEFAULT_VOICE == "Puck")

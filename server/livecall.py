@@ -50,7 +50,10 @@ _open = set()           # call ids with a stream right now (one each)
 # closed straight away, so live calls heard nothing (the reason was swallowed; see _talk)
 AFFECTIVE = os.environ.get("GEMINI_AFFECTIVE", "0") == "1"
 MAX_PRESSES = 20
-DISCLOSE_WITHIN = 12    # seconds for Gemini to say the opening once Telnyx is ready, or the call ends
+DISCLOSE_WITHIN = 12
+# how soon Theta decides the caller has finished: Gemini waits for this much silence (its default is longer), and
+# "high" end-of-speech sensitivity ends the turn sooner. Most of the pause before a reply is this wait
+SILENCE_MS = int(os.environ.get("CALL_SILENCE_MS", "350"))    # seconds for Gemini to say the opening once Telnyx is ready, or the call ends
 
 
 def ready():
@@ -112,6 +115,15 @@ def _instruction(call):
             "the next prompt. Nothing else. When it's done, say a quick, natural goodbye.")
 
 
+def loud(pcm_le, threshold=500):
+    """Is there speech in this frame? (mean level of 16-bit audio, a cheap check per 20 ms frame)"""
+    import array as _a
+    a = _a.array("h"); a.frombytes(pcm_le[: len(pcm_le) // 2 * 2])
+    if sys.byteorder != "little":
+        a.byteswap()
+    return bool(a) and sum(abs(x) for x in a[::4]) / len(a[::4]) > threshold
+
+
 def save_diag(bridge):
     """What happened on the last few live calls, for the developer (Settings > Apps > Phone calls, and the log):
     frames heard from Telnyx, frames passed to Gemini, Gemini's audio and transcripts, the byte order, why it ended."""
@@ -120,6 +132,9 @@ def save_diag(bridge):
     d = dict(bridge.diag, order=bridge.order if bridge.order_known else f"{bridge.order}?", call=bridge.cid[:6],
              kind=bridge.call.get("kind"), t=round(time.time()), seconds=round(time.time() - bridge.started))
     d["end"] = d["end"] or "hung up"
+    ms = sorted(d.pop("reply_ms", []) or [])
+    if ms:  # how long Theta took to start answering, after the caller stopped: typical and slowest
+        d["reply_ms"] = {"median": ms[len(ms) // 2], "max": ms[-1], "turns": len(ms)}
     log("live call " + json.dumps(d, default=str)[:600])
     v = db.get_setting("livecall_diag")
     db.set_setting("livecall_diag", ([d] + (v if isinstance(v, list) else []))[:5])
@@ -139,6 +154,9 @@ def connect(instruction, voice_name="Puck", affective=False, keypad=True):
             prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name))),
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
+        realtime_input_config=types.RealtimeInputConfig(automatic_activity_detection=types.AutomaticActivityDetection(
+            end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH, silence_duration_ms=SILENCE_MS,
+            prefix_padding_ms=100)),
         tools=[{"function_declarations": [PRESS_KEYS]}] if keypad else None)
     return client.aio.live.connect(model=MODEL, config=config)
 
@@ -193,6 +211,7 @@ class Bridge:
         self.telnyx_started = asyncio.Event()  # Telnyx's "start": its side of the stream is ready for audio
         self.ccid = call.get("sid") or ""     # the call's Telnyx id, for send_dtmf (the stream's start may give the real one)
         self.presses = 0
+        self.voice_at, self.answered = 0.0, True
         self.in_enc, self.in_rate = "PCMU", 8000  # Telnyx's default for the caller's audio until "start" says otherwise
         self.diag = {"frames_in": 0, "held": 0, "to_gemini": 0, "audio_out": 0, "heard": 0, "said": 0, "order": None,
                      "format": None, "opening": "", "end": ""}
@@ -243,6 +262,8 @@ class Bridge:
             pcm = self.caller_pcm(raw)
             if pcm is None:
                 continue
+            if loud(pcm):
+                self.voice_at = time.time()  # the caller was speaking in this frame
             await session.send_realtime_input(audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000"))
             self.diag["to_gemini"] += 1
 
@@ -289,6 +310,9 @@ class Bridge:
                     self._flush("theta")
                     self.sent_s, self.first_out = 0.0, None
                 if sc.model_turn:
+                    if self.voice_at and not self.answered:  # the gap: caller stopped talking -> Theta's first audio
+                        self.answered = True
+                        self.diag.setdefault("reply_ms", []).append(int((time.time() - self.voice_at) * 1000))
                     if self.heard:
                         await self._they_said(self._flush("them"), session, calls, recordings)
                     for part in sc.model_turn.parts or []:
@@ -299,6 +323,7 @@ class Bridge:
                     self.said.append(sc.output_transcription.text)
                     self.diag["said"] += 1
                 if sc.turn_complete:
+                    self.answered = False
                     said = self._flush("theta")
                     if not self.opened:
                         # the AI disclosure on calls to other people is the one thing not left to the model: checked

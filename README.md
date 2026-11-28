@@ -32,7 +32,7 @@ calls stream over); without them it runs the threaded stdlib server.
 | `PROTOS_TZ` | fallback time zone (the app's `tz` setting wins; default America/Denver) |
 | `PROTOS_TICK=0` | don't run `proactive.run()` every 5 minutes |
 | `PROTOS_ASGI=0` | run the threaded stdlib server even when uvicorn is installed (no live calls) |
-| `GEMINI_LIVE_MODEL` (default `gemini-3.8-live`), `GEMINI_AFFECTIVE=1` (try affective dialog; off by default), `CALLS_LIVE=0`, `TELNYX_L16_ORDER` (`little`/`big`, default: detected) | full-duplex calls over Telnyx + Gemini Live (`server/livecall.py`; needs `GEMINI_API_KEY` and Telnyx) |
+| `GEMINI_LIVE_MODEL` (default `gemini-3.8-live`), `GEMINI_AFFECTIVE=1` (try affective dialog; off by default), `CALL_SILENCE_MS` (pause that ends a caller's turn, default 350), `CALLS_LIVE=0`, `TELNYX_L16_ORDER` (`little`/`big`, default: detected) | full-duplex calls over Telnyx + Gemini Live (`server/livecall.py`; needs `GEMINI_API_KEY` and Telnyx) |
 | `PROTOS_MAX_TOKENS`, `PROTOS_LLM_TIMEOUT` | reply length cap (1200), provider timeout seconds (90) |
 | `VANTAGE_URL`, `VANTAGE_KEY`, `VANTAGE_DIR` | Vantage bridge (see `server/vantage.py`) |
 
