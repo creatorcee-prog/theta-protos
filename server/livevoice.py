@@ -38,7 +38,7 @@ def set_voice(name):
 async def sample_pcm(name):
     """A few seconds of `name` saying SAMPLE_LINE: 24 kHz 16-bit mono PCM."""
     audio = b""
-    async with connect("You read lines aloud exactly as written, nothing else.", name) as session:
+    async with connect("You read lines aloud exactly as written, nothing else.", name, keypad=False) as session:
         await session.send_client_content(turns={"role": "user", "parts": [{"text": f"Say exactly: {SAMPLE_LINE}"}]},
                                           turn_complete=True)
         async for m in session.receive():

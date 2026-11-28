@@ -87,9 +87,14 @@ class FakeSession:
             await self.q.put([heard, say("Let me check that for", pcm(tone(4800, rate=24000))),
                               NS(go_away=None, server_content=NS(input_transcription=None, interrupted=True, model_turn=None,
                                                                  output_transcription=None, turn_complete=False)),
+                              NS(go_away=None, server_content=None, tool_call=NS(function_calls=[
+                                  NS(id="t1", name="press_keys", args={"digits": "1", "why": "delivery"})])),
                               say("Thanks, that's all I needed. Goodbye!", pcm(tone(2400, rate=24000))),
                               NS(go_away=None, server_content=NS(input_transcription=None, interrupted=False, model_turn=None,
                                                                  output_transcription=None, turn_complete=True))])
+
+    async def send_tool_response(self, function_responses=None):
+        self.tool_responses = function_responses
 
     async def send_client_content(self, **k):
         self.notes.append(k)
@@ -171,7 +176,10 @@ events = asyncio.run(telnyx("c3"))
 media = [e for e in events if e.get("event") == "media"]
 check("Theta's audio comes back as Telnyx media frames at 16 kHz (20 ms each)", media and
       all(len(base64.b64decode(e["media"]["payload"])) <= 640 for e in media)
-      and sum(len(base64.b64decode(e["media"]["payload"])) for e in media) == (1600 + 3200 + 1600) * 2, len(media))
+      and sum(len(base64.b64decode(e["media"]["payload"])) for e in media) == (1600 + 3200 + 1600) * 2 + len(livecall.dtmf_pcm("1")), len(media))
+check("a menu's 'press 1' is pressed (as tones here) and answered back to the model", FAKE.tool_responses
+      and FAKE.tool_responses[0]["response"] == {"ok": True, "pressed": "1"}
+      and any(t["text"].startswith("[pressed 1") for t in calls.get_call("c3")["turns"]), getattr(FAKE, "tool_responses", None))
 check("the call uses the voice picked in Settings", FAKE.voice == "Kore")
 T3 = calls.get_call("c3")["turns"]
 check("Theta's first words on the call are the opening, word for word, recorded once", T3[0]["who"] == "theta"
@@ -184,14 +192,30 @@ check("both sides land in the call's transcript", any(t["who"] == "them" and "ar
 check("and Theta's goodbye ended the call (the socket closed by itself)", events and not livecall._open)
 check("the model is told to sound like a person, not a script", "not a call center" in FAKE.instruction
       and "How can I assist you" in FAKE.instruction)
-check("the model is told to open with the exact disclosure and has no tools", "word for word" in FAKE.instruction
-      and calls._opening(calls.get_call("c3")) in FAKE.instruction and "no tools" in FAKE.instruction)
+check("the model is told to open with the exact disclosure, and its one tool is the keypad", "word for word" in FAKE.instruction
+      and calls._opening(calls.get_call("c3")) in FAKE.instruction and "Your one tool is press_keys" in FAKE.instruction)
+check("it may agree to an order only exactly as the approved purpose says, never card details",
+      "only exactly as the purpose and notes describe" in FAKE.instruction and "never a card number" in FAKE.instruction)
 FAKE = FakeSession(opening_ok=False)
 FAKE.cid = "c4"
 new_call("c4"); calls._update("c4", state="live", t_answer=time.time())
 events = asyncio.run(telnyx("c4", frames=10))
 check("if Gemini doesn't say the disclosure, the call ends before anything else", "opening" in (calls.get_call("c4")["outcome"] or "")
       and not FAKE.audio, calls.get_call("c4")["outcome"])
+
+# ---- keypad tones are real DTMF: each key's two frequencies, nothing else
+def goertzel(samples, hz, rate=16000):
+    k = 2 * math.cos(2 * math.pi * hz / rate); s1 = s2 = 0.0
+    for x in samples:
+        s1, s2 = x + k * s1 - s2, s1
+    return s1 * s1 + s2 * s2 - k * s1 * s2
+one = struct.unpack(f"<{len(livecall.dtmf_pcm('1')) // 2}h", livecall.dtmf_pcm("1"))[:2560]
+p = {hz: goertzel(one, hz) for hz in (697, 770, 852, 941, 1209, 1336, 1477)}
+check("the '1' key is 697 Hz + 1209 Hz and no other key's tones", sorted(p, key=p.get)[-2:] in ([697, 1209], [1209, 697])
+      and min(p[697], p[1209]) > 50 * max(p[h] for h in (770, 852, 941, 1336, 1477)))
+b = livecall.Bridge.__new__(livecall.Bridge); b.presses = 0
+check("only keypad characters can be pressed", "error" in asyncio.run(livecall.Bridge.press(b, "1; rm -rf"))
+      and "error" in asyncio.run(livecall.Bridge.press(b, "")))
 
 # ---- the voice setting and samples
 check("30 voices, Puck by default", len(livevoice.VOICES) == 30 and livevoice.DEFAULT_VOICE == "Puck")

@@ -120,9 +120,12 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   fixed text; nothing the caller says reaches it until then, and the call ends unless Gemini's own transcript of its
   first turn has the disclosure word for word (or within 12 s). The prompt is written for speech (casual, contractions, no
   script lines like "How can I assist you"), with affective dialog on (Gemini matches the caller's tone; if the model
-  or API version refuses it, the call opens again without it; GEMINI_AFFECTIVE=0 turns it off). Both sides are transcribed into the call's turns. In code:
+  or API version refuses it, the call opens again without it; GEMINI_AFFECTIVE=0 turns it off). Keypad (DTMF): the
+  live model's one tool, press_keys {digits, why}, for phone menus; sent with Telnyx send_dtmf when the call's control
+  id works, else as in-band tones (`server/callaudio.py`); 0-9 * # and w/W pauses, at most 20 per call, each logged in
+  the transcript. Orders and charges only exactly as the approved purpose says, never card details. Both sides are transcribed into the call's turns. In code:
   5-minute cap and 40 s of silence end with a goodbye, Theta's goodbye hangs up once it's played, a voicemail
-  greeting ends it, "don't record me" stops the recording, and there are no tools on a live call. L16 byte order is
+  greeting ends it, "don't record me" stops the recording, and the only tool on a live call is the keypad. L16 byte order is
   detected from the first second of speech (Telnyx documents little-endian). Otherwise calls stay turn by turn.
 - Call recordings (`server/recordings.py`): on unless "record_calls" is off. Calls to others open with "This call is
   recorded."; an objection on the call stops it and the audio is discarded. Twilio's recording is downloaded to
