@@ -1158,7 +1158,7 @@
     const meta = m.meta || {}, r = S.routes.get(m.id) || {}, line = el("div", "mb-model");
     if (m.role === "user") line.append(meta.edited ? "You · edited · " : "You · ", fmtTime(m.t || 0));
     else if (meta.proactive) line.append("Theta texted first, from ", el("b", null, SOURCES[meta.source] || "something it noticed"), " · " + fmtTime(m.t || 0));
-    else if (meta.model || r.model) {
+    else if (S.dev && (meta.model || r.model)) {
       const why = meta.why || r.why, tier = meta.tier || r.tier;
       line.append("Model: ", el("b", null, meta.model || r.model), tier ? ` · ${tier}` : "", why ? ` · ${why}` : "", " · " + fmtTime(m.t || 0));
     } else line.append("Theta · " + fmtTime(m.t || 0));
@@ -1568,12 +1568,17 @@
     if (!setOrb) setOrb = ThetaOrb.mount($("set-orb"), {dots: 520});
     syncSettingsUi();
     loadLessons();
-    try { S.settings = await api("/api/settings"); syncSettingsUi(); } catch (e) {}
+    try { S.settings = await api("/api/settings"); syncSettingsUi(); applyDev(); } catch (e) {}
   }
   // token use under replies: a per-phone choice, default on
   const showUsage = () => store("protos:show-usage") !== "0";
   const applyUsage = () => document.documentElement.classList.toggle("no-usage", !showUsage());
   applyUsage();
+  $("set-dev").addEventListener("change", async e => {
+    const on = e.target.checked;
+    try { await post("/api/settings", {developer: on}); S.settings = Object.assign(S.settings || {}, {developer: on}); applyDev(); }
+    catch (err) { e.target.checked = !on; if (!(err instanceof AuthError)) toast("Couldn't save that. Try again."); }
+  });
   $("set-usage").addEventListener("change", e => { store("protos:show-usage", e.target.checked ? "1" : "0"); applyUsage(); });
   // what Theta learned from your likes and dislikes (it's in Theta's instructions; remove any you disagree with)
   function renderLessons(list) {
@@ -1662,7 +1667,9 @@
   // "Theta 0.3.0 · server 0.3.0 (aaad836)": if the two differ, the phone is on old files
   function versionLine() {
     const srv = S.version ? `server ${S.version}${S.build ? " (" + S.build + ")" : ""}` : "server not reached";
-    return `Theta ${APP_VERSION} · ${srv}` + (S.version && S.version !== APP_VERSION ? " · update pending: close and reopen" : "");
+    const stale = S.version && S.version !== APP_VERSION;
+    if (!S.dev) return `Theta ${APP_VERSION}` + (stale ? " · an update is ready: close and reopen Theta" : "");
+    return `Theta ${APP_VERSION} · ${srv}` + (stale ? " · update pending: close and reopen" : "");
   }
   function showLogin() {
     for (const s of SHEETS) $(s).hidden = true;
@@ -1735,7 +1742,17 @@
   }
 
   // ---------------------------------------------------------------- boot
+  // developer details: setup steps with server variables, model names, token use, the self-improvement log. The
+  // account that runs Theta has them on; everyone else sees plain words (Settings > General > Developer details)
+  function applyDev() {
+    S.dev = !S.settings || S.settings.developer !== false;
+    document.documentElement.classList.toggle("dev", S.dev);
+    const d = $("set-dev"); if (d) d.checked = S.dev;
+    window.dispatchEvent(new Event("theta:dev"));
+  }
   async function loadAll() {
+    if (!S.demo) { try { S.settings = Object.assign(S.settings || {}, await api("/api/settings")); } catch (e) { if (e instanceof AuthError) throw e; } }
+    applyDev();
     await loadHistory();
     S.ready = true;
     refreshPush();  // keep this phone's push sign-up current (fixes one made with an older server key)

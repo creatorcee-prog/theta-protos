@@ -315,6 +315,15 @@ async function waitUp(url) {
     await page.click("#set-usage");
     check(await page.evaluate(() => document.documentElement.classList.contains("no-usage") && localStorage.getItem("protos:show-usage") === "0"), "turning token use off hides it (stored on the phone)");
     await page.click("#set-usage");
+    // developer details off: what anyone who doesn't run Theta sees (no token lines, no lesson internals, no models)
+    await page.click("#set-dev"); await sleep(300);
+    check(await page.evaluate(() => !document.documentElement.classList.contains("dev")
+      && getComputedStyle(document.querySelector("#set-usage").closest(".row-set")).display === "none"
+      && [...document.querySelectorAll("details.sim")].every(d => getComputedStyle(d).display === "none")),
+      "developer details off: token use and lesson internals are hidden");
+    await shot("09l-settings-no-dev");
+    await page.click("#set-dev"); await sleep(200);
+    check(await page.evaluate(() => document.documentElement.classList.contains("dev")), "and back on for the account that runs Theta");
     await page.click("#set-lessons .lesson button");
     await sleep(400);
     check(!(await page.$$eval("#set-lessons .lesson b", e => e.map(x => x.textContent))).some(t => /too long/.test(t)), "a lesson can be removed");

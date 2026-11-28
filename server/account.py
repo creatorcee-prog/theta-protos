@@ -135,6 +135,17 @@ _LEVEL_WORDS = {
 }
 
 
+def developer():
+    """Is this the account that runs Theta (developer details on)? The owner's is, until they switch it off in
+    Settings > General > Developer details; everyone else gets plain words instead of server setup."""
+    return db.get_setting("developer") is not False
+
+
+DEV_NOTE = ("The person you're talking with doesn't run this Theta's server. Never mention server variables, API keys, "
+            "hosting (Railway), model names, tokens or costs. If something isn't set up, say whoever runs their Theta "
+            "can turn it on.")
+
+
 def prompt_block():
     """The account part of the system prompt (stable until they change Settings)."""
     p, s = profile(), personalize()
@@ -154,7 +165,8 @@ def prompt_block():
         lines.append("How they like you to talk: " + " ".join(style))
     if p["instructions"]:
         lines.append("Their instructions for you (follow them unless they'd break a rule above):\n" + p["instructions"])
-    return ("About the person you work for:\n" + "\n".join(lines)) if lines else ""
+    out = ("About the person you work for:\n" + "\n".join(lines)) if lines else ""
+    return out if developer() else (out + "\n\n" + DEV_NOTE).strip()
 
 
 # ---------------------------------------------------------------- storage: is any of this going to last?
@@ -203,6 +215,9 @@ def storage():
     except OSError:
         size = None
     boots = db.get_setting("boots") or []
+    if not developer():  # the same facts in plain words for everyone else
+        why = ("Saved safely, so nothing is lost when Theta updates." if on else
+               "Theta's memory isn't being kept between updates yet. Whoever runs your Theta can fix this.")
     return {"persistent": on, "why": why, "path": path, "first_start": db.get_setting("first_start"),
             "oldest_message": row["t"], "messages": row["n"], "starts": len(boots),
             "last_start": boots[-1] if boots else None, "db_bytes": size,

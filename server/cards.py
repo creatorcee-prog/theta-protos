@@ -557,6 +557,10 @@ def connect(service):
                         why="Google sign-in isn't set up on this server yet. It's a one-time setup, about 15 minutes.")
     else:
         card.update(action="settings", steps=list(s["steps"]))
+    from . import account
+    if card.get("steps") and not account.developer():  # server setup is for whoever runs Theta, not everyone
+        card.pop("steps")
+        card["why"] = f"{s['name']} isn't set up on this Theta yet. Whoever runs your Theta can turn it on."
     return card
 
 

@@ -582,3 +582,6 @@ html.kb #home .banner { display: none; }
 .row-set.lesson details.sim dl { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 6px 0 0; }
 .row-set.lesson details.sim dt { font-weight: 600; color: var(--text); margin-top: 6px; }
 .row-set.lesson details.sim dd { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+
+/* developer details (Settings > General > Developer details): only for the account that runs Theta */
+html:not(.dev) .dev-only, html:not(.dev) .usage:not(.edited):not(.bare), html:not(.dev) details.sim { display: none !important; }

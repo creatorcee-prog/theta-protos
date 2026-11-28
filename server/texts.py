@@ -216,7 +216,7 @@ RELEVANT = r"\b(text|txt|sms|message|msg)\b"
 def connections():
     on = configured()
     c = {"id": "sms", "name": "Text messages", "cat": "Messaging", "connected": on,
-         "what": "Text your saved contacts; reviewed texts go without asking"}
+         "what": "Text your saved contacts, each one after you OK it"}
     if not on:
         c["note"] = "Texting uses the same phone provider as calls (Telnyx). Once it's set up, this turns on."
     return [c]

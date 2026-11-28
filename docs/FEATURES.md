@@ -240,3 +240,8 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 - Glass avatars (`web/orb8.js`): Generation 8 from the Avatar Lab (Ribbons, Horizon, Plasma, Liquid, Nebula) as
   globe styles; ThetaOrb draws them through ThetaOrb8 with its eased states and the theme color; they fade in for the
   opening. The source of truth is docs/avatar-lab/avatar-lab.html.
+- Developer details (`account.developer()`, setting "developer", Settings > General > Developer details; on for the
+  account that runs Theta): server setup steps and variables, model names and the Models page, token use, the
+  self-improvement log's internals and the server build. Off, connect cards and Settings > Apps say "Whoever runs
+  your Theta can turn it on" (`app._plain`), storage is described plainly, and the model is told not to talk about
+  server setup, models or costs. One flag for now; it becomes per account when there's more than one.

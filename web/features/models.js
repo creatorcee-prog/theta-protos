@@ -25,7 +25,9 @@
   document.head.append(style);
 
   const g = T.settings("Models", "general");
+  g.classList.add("dev-only"); if (g.previousElementSibling) g.previousElementSibling.classList.add("dev-only");  // which model and key: developer details
   const fine = el("p", "fine set-fine", "Theta picks the model for each message. Check sends each one a one-word test, so you can see which keys work. Keys are read from DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY and TAVILY_API_KEY on Railway (CLAUDE_API_KEY and GOOGLE_API_KEY work too). If a model name doesn't exist for your key, Check switches Theta to the closest one that works.");
+  fine.classList.add("dev-only");
   let st = null, results = null, busy = false;
   const TIER = {quick: "Everyday", think: "Thinking", code: "Code", search: "Live facts", vision: "Photos", local: "Private"};
 

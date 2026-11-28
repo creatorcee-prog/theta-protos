@@ -313,7 +313,8 @@
     const Q = new URLSearchParams(location.search);
     if (Q.has("connected") || Q.has("google_error")) {
       const err = Q.get("google_error"), msg = Q.get("connected") === "google" ? "Google is connected: Gmail, Calendar and Drive."
-        : err === "not_configured" ? "Google isn't set up on the server yet (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)."
+        : err === "not_configured" ? (T.state.dev ? "Google isn't set up on the server yet (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)."
+          : "Google isn't set up on this Theta yet. Whoever runs your Theta can turn it on.")
         : err === "access_denied" ? "Google wasn't connected: the sign-in was cancelled." : "Google didn't connect. Try Connect again.";
       const u = new URL(location.href); u.searchParams.delete("connected"); u.searchParams.delete("google_error");
       try { history.replaceState(history.state, "", u.pathname + u.search + u.hash); } catch (e) {}

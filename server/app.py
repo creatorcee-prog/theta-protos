@@ -45,7 +45,8 @@ BOTS = [{"id": "theta", "name": "Theta",
          "avatar": {"kind": "dot-globe", "theme": "theta", "color": "#7cc4ff"}}]
 BOT_IDS = {b["id"] for b in BOTS}
 
-SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None, "bot_name": "Theta", "texts_auto": False}
+SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None, "bot_name": "Theta", "texts_auto": False,
+                     "developer": True}  # developer details (setup steps, env vars, models, tokens): the owner's account
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
        "font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; media-src 'self' blob:; "
@@ -1296,6 +1297,8 @@ def _clean_settings(body):
         out["tz"] = str(tz)
     if "texts_auto" in body:
         out["texts_auto"] = bool(body["texts_auto"])
+    if "developer" in body:
+        out["developer"] = bool(body["developer"])
     if "bot_name" in body:
         n = re.sub(r"\s+", " ", str(body["bot_name"] or "")).strip()
         if not re.fullmatch(r"[\w .'-]{1,24}", n):
@@ -1357,8 +1360,28 @@ def connections():
         built = ext.connections(base)
     except Exception:  # noqa: BLE001
         built = base
-    from . import catalog
-    return catalog.merge(built)
+    from . import account, catalog
+    out = catalog.merge(built)
+    return out if account.developer() else [_plain(c) for c in out]
+
+
+# server setup in a connection's note ("set TELNYX_API_KEY on the server", "Railway: Variables") is for whoever runs
+# Theta; everyone else sees one plain line
+_SETUP_WORDS = re.compile(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b|\bRailway\b|on the server\b|redeploy|pip install|Dockerfile|"
+                          r"Playwright|API key", re.I)
+_PLAIN_NOTE = "Not set up on this Theta yet. Whoever runs your Theta can turn it on."
+
+
+def _plain(c):
+    c = dict(c)
+    for k in ("note", "how", "fix", "what"):
+        if isinstance(c.get(k), str) and _SETUP_WORDS.search(c[k]):
+            c[k] = _PLAIN_NOTE if k != "what" else _SETUP_WORDS.split(c[k])[0].rstrip(" ,(") or c[k]
+    if isinstance(c.get("what"), str):
+        c["what"] = re.sub(r"\s*\([^)]*\bkey\b[^)]*\)", "", c["what"])
+    for k in ("steps", "setup"):
+        c.pop(k, None)
+    return c
 
 
 def memory_route(req, start):

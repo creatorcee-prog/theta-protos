@@ -168,6 +168,10 @@
     const miss = (st && st.missing) || [], have = new Set((st && st.set) || []);
     setupBox.hidden = !!state.configured && !miss.length;
     if (setupBox.hidden) return;
+    if (!T.state.dev) {  // server setup is for whoever runs Theta; everyone else gets one plain line
+      setupBox.replaceChildren(el("p", "fine", "Phone calls aren't set up on this Theta yet. Whoever runs your Theta can turn them on."));
+      return;
+    }
     const base = location.origin;
     const li = (...parts) => { const n = el("li"); n.append(...parts); return n; };
     const b = t => el("b", null, t);
@@ -197,7 +201,8 @@
     if (T.state.demo) { note.textContent = "Demo: sample values. On Theta these save to the server."; return; }
     renderSetup(state.setup);
     if (!state.configured) note.textContent = "Calling isn't set up yet: follow the steps above.";
-    else if (!state.public_url) note.textContent = "Set PROTOS_PUBLIC_URL on the server so the phone service can reach Theta.";
+    else if (!state.public_url) note.textContent = T.state.dev ? "Set PROTOS_PUBLIC_URL on the server so the phone service can reach Theta."
+      : "Phone calls aren't fully set up on this Theta yet. Whoever runs your Theta can finish it.";
     else note.textContent = `Calls to others: ${state.today || 0} of ${state.cap ?? 5} today, ${(state.hours || [8, 21])[0]}:00–${(state.hours || [8, 21])[1]}:00 your time, each one only after you approve it.`;
   };
   const fill = () => {
@@ -341,4 +346,5 @@
     new MutationObserver(() => { if (!sheet.hidden) load(); }).observe(sheet, {attributes: true, attributeFilter: ["hidden"]});
     if (!sheet.hidden) load();
   }
+  window.addEventListener("theta:dev", () => { if (state && Object.keys(state).length) fill(); });
 })();

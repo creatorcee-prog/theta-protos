@@ -67,4 +67,19 @@ check("error statuses and bot walls are dead pages; a real page isn't",
       [browser.dead_page(*a) for a in [(404, "Crutchfield", "x"), (200, "Robot or human?", "hold"), (200, "Just a moment...", ""),
                                        (403, "Sony", "x"), (200, "Sony WH-1000XM5 | Best Buy", "A" * 5000)]]
       == ["not found", "blocked", "blocked", "blocked", ""])
+
+# ---- developer details: the account that runs Theta sees server setup; everyone else gets plain words
+from server import account, cards
+check("the owner's account has developer details on by default", account.developer())
+c_dev = cards.connect("phone") if "phone" in cards.SERVICES else cards.connect("google")
+db.set_setting("developer", False)
+c_user = cards.connect("phone") if "phone" in cards.SERVICES else cards.connect("google")
+check("a connect card's server steps are for developers only", (c_dev.get("steps") or c_dev.get("action")) and not c_user.get("steps")
+      and "Whoever runs your Theta" in c_user["why"], c_user)
+plain = app.connections()
+check("no server variable, Railway or 'on the server' in Settings > Apps for everyone else",
+      not any(app._SETUP_WORDS.search(str(c.get(k) or "")) for c in plain for k in ("note", "how", "fix")))
+check("Theta's own words follow suit: the model is told not to talk server setup", account.DEV_NOTE in account.prompt_block())
+check("storage is described in plain words", "Railway" not in account.storage()["why"])
+db.set_setting("developer", True)
 print("all hardening checks passed")

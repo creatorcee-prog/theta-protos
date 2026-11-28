@@ -51,7 +51,7 @@ def recommended():
     try:
         from . import account
         st = account.storage()
-        checks.append(("storage", st["persistent"], "Keep Theta's memory safe", "It's wiped on each deploy until storage is fixed", "settings:data"))
+        checks.append(("storage", st["persistent"], "Keep Theta's memory safe", "It's wiped on each deploy until storage is fixed" if account.developer() else "Whoever runs your Theta can turn this on", "settings:data"))
         p = account.profile()
         checks.append(("profile", bool(p.get("name") and p.get("phone")), "Finish your profile", "Your name and number, so Theta can reach you", "settings:profile"))
     except Exception:  # noqa: BLE001
