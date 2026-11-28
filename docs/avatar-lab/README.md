@@ -22,6 +22,7 @@ outlines, wire or beads caps "frontier look" at 70. On this scale the approved G
 | 4 | 80.5 | 77.0 | 68.5 | 69.3 | 73.2 | 71.1 |
 | 5 | 81.7 | 80.1 | 68.6 (dropped) | 71.5 | 76.3 | 71.1 |
 | 6 | 73.0 | 72.5 | (dropped) | 66.0 | 69.5 | 61.5 |
+| 7 | 63.0 | 72.5 | (dropped) | 62.5 | 56.5 | 60.5 |
 
 Round 6 came from a new, harsher grader: asked to score the Gen 7.2 reference on the same rubric, it gave 67.5 (earlier
 graders put 7.2 at about 80), so its scale runs about 12 points lower. Against the reference, Ribbons went from +1.7 in
@@ -37,4 +38,13 @@ of fills and lines; one distinct silhouette per state; capped exposure (no flat 
 dotted or stroked rings). What the grader still wants: no hard white edge anywhere, visible motion in every state, and
 bolder light at chat size.
 
-None is in the app yet: none has passed 90. Ribbons and Horizon already match or beat Gen 7.
+Round 7 (sheets now recorded at real speed) went to a third fresh grader, which scored the Gen 7.2 reference 47.0 in
+the same sitting. Against the reference: Horizon +25.5, Ribbons +16, Liquid +15.5, Nebula +13.5, Plasma +9.5. The three
+graders put 7.2 at about 80, 67.5 and 47, so a grader's absolute number moves by 30 points from one instance to the
+next; only scores from the same sitting compare. "Pass at 90" can't be met reliably on that basis.
+
+All five are in the app as globe styles (Settings > Look), with their own opening. Round 7's open asks: Horizon's
+band should wrap the inside of the glass with thickness and light the lower half; speaking needs color on its peaks
+and a thinner white core; a smaller, crisper highlight; Ribbons should read as smooth translucent sheets, not brushed
+strokes, and its happy mood breaks into a hard block; moments (success, working) should be light inside the glass, not
+a thin ring on the rim.
