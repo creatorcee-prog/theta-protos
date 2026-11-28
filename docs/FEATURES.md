@@ -110,6 +110,14 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   before anything streamed is retried twice on the same provider. Turns are checkpointed before their first step.
 - Reminders: `reminders` {action: list | cancel | move} (a core tool) and POST /api/jobs/<id> {action}; remind_me
   only adds. Times in the context block carry their distance ("in 2 h 20 min"), worked out in code.
+- Live calls, full duplex (`server/livecall.py`, `server/asgi.py`): with Telnyx, `GEMINI_API_KEY` and the server
+  under uvicorn, an answered conversation call says the disclosure (in code), then TeXML `<Connect><Stream>` opens
+  `wss://<host>/api/calls/stream/<call_id>` (bidirectional L16, 16 kHz). Only a live call's secret id gets a stream,
+  once. Caller audio goes to the Gemini Live API; its 24 kHz audio is resampled to 16 kHz and sent back as Telnyx
+  `media` frames (20 ms); a barge-in sends Telnyx `clear`. Both sides are transcribed into the call's turns. In code:
+  5-minute cap and 40 s of silence end with a goodbye, Theta's goodbye hangs up once it's played, a voicemail
+  greeting ends it, "don't record me" stops the recording, and there are no tools on a live call. L16 byte order is
+  detected from the first second of speech (Telnyx documents little-endian). Otherwise calls stay turn by turn.
 - Call recordings (`server/recordings.py`): on unless "record_calls" is off. Calls to others open with "This call is
   recorded."; an objection on the call stops it and the audio is discarded. Twilio's recording is downloaded to
   `<data>/recordings/<call id>.mp3`, deleted at Twilio, served at /api/calls/audio/<id> (byte ranges), and kept 90 days.

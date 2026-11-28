@@ -10,7 +10,10 @@ DEEPSEEK_API_KEY=sk-... PROTOS_KEY=change-me python3 -m server   # http://localh
 python3 tests/test_core.py && python3 tests/test_router.py       # no network, fake models
 ```
 
-Python 3.11+, standard library only (`requirements.txt` lists the optional push libs).
+Python 3.11+; the server's own code is standard library only. `requirements.txt` lists optional packages. With
+uvicorn, starlette and a2wsgi installed, `python -m server` is the same as
+`uvicorn server.asgi:asgi_app --host 0.0.0.0 --port $PORT` (every HTTP route unchanged, plus the WebSocket live
+calls stream over); without them it runs the threaded stdlib server.
 
 ## Environment
 
@@ -28,6 +31,8 @@ Python 3.11+, standard library only (`requirements.txt` lists the optional push 
 | `PROTOS_CLASSIFIER=0` | never make the tiny routing-classifier call |
 | `PROTOS_TZ` | fallback time zone (the app's `tz` setting wins; default America/Denver) |
 | `PROTOS_TICK=0` | don't run `proactive.run()` every 5 minutes |
+| `PROTOS_ASGI=0` | run the threaded stdlib server even when uvicorn is installed (no live calls) |
+| `GEMINI_LIVE_MODEL` (default `gemini-3.8-live`), `CALLS_LIVE=0`, `TELNYX_L16_ORDER` (`little`/`big`, default: detected) | full-duplex calls over Telnyx + Gemini Live (`server/livecall.py`; needs `GEMINI_API_KEY` and Telnyx) |
 | `PROTOS_MAX_TOKENS`, `PROTOS_LLM_TIMEOUT` | reply length cap (1200), provider timeout seconds (90) |
 | `VANTAGE_URL`, `VANTAGE_KEY`, `VANTAGE_DIR` | Vantage bridge (see `server/vantage.py`) |
 

@@ -1,4 +1,5 @@
-# The server is Python 3.11+ standard library only. This one package adds phone notifications (Web Push:
+# The server's own code is Python 3.11+ standard library. These packages add optional pieces; without any of them
+# everything else still works. This one adds phone notifications (Web Push:
 # payload encryption and VAPID signing). Without it everything else still works and Settings says why.
 pywebpush
 
@@ -7,3 +8,11 @@ onepassword-sdk
 
 # Files you send Theta: reading the text out of PDFs (server/files.py). Optional; without it PDFs keep no text.
 pypdf
+
+# Live phone calls, full duplex (server/asgi.py, server/livecall.py): `python -m server` runs the app under uvicorn
+# (all HTTP routes unchanged, through a2wsgi) and adds the WebSocket Telnyx streams call audio over, bridged to the
+# Gemini Live API. Without these, the threaded stdlib server runs and calls are turn by turn.
+uvicorn[standard]
+starlette
+a2wsgi
+google-genai

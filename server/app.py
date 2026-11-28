@@ -1604,15 +1604,19 @@ def make(host="0.0.0.0", port=8780):
     return make_server(host, port, app, server_class=ThreadingWSGIServer, handler_class=QuietHandler)
 
 
-def serve():
+def _need_key():
+    """On a public address, no key would mean anyone could read your chats and use your model keys: don't start."""
+    if not os.environ.get("PROTOS_KEY") and (os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PROTOS_PUBLIC")):
+        log("PROTOS_KEY is not set. Set it in the service's variables, then redeploy. Not starting.")
+        raise SystemExit(2)
+
+
+def startup():
+    """Everything a server does before it takes requests (both runners: this file's threaded server and
+    server/asgi.py under uvicorn)."""
     db.init()
-    host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", "8780"))
+    _need_key()
     if not os.environ.get("PROTOS_KEY"):
-        if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PROTOS_PUBLIC"):
-            # on a public address, no key would mean anyone could read your chats and use your model keys
-            log("PROTOS_KEY is not set. Set it in the service's variables, then redeploy. Not starting.")
-            raise SystemExit(2)
         log("WARNING: PROTOS_KEY is not set, so the API has no auth. Local dev only.")
     try:  # say it loudly when Theta's memory won't survive the next deploy (no Railway volume)
         from . import account
@@ -1626,6 +1630,29 @@ def serve():
         from . import selfcheck
         selfcheck.ENABLED = True
     start_ticker()
+
+
+def _asgi_ready():
+    """uvicorn and friends are installed, and not turned off (PROTOS_ASGI=0)."""
+    if os.environ.get("PROTOS_ASGI", "1") == "0":
+        return False
+    import importlib.util
+    return all(importlib.util.find_spec(m) for m in ("uvicorn", "starlette", "a2wsgi"))
+
+
+def serve():
+    """`python -m server`: the same as `uvicorn server.asgi:asgi_app --host $HOST --port $PORT` when uvicorn is
+    installed (it adds the WebSocket that live phone calls stream over); otherwise the threaded stdlib server."""
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8780"))
+    _need_key()  # before uvicorn too, so the process exits with the reason (not uvicorn's lifespan error)
+    if _asgi_ready():
+        import uvicorn
+        log(f"theta-protos {__version__} (ASGI) on http://{host}:{port}")
+        uvicorn.run("server.asgi:asgi_app", host=host, port=port, proxy_headers=True, forwarded_allow_ips="*",
+                    log_level="warning", timeout_graceful_shutdown=10)
+        return
+    startup()
     httpd = make(host, port)
     log(f"theta-protos {__version__} on http://{host}:{port}")
     import signal

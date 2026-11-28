@@ -453,6 +453,13 @@ def twiml_for(call, params, now=None):
             bye = " That's all. Bye." if call["kind"] == "me" else " Check the Theta app for details. Bye."
             _update(cid, turns=_add_turn(call, "theta", (again + bye).strip()))
             return _twiml(_say(opening), '<Pause length="1"/>', _say((again + bye).strip()), "<Hangup/>")
+        try:  # full duplex when it's set up (Telnyx + Gemini Live under ASGI, server/livecall.py): the disclosure is
+            # still said here, in code; then the call streams both ways until either side ends, then hangs up
+            from . import livecall
+            if livecall.ready():
+                return _twiml(_say(opening), livecall.stream_xml(cid, public_base() or ""), "<Hangup/>")
+        except Exception:  # noqa: BLE001  anything off: the turn-by-turn call below
+            pass
         return _twiml(_gather(cid, 1, opening), _redirect(cid, 1))
     try:
         turn = int(turn)
