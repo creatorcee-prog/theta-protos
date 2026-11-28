@@ -15,44 +15,44 @@
   const css = document.createElement("style");
   css.textContent = `
 .acc-photo { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0 6px; }
-.acc-photo .set-avatar { width: 104px; height: 104px; font-size: 44px; }
-.acc-pill { border: 1px solid #444; border-radius: 999px; padding: 7px 16px; font-size: 15px; color: var(--text); background: none; }
+.acc-photo .set-avatar { width: 104px; height: 104px; font-size: 2.5882rem; }
+.acc-pill { border: 1px solid #444; border-radius: 999px; padding: 7px 16px; font-size: 0.8824rem; color: var(--text); background: none; }
 .acc-form { padding: 0 0 0 16px !important; }
 .acc-f { display: flex; align-items: center; gap: 12px; min-height: 54px; padding-right: 16px; border-top: 1px solid #2a2a2a; }
 .acc-f:first-child { border-top: 0; }
-.acc-f label { width: 108px; flex: none; color: var(--muted); font-size: 16px; }
-.acc-f input, .acc-f select { flex: 1; min-width: 0; background: none; border: 0; color: var(--text); font-size: 17px; padding: 14px 0; outline: none; }
+.acc-f label { width: 108px; flex: none; color: var(--muted); font-size: 0.9412rem; }
+.acc-f input, .acc-f select { flex: 1; min-width: 0; background: none; border: 0; color: var(--text); font-size: 1rem; padding: 14px 0; outline: none; }
 .acc-f select { appearance: none; -webkit-appearance: none; text-align: right; }
-.acc-note { color: var(--muted); font-size: 13.5px; margin: 8px 4px 0; line-height: 1.4; }
+.acc-note { color: var(--muted); font-size: 0.7941rem; margin: 8px 4px 0; line-height: 1.4; }
 .acc-area { width: 100%; min-height: 110px; background: #1b1b1b; border: 0; border-radius: 20px; padding: 14px 16px; color: var(--text);
-  font-size: 16px; line-height: 1.4; resize: vertical; outline: none; box-sizing: border-box; }
+  font-size: 0.9412rem; line-height: 1.4; resize: vertical; outline: none; box-sizing: border-box; }
 .acc-sel { display: flex; align-items: center; gap: 12px; min-height: 54px; padding-right: 16px; border-top: 1px solid #2a2a2a; }
 .acc-sel:first-child { border-top: 0; }
-.acc-sel span { flex: 1; font-size: 17px; }
-.acc-sel select { background: none; border: 0; color: var(--muted); font-size: 16px; text-align: right; }
-.mem-line { display: flex; gap: 10px; align-items: flex-start; padding: 12px 0; border-top: 1px solid #2a2a2a; font-size: 15.5px; line-height: 1.4; padding-right: 12px; }
+.acc-sel span { flex: 1; font-size: 1rem; }
+.acc-sel select { background: none; border: 0; color: var(--muted); font-size: 0.9412rem; text-align: right; }
+.mem-line { display: flex; gap: 10px; align-items: flex-start; padding: 12px 0; border-top: 1px solid #2a2a2a; font-size: 0.9118rem; line-height: 1.4; padding-right: 12px; }
 .mem-line:first-child { border-top: 0; }
 .mem-line span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.mem-line button { color: var(--muted); font-size: 20px; line-height: 1; padding: 0 4px; }
+.mem-line button { color: var(--muted); font-size: 1.1765rem; line-height: 1; padding: 0 4px; }
 .mem-add { display: flex; gap: 8px; margin-top: 10px; }
-.mem-add input { flex: 1; min-width: 0; background: #1b1b1b; border: 0; border-radius: 14px; padding: 11px 14px; color: var(--text); font-size: 16px; }
+.mem-add input { flex: 1; min-width: 0; background: #1b1b1b; border: 0; border-radius: 14px; padding: 11px 14px; color: var(--text); font-size: 0.9412rem; }
 .use-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .use-card { background: #1b1b1b; border-radius: 18px; padding: 12px; }
-.use-card small { display: block; color: var(--muted); font-size: 12.5px; }
-.use-card b { display: block; font-size: 20px; font-weight: 600; margin: 3px 0 1px; font-variant-numeric: tabular-nums; }
-.use-card span { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.use-card small { display: block; color: var(--muted); font-size: 0.7353rem; }
+.use-card b { display: block; font-size: 1.1765rem; font-weight: 600; margin: 3px 0 1px; font-variant-numeric: tabular-nums; }
+.use-card span { color: var(--muted); font-size: 0.7353rem; font-variant-numeric: tabular-nums; }
 .use-bars { display: flex; align-items: flex-end; gap: 4px; height: 90px; padding: 10px 2px 0; }
 .use-bars i { flex: 1; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; opacity: .85; }
-.use-days { display: flex; justify-content: space-between; color: var(--muted); font-size: 11.5px; padding: 4px 2px 0; }
-.use-model { display: flex; justify-content: space-between; gap: 10px; padding: 11px 16px 11px 0; border-top: 1px solid #2a2a2a; font-size: 15px; }
+.use-days { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.6765rem; padding: 4px 2px 0; }
+.use-model { display: flex; justify-content: space-between; gap: 10px; padding: 11px 16px 11px 0; border-top: 1px solid #2a2a2a; font-size: 0.8824rem; }
 .use-model:first-child { border-top: 0; }
 .use-model span { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.dat-state { border-radius: 18px; padding: 14px 16px; font-size: 15px; line-height: 1.45; }
+.dat-state { border-radius: 18px; padding: 14px 16px; font-size: 0.8824rem; line-height: 1.45; }
 .dat-state.ok { background: #13281a; border: 1px solid #22502f; color: #c9f1d4; }
 .dat-state.bad { background: #3a1616; border: 1px solid #6b2525; color: #ffd7d2; }
-.dat-state b { display: block; color: #fff; font-size: 16.5px; margin-bottom: 2px; }
-.dat-facts { color: var(--muted); font-size: 14px; margin: 10px 4px 0; line-height: 1.5; }
-.dat-bk { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 16px 10px 0; border-top: 1px solid #2a2a2a; font-size: 15px; }
+.dat-state b { display: block; color: #fff; font-size: 0.9706rem; margin-bottom: 2px; }
+.dat-facts { color: var(--muted); font-size: 0.8235rem; margin: 10px 4px 0; line-height: 1.5; }
+.dat-bk { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 16px 10px 0; border-top: 1px solid #2a2a2a; font-size: 0.8824rem; }
 .dat-bk:first-child { border-top: 0; }
 #tab-data a.btn-dark { text-decoration: none; }
 `;

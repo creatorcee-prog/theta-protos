@@ -20,11 +20,11 @@
 .lk-row { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; padding: 2px 2px 4px; margin: 0 -2px; }
 .lk-row::-webkit-scrollbar { display: none; }
 .lk-tile { flex: none; width: 86px; scroll-snap-align: start; display: grid; justify-items: center; gap: 4px; padding: 6px 4px 8px; border-radius: 18px;
-  background: #1a1a1c; border: 2px solid transparent; color: var(--muted); font-size: 13px; }
+  background: #1a1a1c; border: 2px solid transparent; color: var(--muted); font-size: 0.7647rem; }
 .lk-tile.on { border-color: var(--accent); color: var(--text); }
 .lk-tile canvas { width: 70px; height: 70px; display: block; }
 .lk-tile .lk-dot { width: 46px; height: 46px; border-radius: 50%; margin: 12px; }
-.lk-sec { display: block; color: var(--muted); font-size: 13px; margin: 12px 2px 6px; text-transform: uppercase; letter-spacing: .03em; }
+.lk-sec { display: block; color: var(--muted); font-size: 0.7647rem; margin: 12px 2px 6px; text-transform: uppercase; letter-spacing: .03em; }
 `;
   document.head.append(css);
 

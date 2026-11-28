@@ -9,28 +9,28 @@
   const {el} = T;
 
   const css = `
-#routines .rt-sec { font-size: 19px; font-weight: 500; margin: 20px 2px 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#routines .rt-sec { font-size: 1.1176rem; font-weight: 500; margin: 20px 2px 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 #routines .rt-group { background: #1b1b1b; border-radius: 20px; padding: 2px 16px; }
 #routines .rt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 14px 0; border-top: 1px solid #262626; }
 #routines .rt-row:first-child { border-top: 0; }
 #routines .rt-txt { flex: 1 1 180px; min-width: 0; }
-#routines .rt-txt b { display: block; font-weight: 500; font-size: 17px; overflow-wrap: anywhere; }
-#routines .rt-txt span { display: block; color: var(--muted); font-size: 14px; line-height: 1.35; margin-top: 2px; overflow-wrap: anywhere; }
+#routines .rt-txt b { display: block; font-weight: 500; font-size: 1rem; overflow-wrap: anywhere; }
+#routines .rt-txt span { display: block; color: var(--muted); font-size: 0.8235rem; line-height: 1.35; margin-top: 2px; overflow-wrap: anywhere; }
 #routines .rt-txt .rt-status { color: #e7b35a; }
 #routines .rt-btns { display: flex; gap: 8px; margin-left: auto; align-items: center; }
-#routines .rt-btn { background: #333; color: var(--text); border-radius: 999px; padding: 7px 14px; font-size: 14px; white-space: nowrap; }
+#routines .rt-btn { background: #333; color: var(--text); border-radius: 999px; padding: 7px 14px; font-size: 0.8235rem; white-space: nowrap; }
 #routines .rt-btn:active { background: #3c3c3c; }
 #routines .rt-btn.del { background: transparent; color: var(--danger); padding: 7px 8px; }
 #routines .rt-btn[disabled] { opacity: .5; }
-#routines .rt-empty { color: var(--muted); font-size: 15px; padding: 16px 0; }
-#routines .rt-note { color: var(--muted); font-size: 14px; margin: 10px 2px; line-height: 1.4; }
+#routines .rt-empty { color: var(--muted); font-size: 0.8824rem; padding: 16px 0; }
+#routines .rt-note { color: var(--muted); font-size: 0.8235rem; margin: 10px 2px; line-height: 1.4; }
 #routines .rt-form { display: grid; gap: 10px; padding: 14px 0; }
-#routines .rt-form label { display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
-#routines .rt-form input, #routines .rt-form textarea { background: #2a2a2a; color: var(--text); border: 0; border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 16px; width: 100%; box-sizing: border-box; }
+#routines .rt-form label { display: grid; gap: 6px; font-size: 0.8235rem; color: var(--muted); }
+#routines .rt-form input, #routines .rt-form textarea { background: #2a2a2a; color: var(--text); border: 0; border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 0.9412rem; width: 100%; box-sizing: border-box; }
 #routines .rt-form textarea { min-height: 70px; resize: vertical; }
-#routines .rt-err { color: var(--danger); font-size: 14px; line-height: 1.4; min-height: 0; }
+#routines .rt-err { color: var(--danger); font-size: 0.8235rem; line-height: 1.4; min-height: 0; }
 #routines .rt-err:empty { display: none; }
-#routines .rt-add { background: #fff; color: #111; border-radius: 999px; padding: 8px 14px; font-size: 15px; font-weight: 600; }
+#routines .rt-add { background: #fff; color: #111; border-radius: 999px; padding: 8px 14px; font-size: 0.8824rem; font-weight: 600; }
 `;
   const style = document.createElement("style"); style.textContent = css; document.head.append(style);
 

@@ -368,6 +368,20 @@ async function waitUp(url) {
     const f = path.join(OUT, "10-login.png"); await p2.screenshot({path: f}); console.log("shot " + f);
     check(e2.length === 0, "login page has no errors" + (e2.length ? ": " + e2.join(" | ") : ""));
 
+    // large text (the iPhone's text size at about 150%): everything scales with it, nothing runs off the side
+    const p5 = await ctx.newPage();
+    await p5.addInitScript(() => { document.addEventListener("DOMContentLoaded", () => { document.documentElement.style.fontSize = "26px"; }); });
+    await p5.goto(base + "/?demo=1");
+    await p5.waitForSelector("#home:not([hidden])", {timeout: 8000}); await sleep(900);
+    const big = await p5.evaluate(() => ({title: parseFloat(getComputedStyle(document.querySelector(".hf-hello b") || document.body).fontSize),
+      wide: [...document.querySelectorAll("#app *")].filter(e => !e.closest(".chips, .chp-row, .hf-stack, .hf-row, .lk-row") && e.getClientRects().length
+        && e.getBoundingClientRect().right > innerWidth + 1).length}));
+    check(big.title > 30 && big.wide === 0, "with large text the app scales up and nothing sticks out sideways: " + JSON.stringify(big));
+    await p5.screenshot({path: path.join(OUT, "11-large-text.png")});
+    await p5.click("#home-bot"); await sleep(700);
+    await p5.screenshot({path: path.join(OUT, "11b-large-text-chat.png")});
+    await p5.close();
+
     // a server that's down (a 503, then back): never the built-in demo's made-up data, and it reconnects by itself
     const p4 = await ctx.newPage();
     let up = false;

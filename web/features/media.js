@@ -11,7 +11,7 @@
   style.textContent = `
 .media-img { display: block; max-width: 100%; width: 320px; height: auto; border-radius: 16px; margin: 8px 0; background: #1b1b1b; }
 .media-img.broken { min-height: 48px; }
-.media-gone { color: var(--muted); font-size: 14px; }
+.media-gone { color: var(--muted); font-size: 0.8235rem; }
 `;
   document.head.append(style);
 

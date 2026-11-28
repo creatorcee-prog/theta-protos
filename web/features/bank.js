@@ -9,12 +9,12 @@
   const style = document.createElement("style");
   style.textContent = `
 .bk-in { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; }
-.bk-in input { background: #2a2a2a; border: 0; border-radius: 12px; padding: 10px 12px; font-size: 15px; color: var(--text); min-width: 0; }
+.bk-in input { background: #2a2a2a; border: 0; border-radius: 12px; padding: 10px 12px; font-size: 0.8824rem; color: var(--text); min-width: 0; }
 .bk-in .btn-dark { align-self: flex-start; }
-.bk-acct { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid #262626; font-size: 15px; }
-.bk-acct small { display: block; color: var(--muted); font-size: 13px; }
+.bk-acct { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid #262626; font-size: 0.8824rem; }
+.bk-acct small { display: block; color: var(--muted); font-size: 0.7647rem; }
 .bk-acct b { font-weight: 600; white-space: nowrap; }
-.bk-err { color: #ff8a80; font-size: 13.5px; padding: 6px 0; }
+.bk-err { color: #ff8a80; font-size: 0.7941rem; padding: 6px 0; }
 `;
   document.head.append(style);
 

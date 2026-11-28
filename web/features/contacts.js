@@ -15,11 +15,11 @@
   const style = document.createElement("style");
   style.textContent = `
 .ct-add { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 14px 0; border-top: 1px solid #262626; }
-.ct-add input, .ct-q { background: #2a2a2a; border: 0; border-radius: 12px; padding: 10px 12px; font-size: 16px; color: var(--text); min-width: 0; }
+.ct-add input, .ct-q { background: #2a2a2a; border: 0; border-radius: 12px; padding: 10px 12px; font-size: 0.9412rem; color: var(--text); min-width: 0; }
 .ct-add input::placeholder, .ct-q::placeholder { color: #808080; }
 .ct-add .btn-dark { grid-column: 1 / -1; justify-self: start; }
 .ct-row .txt span { overflow-wrap: anywhere; }
-.ct-tag { font-size: 12px; color: var(--muted); border: 1px solid #3a3a3a; border-radius: 999px; padding: 2px 8px; }
+.ct-tag { font-size: 0.7059rem; color: var(--muted); border: 1px solid #3a3a3a; border-radius: 999px; padding: 2px 8px; }
 .ct-qrow { padding: 12px 0 4px; border-top: 1px solid #262626; }
 .ct-q { width: 100%; }
 .ct-btns { display: flex; gap: 8px; flex-wrap: wrap; }

@@ -16,14 +16,14 @@
   style.textContent = `
 .passkeys-face { width: 100%; height: 52px; display: flex; align-items: center; justify-content: center; gap: 10px; margin: 0 0 14px; }
 .passkeys-face svg { width: 22px; height: 22px; }
-.passkeys-or { color: var(--muted); font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
+.passkeys-or { color: var(--muted); font-size: 0.8235rem; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
 .passkeys-or::before, .passkeys-or::after { content: ""; flex: 1; border-top: 1px solid #2a2a2a; }
-.passkeys-name { background: #2a2a2a; border: 0; border-radius: 12px; padding: 8px 12px; font-size: 16px; color: var(--text);
+.passkeys-name { background: #2a2a2a; border: 0; border-radius: 12px; padding: 8px 12px; font-size: 0.9412rem; color: var(--text);
   width: 100%; max-width: 180px; min-width: 0; outline: none; }
 .passkeys-name:focus { box-shadow: 0 0 0 2px #3a3a3a; }
 .passkeys-add { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; width: 100%; }
-.passkeys-add .btn-white { font-size: 15px; padding: 9px 16px; }
-.passkeys-note { color: var(--muted); font-size: 14px; margin: 0; padding: 0 0 12px; line-height: 1.35; }
+.passkeys-add .btn-white { font-size: 0.8824rem; padding: 9px 16px; }
+.passkeys-note { color: var(--muted); font-size: 0.8235rem; margin: 0; padding: 0 0 12px; line-height: 1.35; }
 .passkeys-note.err { color: var(--danger); }
 `;
   document.head.append(style);

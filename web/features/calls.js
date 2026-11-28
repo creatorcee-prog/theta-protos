@@ -13,27 +13,27 @@
 .calls-card { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
 .calls-card .calls-top { display: flex; align-items: center; gap: 10px; }
 .calls-card .calls-ic { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
-  background: linear-gradient(145deg, #1f6f8b, #1b3f6b); font-size: 17px; }
+  background: linear-gradient(145deg, #1f6f8b, #1b3f6b); font-size: 1rem; }
 .calls-card .calls-who { font-weight: 600; display: block; }
-.calls-card .calls-sub { color: var(--muted); font-size: 14px; display: block; }
-.calls-card .calls-out { font-size: 16px; line-height: 1.38; }
-.calls-card details { font-size: 15px; }
+.calls-card .calls-sub { color: var(--muted); font-size: 0.8235rem; display: block; }
+.calls-card .calls-out { font-size: 0.9412rem; line-height: 1.38; }
+.calls-card details { font-size: 0.8824rem; }
 .calls-card summary { color: var(--accent); cursor: pointer; list-style: none; padding: 2px 0; }
 .calls-card summary::-webkit-details-marker { display: none; }
 .calls-card .calls-line { margin: 6px 0 0; line-height: 1.35; }
 .calls-card .calls-line b { color: var(--muted); font-weight: 500; margin-right: 6px; }
-.calls-phone { background: #2a2a2a; border: 0; border-radius: 12px; padding: 8px 12px; font-size: 16px; color: var(--text);
+.calls-phone { background: #2a2a2a; border: 0; border-radius: 12px; padding: 8px 12px; font-size: 0.9412rem; color: var(--text);
   width: 100%; max-width: 230px; outline: none; }
 .calls-phone:focus { box-shadow: 0 0 0 2px #3a3a3a; }
-.calls-note { color: var(--muted); font-size: 14px; margin: 0; padding: 0 0 12px; line-height: 1.35; }
-.calls-setup { background: #1d1d1d; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 4px 0 12px; font-size: 14.5px; line-height: 1.4; }
-.calls-setup h4 { margin: 0 0 6px; font-size: 15px; }
+.calls-note { color: var(--muted); font-size: 0.8235rem; margin: 0; padding: 0 0 12px; line-height: 1.35; }
+.calls-setup { background: #1d1d1d; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 4px 0 12px; font-size: 0.8529rem; line-height: 1.4; }
+.calls-setup h4 { margin: 0 0 6px; font-size: 0.8824rem; }
 .calls-setup ol { margin: 6px 0 0; padding-left: 20px; }
 .calls-setup li { margin: 0 0 8px; }
-.calls-setup code { background: #2a2a2a; border-radius: 6px; padding: 1px 5px; font-size: 13px; word-break: break-all; }
-.calls-setup .cs-copy { margin-left: 6px; font-size: 12.5px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+.calls-setup code { background: #2a2a2a; border-radius: 6px; padding: 1px 5px; font-size: 0.7647rem; word-break: break-all; }
+.calls-setup .cs-copy { margin-left: 6px; font-size: 0.7353rem; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
 .calls-setup .cs-vars { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.calls-setup .cs-var { font-size: 12.5px; border-radius: 999px; padding: 2px 9px; background: #2a2a2a; color: var(--muted); }
+.calls-setup .cs-var { font-size: 0.7353rem; border-radius: 999px; padding: 2px 9px; background: #2a2a2a; color: var(--muted); }
 .calls-setup .cs-var.ok { background: #16351f; color: #8fe0a5; }
 .calls-sample { padding: 8px 0 14px; }
 .calls-sample .msg { max-width: 100%; }
@@ -146,7 +146,7 @@
   });
   lsel.addEventListener("change", () => { if (lAudio) lAudio.pause(); lplay.textContent = "Play"; save({live_voice: lsel.value}).then(() => T.toast("Live call voice changed.", 2400)); });
   // the last few live calls, for the developer: where the audio went (dev-only, from server/livecall.py save_diag)
-  const diagBox = el("div", "fine dev-only"); diagBox.style.cssText = "padding:0 16px 10px;white-space:pre-wrap;font-size:12.5px";
+  const diagBox = el("div", "fine dev-only"); diagBox.style.cssText = "padding:0 16px 10px;white-space:pre-wrap;font-size: 0.7353rem";
   const elWrap = el("div", "calls-el"); elWrap.hidden = true;
   const elId = el("input", "calls-phone"); elId.placeholder = "Voice ID"; elId.autocomplete = "off"; elId.setAttribute("aria-label", "Voice ID");
   const elRef = el("input", "calls-phone"); elRef.placeholder = "Telnyx secret name"; elRef.autocomplete = "off"; elRef.setAttribute("aria-label", "Telnyx secret name");
@@ -301,21 +301,21 @@
   hstyle.textContent = `
 .ch-row { width: 100%; text-align: left; display: flex; gap: 12px; align-items: flex-start; padding: 12px 2px; border-top: 1px solid #262626; color: var(--text); }
 .ch-row:first-child { border-top: 0; }
-.ch-ic { width: 38px; height: 38px; border-radius: 50%; background: #262626; display: grid; place-items: center; flex: none; font-size: 17px; }
+.ch-ic { width: 38px; height: 38px; border-radius: 50%; background: #262626; display: grid; place-items: center; flex: none; font-size: 1rem; }
 .ch-txt { flex: 1; min-width: 0; }
-.ch-txt b { display: block; font-weight: 500; font-size: 16.5px; }
-.ch-txt small { display: block; color: var(--muted); font-size: 13.5px; }
-.ch-out { display: block; color: #cfcfcf; font-size: 14px; margin-top: 3px; }
+.ch-txt b { display: block; font-weight: 500; font-size: 0.9706rem; }
+.ch-txt small { display: block; color: var(--muted); font-size: 0.7941rem; }
+.ch-out { display: block; color: #cfcfcf; font-size: 0.8235rem; margin-top: 3px; }
 .ch-tr { padding: 4px 0 12px 50px; display: flex; flex-direction: column; gap: 6px; }
-.ch-say { max-width: 88%; padding: 7px 11px; border-radius: 16px; font-size: 14.5px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ch-say { max-width: 88%; padding: 7px 11px; border-radius: 16px; font-size: 0.8529rem; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ch-say.theta { background: #2c2c2e; align-self: flex-start; }
 .ch-say.them { background: #0a84ff; color: #fff; align-self: flex-end; }
-.ch-who { font-size: 11.5px; color: var(--muted); margin: 0 4px -3px; }
+.ch-who { font-size: 0.6765rem; color: var(--muted); margin: 0 4px -3px; }
 .ch-who.r { align-self: flex-end; }
 .calls-el { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
-.calls-el select { background: #2a2a2a; border: 0; border-radius: 12px; padding: 10px 12px; font-size: 16px; color: var(--text); align-self: flex-start; }
+.calls-el select { background: #2a2a2a; border: 0; border-radius: 12px; padding: 10px 12px; font-size: 0.9412rem; color: var(--text); align-self: flex-start; }
 .ch-audio { width: 100%; height: 40px; margin-bottom: 6px; }
-.ch-rec { font-size: 12px; color: #ff8a80; margin-left: 6px; }
+.ch-rec { font-size: 0.7059rem; color: #ff8a80; margin-left: 6px; }
 `;
   document.head.append(hstyle);
   const fmtNum = n => (/^\+1\d{10}$/.test(String(n || "")) ? `+1 ${n.slice(2, 5)}-${n.slice(5, 8)}-${n.slice(8)}` : String(n || ""));
