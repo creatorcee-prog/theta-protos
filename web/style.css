@@ -605,3 +605,20 @@ details > summary { min-height: 44px; display: flex; align-items: center; }
 
 /* streaming: the two halves of a reply being written (finished paragraphs, the one in progress) lay out as one */
 .md-done, .md-tail { display: contents; }
+
+/* content fades as it scrolls under the header and the message box (an opaque band cut lines in half). The mask
+   fades the content itself; the header's own background stays for its buttons */
+.scroller {
+  --fade-top: calc(var(--sat) + 58px); --fade-bot: var(--composer-h, calc(var(--sab) + 84px));
+  -webkit-mask-image: linear-gradient(to bottom, transparent var(--fade-top), #000 calc(var(--fade-top) + 44px),
+    #000 calc(100% - var(--fade-bot) - 6px), transparent calc(100% - var(--fade-bot) + 30px));
+  mask-image: linear-gradient(to bottom, transparent var(--fade-top), #000 calc(var(--fade-top) + 44px),
+    #000 calc(100% - var(--fade-bot) - 6px), transparent calc(100% - var(--fade-bot) + 30px));
+}
+.chat-head { background: linear-gradient(var(--bg) 0, rgba(20, 20, 20, .85) 40%, rgba(20, 20, 20, 0)); }
+#home .home-mid {
+  -webkit-mask-image: linear-gradient(to bottom, transparent calc(var(--sat) + 4px), #000 calc(var(--sat) + 40px),
+    #000 calc(100% - var(--home-bottom-h, 150px) - 4px), transparent calc(100% - var(--home-bottom-h, 150px) + 28px));
+  mask-image: linear-gradient(to bottom, transparent calc(var(--sat) + 4px), #000 calc(var(--sat) + 40px),
+    #000 calc(100% - var(--home-bottom-h, 150px) - 4px), transparent calc(100% - var(--home-bottom-h, 150px) + 28px));
+}
