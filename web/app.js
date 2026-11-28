@@ -1778,10 +1778,11 @@
     history.replaceState({v: "home"}, "", location.href);
     const splash = $("splash"), sorb = ThetaOrb.mount($("splash-orb"), {dots: 520, radiusPx: 53});
     let skip;
-    // the full opening (about 3 s) once a day; every other open plays it 3x faster (about 1 s)
+    // the full opening (about 2 s, at 1.4x) once a day; every other open plays it 3x faster (about 1 s)
     const today = new Date().toDateString(), full = store("theta:opened") !== today;
     store("theta:opened", today);
-    const opening = new Promise(res => { skip = res; sorb.opening(store("theta:opening") || "converge", res, full ? 1 : 3); });
+    // the first open of the day plays the whole opening, a little brisker (it held Home back about 3.2 s), and a tap skips it
+    const opening = new Promise(res => { skip = res; sorb.opening(store("theta:opening") || "converge", res, full ? 1.4 : 3); });
     splash.addEventListener("click", () => skip(), {once: true});
     const ready = (async () => {
       const st = await detect();
@@ -1789,7 +1790,7 @@
       if (st === "down") { renderHome(); offline(); return; }
       try { await loadAll(); } catch (e) { if (!(e instanceof AuthError)) { renderHome(); offline(); } }
     })();
-    await Promise.all([Promise.race([opening, new Promise(r => setTimeout(r, full ? 4000 : 1500))]), ready]);
+    await Promise.all([Promise.race([opening, new Promise(r => setTimeout(r, full ? 2900 : 1500))]), ready]);
     const target = Q.get("m");
     if (!S.authed) showLogin();
     else if (target) { show("home"); openChat(Number(target)); }
