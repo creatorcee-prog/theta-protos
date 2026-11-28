@@ -328,6 +328,13 @@ async function waitUp(url) {
     await sleep(400);
     check(!(await page.$$eval("#set-lessons .lesson b", e => e.map(x => x.textContent))).some(t => /too long/.test(t)), "a lesson can be removed");
     await page.click("#settings-back");
+    { // every sheet: focus inside, background inert, Escape closes it and focus goes back to what opened it
+      await sleep(150);
+      const st = await page.evaluate(() => ({inside: document.getElementById("settings").contains(document.activeElement),
+        active: (document.activeElement || {}).id || (document.activeElement || {}).tagName,
+        inert: document.getElementById("home").inert || document.getElementById("chat").inert}));
+      check(st.inside && st.inert, "an open sheet holds focus and the screen behind it is inert" + (st.inside && st.inert ? "" : ": " + JSON.stringify(st)));
+    }
     await page.click('#tab-root [data-go="notifications"]');
     await sleep(200);
     await shot("09d-settings-alerts");
@@ -388,6 +395,12 @@ async function waitUp(url) {
     const e3 = []; p3.on("pageerror", e => e3.push(String(e)));
     await p3.goto(base + "/?demo=1");
     await p3.waitForSelector("#home:not([hidden])", {timeout: 8000});
+    { // the keyboard: Escape closes a sheet and focus returns to the button that opened it
+      await p3.focus("#home-me"); await p3.keyboard.press("Enter"); await sleep(500);
+      await p3.keyboard.press("Escape"); await sleep(500);
+      const r = await p3.evaluate(() => ({hidden: document.getElementById("settings").hidden, back: document.activeElement && document.activeElement.id}));
+      check(r.hidden && r.back === "home-me", "Escape closes a sheet and puts focus back on what opened it" + (r.hidden && r.back === "home-me" ? "" : ": " + JSON.stringify(r)));
+    }
     await p3.click("#home-bot");
     await p3.waitForSelector("#thread .msg.a[data-id]");
     await sleep(500);
