@@ -104,6 +104,16 @@ async function waitUp(url) {
       await sleep(200); await shot("02d-progress");
       await page.evaluate(() => { document.getElementById("pg-live").remove(); document.querySelector("#thread .pg").hidden = false; });
     }
+    { // long replies: headings by level, rules, tables, and code that scrolls inside the bubble instead of being cut off
+      const r = await page.evaluate(() => { const box = document.createElement("div"); box.className = "msg a text";
+        box.append(window.ThetaApp.md("# A\n\n### B\n\n---\n\n| Time | What |\n|---|---|\n| 9:00 AM | Breakfast |\n\n```\n" + "x".repeat(200) + "\n```"));
+        document.getElementById("thread").append(box);
+        const pre = box.querySelector("pre");
+        const out = {h3: !!box.querySelector("h3"), h4: !!box.querySelector("h4"), hr: !!box.querySelector("hr"), th: box.querySelectorAll("th").length,
+          pre: pre.scrollWidth > pre.clientWidth, fits: box.getBoundingClientRect().right <= innerWidth + 1};
+        box.hidden = true; return out; });
+      check(r.h3 && r.h4 && r.hr && r.th === 2 && r.pre && r.fits, "replies render headings, rules and tables, and long code scrolls inside the bubble: " + JSON.stringify(r));
+    }
     const usage0 = (await page.$$("#thread .usage .u-txt")).length;
     check(usage0 >= 2, "history replies show their token use");
     await page.fill("#c-text", "Should I buy the new camera now or wait? Compare it for me");

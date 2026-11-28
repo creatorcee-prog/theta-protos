@@ -165,8 +165,22 @@
       if ((src.match(/`/g) || []).length % 2) src += "`";
     }
     const frag = document.createDocumentFragment();
-    let para = [], list = null, code = null, quote = null, quoteLines = [], afterQuote = 0;
-    const flush = () => { if (para.length) { const p = el("p"); inline(p, para.join("\n")); frag.append(p); para = []; } };
+    let para = [], list = null, code = null, quote = null, quoteLines = [], afterQuote = 0, table = [];
+    // tables: "| a | b |" rows, with the "|---|---|" row under the header; wide ones scroll sideways in their own box
+    const endTable = () => {
+      if (!table.length) return;
+      const cells = r => r.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim());
+      const sep = table.length > 1 && /^[\s|:-]+$/.test(table[1]) && table[1].includes("-");
+      const box = el("div", "md-table"), t = el("table");
+      table.forEach((r, i) => {
+        if (sep && i === 1) return;
+        const tr = el("tr");
+        for (const c of cells(r)) { const td = el(sep && i === 0 ? "th" : "td"); inline(td, c); tr.append(td); }
+        t.append(tr);
+      });
+      box.append(t); frag.append(box); table = [];
+    };
+    const flush = () => { endTable(); if (para.length) { const p = el("p"); inline(p, para.join("\n")); frag.append(p); para = []; } };
     const endQuote = () => { if (quote) { inline(quote, quoteLines.join("\n")); quote = null; quoteLines = []; afterQuote = 2; } };
     for (const line of src.split("\n")) {
       // "> " lines: a message someone sent, quoted (Theta.decorate turns it into a received-message card)
@@ -186,6 +200,9 @@
         flush(); list = null; const pre = el("pre"); code = el("code"); pre.append(code); frag.append(pre); continue;
       }
       if (code) { code.append((code.textContent ? "\n" : "") + line); continue; }
+      if (/^\s*\|.*\|\s*$/.test(line)) { if (para.length) { const p = el("p"); inline(p, para.join("\n")); frag.append(p); para = []; } list = null; table.push(line); continue; }
+      if (table.length) endTable();
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flush(); list = null; frag.append(el("hr")); continue; }
       const b = /^\s*[-*•]\s+(.*)$/.exec(line), n = /^\s*(\d{1,3})[.)]\s+(.*)$/.exec(line), h = /^\s*#{1,6}\s+(.*)$/.exec(line);
       if (b || n) {
         flush();
@@ -195,7 +212,10 @@
       }
       if (!line.trim()) { flush(); list = null; continue; }
       if (list && /^\s{2,}\S/.test(line)) { list.lastChild.append(" "); inline(list.lastChild, line.trim()); continue; }
-      if (h) { flush(); list = null; const e = el("h4"); inline(e, h[1]); frag.append(e); continue; }
+      if (h) {  // # and ## are section titles, ### a smaller heading, #### and below a label
+        flush(); list = null; const lvl = (/^\s*(#+)/.exec(line) || ["", "#"])[1].length;
+        const e = el(lvl <= 2 ? "h3" : lvl === 3 ? "h4" : "h5"); inline(e, h[1]); frag.append(e); continue;
+      }
       list = null; para.push(line);
     }
     endQuote(); flush();
