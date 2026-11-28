@@ -2,7 +2,10 @@
 
 The live page is the Avatar Lab artifact (claude.ai/artifact/A3PWLpJuTdQ5mb9X3gMV4C); `avatar-lab.html` here is its
 source (generations 5-8). `sheets.js` renders a contact sheet per avatar (each state as 3 frames, three moods, three
-moments, and the chat size): `node sheets.js "8.1,8.2"` from this folder writes `sheets/sheet-<code>.png`.
+moments, and the chat size): `node sheets.js 8.1` from this folder writes `sheets/sheet-8.1.png`. Render one code per run:
+the page draws only the avatars named, and with more than one or two it drops below 20 fps, where the clock (capped at
+0.05 s a frame) falls behind real time, so motion between frames shrinks and mood colors are caught mid-fade. Rounds 1
+to 6 were recorded at about 7 fps, all avatars drawing at once.
 
 ## How Gen 8 is graded
 

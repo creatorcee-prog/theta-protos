@@ -6,7 +6,12 @@ const OUT = process.argv[3] || __dirname + "/sheets";
   fs.mkdirSync(OUT, {recursive: true});
   const b = await chromium.launch(); const p = await b.newPage({viewport: {width: 1300, height: 1000}});
   const errs = []; p.on("pageerror", e => errs.push(e.message));
-  await p.goto("file://" + __dirname + "/avatar-lab.html"); await p.waitForTimeout(1200);
+  // draw only the avatars on the sheets: with all ~20 drawing, the page ran at about 7 fps, so the clock (which caps a
+  // frame at 0.05 s) ran at a third of real time: frames "0.3 s apart" showed 0.1 s of motion, and moods were caught
+  // mid-fade (concerned still magenta)
+  await p.goto("file://" + __dirname + "/avatar-lab.html?only=" + CODES.join(",")); await p.waitForTimeout(1200);
+  const fps = await p.evaluate(() => new Promise(r => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else r(n); }; requestAnimationFrame(f); }));
+  console.log("frames per second while recording:", fps, fps < 20 ? "(low: motion and fades will look slower than real)" : "");
   const grab = () => p.evaluate(codes => Object.fromEntries(codes.map(code => { const card = [...document.querySelectorAll(".spec")].find(s => s.querySelector(".code").textContent === code);
     return [code, {big: card.querySelector("canvas").toDataURL("image/png"), small: card.querySelector("canvas.small").toDataURL("image/png")}]; })), CODES);
   const tiles = Object.fromEntries(CODES.map(c => [c, []]));
