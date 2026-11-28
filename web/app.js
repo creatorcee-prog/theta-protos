@@ -551,6 +551,15 @@
     if (meta.effect && main.classList.contains("text")) applyEffect(main, meta.effect, !!opts.effectNow);
     const tbs = tapbackBadges(m, opts.popTb);
     if (tbs) { all[0].append(tbs); row.classList.add("has-tb"); }
+    // cards sit right under the words that brought them, before the status, sources and token lines (a link Theta
+    // shared showed up below all of those, apart from the message it belonged to)
+    if (Array.isArray(meta.cards) && m.role === "assistant") {
+      for (const c of meta.cards) {
+        const fn = c && cardKinds[c.type];
+        if (!fn) continue;
+        try { const node = fn(c, m); if (node) { node.classList.add("card"); row.append(node); } } catch (err) { console.error(err); }
+      }
+    }
     if (Array.isArray(meta.actions) && meta.actions.length && m.role === "assistant") row.append(actionChips(meta.actions, m));
     if (m.role === "assistant" && !meta.ack && !meta.task) {
       const after = afterText(meta, opts.measuredMs);
@@ -566,13 +575,6 @@
       }
     }
     if (m.role === "user" && meta.edited) row.append(el("div", "usage edited", "Edited"));
-    if (Array.isArray(meta.cards) && m.role === "assistant") {
-      for (const c of meta.cards) {
-        const fn = c && cardKinds[c.type];
-        if (!fn) continue;
-        try { const node = fn(c, m); if (node) { node.classList.add("card"); row.append(node); } } catch (err) { console.error(err); }
-      }
-    }
     for (const d of decorators) { try { d(m, row, main); } catch (err) { console.error(err); } }
     // the time, shown when you swipe the thread left
     const st = el("time", "stamp", fmtTime(m.t || Date.now() / 1000)); st.setAttribute("aria-hidden", "true"); row.append(st);
@@ -783,9 +785,11 @@
     const imgs = Array.isArray(opts.images) ? opts.images.filter(Boolean).slice(0, 4) : [];
     const sendFiles = Array.isArray(opts.files) ? opts.files : [];
     if (!text && !imgs.length && !sendFiles.length) return null;
-    if (S.streaming) { // Theta is still working: this message steers that turn, or waits for it (server/runtime.py)
-      if (imgs.length || sendFiles.length || opts.edit != null) { toast("One sec, Theta's still answering."); return null; }
-      return steer(text, opts);
+    if (S.streaming) { // Theta is still working: the message queues above the box and sends when the reply ends;
+      // "Send now" on it steers the turn in progress instead (server/runtime.py)
+      if (opts.edit != null) { toast("One sec, Theta's still answering."); return null; }
+      if (opts.now && !imgs.length && !sendFiles.length) return steer(text, opts);
+      enqueue(text, opts); return null;
     }
     if (view !== "chat") go({v: "chat"});
     const w = thread.querySelector('[data-key="welcome"]'); if (w) w.remove();
@@ -810,7 +814,7 @@
     haptic("light");
     playFx(fxFor(text), "c:" + cid);
     toBottom(true);
-    S.streaming = true; busy(true);
+    S.streaming = true; busy(true); renderLater();
     const t0 = performance.now();
     // acknowledged: one pulse; then working: the swirl, in a small bubble where the reply will appear
     orbs.head.ack(); setStatus("working");
@@ -954,9 +958,8 @@
       return null;
     } finally { S.streaming = false; busy(false); if (S.pollAfter) { S.pollAfter = false; setTimeout(poll, 300); } sendLater(); }
   }
-  // a message sent while Theta works: shown at once, and given to the running turn, which takes it into account
-  // at its next step. If nothing is running any more (a plain reply finishing), it's sent as soon as that's done.
-  const later = [];
+  // "Send now" on a queued message: shown at once, and given to the running turn, which takes it into account at its
+  // next step. If nothing is running any more (a plain reply finishing), it queues and goes when that's done.
   async function steer(text, opts) {
     try {
       const j = await post("/api/chat/steer", Object.assign({bot: BOT, text}, opts.show ? {show: opts.show} : {}));
@@ -967,10 +970,51 @@
         return j.user;
       }
     } catch (e) {}
-    later.push([text, opts]); toast("Got it. Sending that as soon as Theta's done.", 2200);
+    enqueue(text, Object.assign({}, opts, {now: false}));
     return null;
   }
-  function sendLater() { if (!S.streaming && later.length) { const [t, o] = later.shift(); setTimeout(() => send(t, o), 300); } }
+  // ---- queued messages: typed while Theta answers, shown above the box, sent in order when the reply ends. The box
+  // stays free for the next one. Text-only ones are kept across a reload, and then wait for a tap (a reload shouldn't
+  // send something by itself, maybe hours later).
+  const later = [];  // {text, opts, kept}
+  try { for (const q of JSON.parse(store("theta:queued") || "[]")) if (q && q.text) later.push({text: String(q.text), opts: q.show ? {show: q.show} : {}, kept: true}); } catch (e) {}
+  function saveLater() {
+    const keep = later.filter(q => !(q.opts.images || []).length && !(q.opts.files || []).length).map(q => ({text: q.text, show: q.opts.show || null}));
+    store("theta:queued", keep.length ? JSON.stringify(keep) : null);
+  }
+  function enqueue(text, opts) {
+    if (later.length >= 5) { toast("That's five waiting already. Send one now or remove one."); return; }
+    later.push({text, opts: Object.assign({}, opts, {now: false})}); saveLater(); renderLater(); haptic("light");
+  }
+  function renderLater() {
+    const box = $("c-queued"); if (!box) return;
+    box.replaceChildren();
+    for (const q of later) {
+      const r = el("div", "q-item"); r.setAttribute("role", "listitem");
+      const extra = (q.opts.images || []).length + (q.opts.files || []).length;
+      const t = el("button", "q-txt"); t.type = "button";
+      t.append(el("small", null, q.kept ? "Not sent yet" : S.streaming ? "Sends when Theta's done" : "Sending…"), el("span", null, (q.opts.show || q.text || "") + (extra ? ` (+${extra} attached)` : "")));
+      t.setAttribute("aria-label", "Edit queued message: " + q.text);
+      t.addEventListener("click", () => {  // back into the box to change it (if the box is empty)
+        if (ta.value.trim() || extra) { toast(extra ? "Remove it and send again to change attachments." : "Send or clear what's in the box first."); return; }
+        later.splice(later.indexOf(q), 1); saveLater(); renderLater(); ta.value = q.text; sizeTa(); ta.focus();
+      });
+      const now = el("button", "q-now", S.streaming && !extra ? "Send now" : "Send"); now.type = "button";
+      now.hidden = !!(S.streaming && extra);
+      now.setAttribute("aria-label", S.streaming ? "Send now, into Theta's current reply" : "Send");
+      now.addEventListener("click", () => { later.splice(later.indexOf(q), 1); saveLater(); renderLater(); send(q.text, Object.assign({}, q.opts, {now: true})); });
+      const x = el("button", "q-x"); x.type = "button"; x.setAttribute("aria-label", "Remove queued message"); x.append(svg("i-close"));
+      x.addEventListener("click", () => { later.splice(later.indexOf(q), 1); saveLater(); renderLater(); });
+      r.append(t, now, x); box.append(r);
+    }
+    box.hidden = !later.length;
+  }
+  function sendLater() {
+    renderLater();
+    if (S.streaming || !later.length || later[0].kept) return;
+    const q = later.shift(); saveLater(); renderLater();
+    setTimeout(() => send(q.text, q.opts), 300);
+  }
 
   // a finished short reply lands bubble by bubble, each after its typing beat; the typing globe stays between them
   async function land(reply, prow, porb, o) {
@@ -1002,6 +1046,7 @@
   // grows with what you type (up to about six lines); the send arrow shows when there's something to send, the
   // mic and voice button when there isn't. Long-press the arrow to send with an effect.
   const form = $("composer"), ta = $("c-text");
+  requestAnimationFrame(renderLater);  // messages still queued from before a reload
   const queue = []; // photos waiting in the composer: {blob, view, type}
   function sizeTa() {
     ta.style.height = "auto"; ta.style.height = Math.min(140, ta.scrollHeight) + "px";
@@ -1076,7 +1121,7 @@
   function submit(effect) {
     const text = ta.value.trim();
     if (!text && !queue.length && !fileQueue.length) { if (S.streaming && !S.demo) stopTurn(); else voiceMode(); return; }
-    if (S.streaming && (queue.length || fileQueue.length || S.editing != null)) { toast("One sec, Theta's still answering."); return; }
+    if (S.streaming && S.editing != null) { toast("One sec, Theta's still answering."); return; }
     if (fileQueue.some(q => q.state === "up")) { toast("One sec, the file is still uploading."); return; }
     const editing = S.editing; endEdit(false);
     const images = queue.splice(0).map(q => ({blob: q.blob, view: q.view, type: q.type}));

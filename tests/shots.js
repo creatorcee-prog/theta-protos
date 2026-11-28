@@ -464,6 +464,19 @@ async function waitUp(url) {
     check(await p3.evaluate(() => !document.getElementById("msgbar").hidden && document.activeElement.closest("#msgbar") !== null), "... opens the bar with focus in it");
     await p3.keyboard.press("Escape");
     check(await p3.evaluate(() => document.getElementById("msgbar").hidden && document.activeElement.classList.contains("more-btn")), "Escape closes it and returns focus");
+    { // a message sent while Theta answers waits above the box (the box stays free) and sends itself when the reply ends
+      await p3.fill("#c-text", "What's the weather tomorrow?"); await p3.click("#c-send");
+      await p3.waitForFunction(() => window.ThetaApp.state.streaming, null, {timeout: 6000}).catch(() => {});
+      await p3.fill("#c-text", "And the day after?"); await p3.click("#c-send"); await sleep(200);
+      const q = await p3.evaluate(() => ({items: document.querySelectorAll("#c-queued .q-item").length, box: document.getElementById("c-text").value,
+        sent: [...document.querySelectorAll("#thread .msg.u")].some(e => e.textContent.includes("And the day after"))}));
+      check(q.items === 1 && q.box === "" && !q.sent, "a message sent mid-reply waits above the box, which is free again: " + JSON.stringify(q));
+      { const f = path.join(OUT, "13-queued.png"); await p3.screenshot({path: f}); console.log("shot " + f); }
+      await p3.waitForFunction(() => [...document.querySelectorAll("#thread .msg.u")].some(e => e.textContent.includes("And the day after")), null, {timeout: 20000}).catch(() => {});
+      const after = await p3.evaluate(() => ({items: document.querySelectorAll("#c-queued .q-item").length,
+        sent: [...document.querySelectorAll("#thread .msg.u")].some(e => e.textContent.includes("And the day after"))}));
+      check(after.sent && after.items === 0, "and it sends itself once the reply is done: " + JSON.stringify(after));
+    }
     check(e3.length === 0, "desktop page has no errors" + (e3.length ? ": " + e3.join(" | ") : ""));
     await dctx.close();
   } catch (e) {

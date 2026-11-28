@@ -64,10 +64,16 @@
 .cards-chg.flat { background: var(--fill); color: var(--muted); }
 .cards-spark { width: 100%; height: 56px; display: block; }
 
-/* link */
-.cards-link { padding: 0; gap: 0; }
-.cards-link img { width: 100%; max-height: 170px; object-fit: cover; display: block; background: var(--sunk); }
-.cards-link .cards-body { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 5px; }
+/* link and file: a compact row under the message (they were full-width previews) */
+.card:has(> .cards-mini), .card.cards-mini { width: auto; max-width: min(100%, 280px); border-radius: var(--r-m); background: var(--fill); }
+.cards-mini { flex-direction: row; align-items: center; gap: 10px; padding: 7px 12px 7px 7px; }
+.cards-lthumb { width: 34px; height: 34px; flex: none; border-radius: var(--r-s); background: var(--fill-2); color: var(--text-2); display: grid; place-items: center;
+  font-size: var(--fs-sm); font-weight: 700; overflow: hidden; position: relative; }
+.cards-lthumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cards-ltitle { font-size: var(--fs-sm); font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cards-lsite { font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cards-mini .cards-ftile { width: 28px; height: 34px; padding-bottom: 4px; font-size: 0.5rem; }
+.cards-mini .cards-ftile::after { border-width: 0 8px 8px 0; border-color: transparent var(--fill) #c8c8c8 transparent; }
 .cards-fav { width: 18px; height: 18px; border-radius: var(--r-xs); background: var(--fill-2); color: #fff; display: grid; place-items: center; font-size: var(--fs-2xs); font-weight: 700; flex: none; }
 
 /* place */
@@ -332,15 +338,15 @@
     return n;
   };
 
+  // a link: one compact row (thumbnail or the site's letter, title, site), not a big preview with a picture on top
   R.link = c => {
-    const src = imgSrc(c.image), body = el("div", "cards-body");
-    const fav = el("span", "cards-fav", (c.site || "?").replace(/^www\./, "").slice(0, 1).toUpperCase());
-    body.append(kicker(c.site || "", fav), el("div", "cards-title", c.title));
-    if (c.summary) body.append(el("div", "cards-sub cards-clamp", c.summary));
-    let img = null;
-    if (src) { img = document.createElement("img"); img.src = src; img.alt = ""; img.loading = "lazy"; img.addEventListener("error", () => img.remove(), {once: true}); }
-    const a = link(c.url, "cards-in cards-link", [img, body]);
-    a.setAttribute("aria-label", `${c.title}, ${c.site || ""}`);
+    const src = imgSrc(c.image), site = String(c.site || "").replace(/^www\./, "");
+    const thumb = el("span", "cards-lthumb", (site || "?").slice(0, 1).toUpperCase());
+    if (src) { const img = document.createElement("img"); img.src = src; img.alt = ""; img.loading = "lazy";
+      img.addEventListener("load", () => thumb.classList.add("pic"), {once: true}); img.addEventListener("error", () => img.remove(), {once: true}); thumb.append(img); }
+    const t = el("div", "cards-grow"); t.append(el("div", "cards-ltitle", c.title || site), el("div", "cards-lsite", site));
+    const a = link(c.url, "cards-in cards-link cards-mini", [thumb, t]);
+    a.setAttribute("aria-label", `${c.title}, ${site}`); if (c.summary) a.title = c.summary;
     return a;
   };
 
@@ -526,10 +532,8 @@
     const cls = ext === "pdf" || /pdf/.test(k) ? "pdf" : /doc|word|txt|md/.test(ext + k) ? "doc" : /xls|csv|sheet/.test(ext + k) ? "sheet" : /ppt|key|slide/.test(ext + k) ? "slides" : "";
     const tile = el("div", "cards-ftile " + cls, (ext || (c.kind || "file")).slice(0, 4).toUpperCase());
     const t = el("div", "cards-grow");
-    t.append(el("div", "cards-title", c.name), el("div", "cards-sub", [c.kind, size(c.size), c.note].filter(Boolean).join(" · ")));
-    const row = el("div", "cards-row"); row.append(tile, t);
-    if (href(c.url)) row.append(I.chev());
-    const a = link(c.url, "cards-in cards-file", [row]);
+    t.append(el("div", "cards-ltitle", c.name), el("div", "cards-lsite", [size(c.size), c.note].filter(Boolean).join(" · ") || c.kind || ""));
+    const a = link(c.url, "cards-in cards-file cards-mini", [tile, t]);
     a.setAttribute("aria-label", "File: " + c.name);
     return a;
   };
