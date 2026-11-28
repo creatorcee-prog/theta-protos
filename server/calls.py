@@ -727,6 +727,8 @@ def finish(cid):
         if call is None or call["state"] in ("done",):
             return None
         _update(cid, state="done")
+    if call["kind"] == "inbound" and not any(t["who"] == "them" for t in call["turns"]):
+        return None  # a call to Theta where nobody said anything (hung up, or a stray request): nothing to tell
     outcome = _summary(call)
     who = call.get("name") or call["to_number"]
     if call["kind"] == "inbound":
@@ -964,6 +966,9 @@ def inbound_route(req, start):
     never unlocks anything: caller ID can be faked, so no tools beyond the keypad, nothing private said, and anything
     the user asks for on the call waits in the chat for them to confirm."""
     from . import telco
+    from .app import HTTPError
+    if req.method not in ("GET", "POST"):  # Telnyx only GETs or POSTs; anything else used to open a call too
+        raise HTTPError(405, "method not allowed")
     signed = telco.signed(req)
     params = telco.read(req) if req.method == "POST" else dict(req.query)
     frm = normalize(params.get("From") or params.get("from") or "")

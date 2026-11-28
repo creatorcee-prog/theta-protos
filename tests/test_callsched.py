@@ -93,6 +93,18 @@ calls.finish(c["id"])
 m = db.messages("theta")[-1]
 check("the message lands in the chat as a missed call with what they said", m["text"].startswith("Missed call from +12125550199")
       and "Them: It's Sam" in m["text"], m["text"][:120])
+# a stray request (not GET/POST) opens nothing, and a call to Theta where nobody spoke posts nothing
+env = {"REQUEST_METHOD": "PUT", "PATH_INFO": "/api/calls/inbound", "QUERY_STRING": "", "CONTENT_LENGTH": "0",
+       "CONTENT_TYPE": "", "wsgi.input": io.BytesIO(b""), "wsgi.url_scheme": "https"}
+got = {}
+b"".join(app.app(env, lambda st, h: got.update(s=int(st.split()[0]))))
+check("only GET and POST reach the incoming-call line", got["s"] == 405)
+n = len(db.messages("theta"))
+s, xml4 = inbound("+12125550123")
+c4 = calls.get_call(xml4.split("/api/calls/twiml/")[1].split("?")[0])
+calls.finish(c4["id"])
+check("a call to Theta where nobody spoke adds nothing to the chat", len(db.messages("theta")) == n)
+
 # ---- the 10-minute wait can be turned off (testing)
 dialed.clear()
 tools.BY_NAME["call_me"]["run"]({"message": "test one"}, {"bot": "theta"})
