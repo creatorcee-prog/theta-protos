@@ -228,6 +228,7 @@
     diagBox.textContent = dg.length ? "Last live calls:\n" + dg.map(d => `${new Date(d.t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})} ${d.kind}, ${d.seconds}s: `
       + `heard ${d.frames_in} frames (${d.held} held before the opening), sent ${d.to_gemini} to Gemini, ${d.audio_out} audio back, `
       + `transcripts ${d.heard} in / ${d.said} out, byte order ${d.order}, ended: ${d.end}` + (d.reply_ms ? `\n   reply gap after you stop talking: ${d.reply_ms.median} ms typical, ${d.reply_ms.max} ms slowest (${d.reply_ms.turns} turns)` : "")
+      + (d.ms ? `\n   timing: ` + (d.ms.prewarmed ? "opening made while ringing, " : "") + Object.entries(d.ms).filter(([k]) => k !== "prewarmed").map(([k, v]) => `${k.replace(/_/g, " ")} ${v} ms`).join(", ") : "")
       + (d.error ? `\n   error: ${d.error}` : "")
       + (d.opening ? `\n   opening heard as: "${d.opening}"` : "")).join("\n") : "";
     // with live calls on, the other voice only speaks on a call that couldn't go live

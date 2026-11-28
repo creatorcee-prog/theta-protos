@@ -265,7 +265,14 @@ def _dial(kind, to, *, name="", purpose="", script="", message="", conversation=
         _update(cid, state="failed", t_end=time.time())
         raise
     _update(cid, sid=sid, state="ringing")
-    return get_call(cid)
+    call = get_call(cid)
+    if call["kind"] == "other" or call["conversation"]:  # a call that will go live: have the opening ready by answer
+        try:
+            from . import liveprewarm
+            liveprewarm.start(call)
+        except Exception:  # noqa: BLE001
+            pass
+    return call
 
 
 # ---------------------------------------------------------------- tools

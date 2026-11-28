@@ -24,6 +24,9 @@ WORKERS = 64
 async def _lifespan(_app):
     wsgi.startup()  # the same checks and background ticker as the stdlib server (refuses to start without a key)
     livecall.ASGI = True
+    from . import liveprewarm
+    import asyncio
+    liveprewarm.LOOP = asyncio.get_running_loop()  # calls are dialed from worker threads; the opening runs here
     try:
         yield
     finally:

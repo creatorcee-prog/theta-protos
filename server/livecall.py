@@ -200,7 +200,7 @@ class Bridge:
         self.ws, self.call, self.cid = ws, call, call["id"]
         pinned = os.environ.get("TELNYX_L16_ORDER", "").lower()
         self.order = pinned if pinned in ("little", "big") else "little"
-        self.order_known = pinned in ("little", "big")
+        self.order_known = True  # fixed; see _l16
         self.probe = b""
         self.heard, self.said = [], []  # transcript pieces of the current turn
         self.sent_s, self.first_out = 0.0, None  # audio sent this turn, for "wait until Theta finishes saying it"
@@ -212,6 +212,9 @@ class Bridge:
         self.ccid = call.get("sid") or ""     # the call's Telnyx id, for send_dtmf (the stream's start may give the real one)
         self.presses = 0
         self.voice_at, self.answered = 0.0, True
+        self.carry = b""  # Gemini audio bytes waiting for the rest of their sample group
+        self.warm = None  # the opening made while the phone rang, if any (server/liveprewarm.py)
+        self.t0 = time.time()
         self.in_enc, self.in_rate = "PCMU", 8000  # Telnyx's default for the caller's audio until "start" says otherwise
         self.diag = {"frames_in": 0, "held": 0, "to_gemini": 0, "audio_out": 0, "heard": 0, "said": 0, "order": None,
                      "format": None, "opening": "", "end": ""}
@@ -252,6 +255,7 @@ class Bridge:
                 self.in_rate = int(mf.get("sample_rate") or (16000 if self.in_enc == "L16" else 8000))
                 self.ccid = st.get("call_control_id") or self.ccid
                 self.telnyx_started.set()
+                self.diag.setdefault("ms", {})["telnyx_start"] = self._ms()
             if ev != "media" or str((msg.get("media") or {}).get("track") or "inbound").startswith("outbound"):
                 continue  # only Theta's own audio coming back is skipped ("inbound" or "inbound_track" is the caller)
             self.diag["frames_in"] += 1
@@ -266,6 +270,9 @@ class Bridge:
                 self.voice_at = time.time()  # the caller was speaking in this frame
             await session.send_realtime_input(audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000"))
             self.diag["to_gemini"] += 1
+
+    def _ms(self):
+        return int((time.time() - self.t0) * 1000)
 
     def caller_pcm(self, raw):
         """The caller's audio as 16 kHz little-endian PCM for Gemini, from whatever Telnyx declared in "start":
@@ -282,71 +289,99 @@ class Bridge:
         return upsample_2x(pcm) if self.in_rate == 8000 else pcm
 
     def _l16(self, raw):
-        if not self.order_known:
+        # the byte order is fixed: little-endian, as Telnyx documents (TELNYX_L16_ORDER=big overrides). It used to
+        # switch on a guess from the caller's first second of sound, and the same order was used for Theta's own
+        # audio, so a wrong guess from a breath or line noise turned everything Theta said into loud static. The
+        # guess is still made, once, for the diagnostics only
+        if "order_guess" not in self.diag:
             self.probe += raw
-            if len(self.probe) >= 32000:  # a second of audio
-                got = guess_order(self.probe)
-                if got:
-                    self.order, self.order_known = got, True
-                self.probe = self.probe[-16000:] if not got else b""
+            if len(self.probe) >= 32000:
+                self.diag["order_guess"] = guess_order(self.probe)
+                self.probe = b""
         return to_le(raw, self.order)
 
     async def gemini_to_telnyx(self, session):
-        from . import calls, recordings
+        if self.warm:  # the opening was made while the phone rang (server/liveprewarm.py): play it now, then carry on
+            try:
+                await asyncio.wait_for(self.telnyx_started.wait(), 1.5)
+            except asyncio.TimeoutError:
+                pass
+            while True:
+                m = await self.warm.q.get()
+                if m is None:
+                    break
+                if await self._handle(m, session):
+                    return
         while not self.closed.is_set():
             async for m in session.receive():
-                if getattr(m, "tool_call", None) and m.tool_call.function_calls:
-                    await self._tool_calls(session, m.tool_call.function_calls)
-                    continue
-                sc = m.server_content
-                if m.go_away is not None or sc is None:
-                    continue
-                if sc.input_transcription and sc.input_transcription.text:
-                    self.heard.append(sc.input_transcription.text)
-                    self.diag["heard"] += 1
-                    self.last_voice = time.time()
-                if sc.interrupted:  # they talked over Theta: drop what's still queued at Telnyx, right now
-                    await self.ws.send_text(json.dumps({"event": "clear"}))
-                    self._flush("theta")
-                    self.sent_s, self.first_out = 0.0, None
-                if sc.model_turn:
-                    if self.voice_at and not self.answered:  # the gap: caller stopped talking -> Theta's first audio
-                        self.answered = True
-                        self.diag.setdefault("reply_ms", []).append(int((time.time() - self.voice_at) * 1000))
-                    if self.heard:
-                        await self._they_said(self._flush("them"), session, calls, recordings)
-                    for part in sc.model_turn.parts or []:
-                        if part.inline_data and part.inline_data.data:
-                            self.diag["audio_out"] += 1
-                            await self.to_telnyx(resample_24k_to_16k(part.inline_data.data))
-                if sc.output_transcription and sc.output_transcription.text:
-                    self.said.append(sc.output_transcription.text)
-                    self.diag["said"] += 1
-                if sc.turn_complete:
-                    self.answered = False
-                    said = self._flush("theta")
-                    if not self.opened:
-                        # the AI disclosure on calls to other people is the one thing not left to the model: checked
-                        # against Gemini's transcript of its first turn (the disclosure sentence only, since the purpose
-                        # is said in its own words). Calls with the user themselves aren't checked: a transcription slip
-                        # ("Hey C" for "Hey Cee") used to stop Theta listening and hang up
-                        self.diag["opening"] = said[:160]
-                        if self.call["kind"] == "other" and not (disclosed(said, calls.disclosure())
-                                                                 or (not said.strip() and self.sent_s > 1.5)):
-                            self.diag["end"] = "opening check failed"
-                            calls._update(self.cid, outcome="ended: Theta didn't say the opening as written")
-                            self.closed.set()
-                            return
-                        self.opened = True
-                        self.started = self.last_voice = time.time()
-                        self.sent_s, self.first_out = 0.0, None
-                        continue
-                    if self.ending or (said and calls._BYE.search(said)):
-                        self.diag["end"] = self.diag["end"] or "Theta said goodbye"
-                        await self._drain()
-                        self.closed.set()
-                        return
-                    self.sent_s, self.first_out = 0.0, None
+                if await self._handle(m, session):
+                    return
+
+    async def _handle(self, m, session):
+        """One message from Gemini. True when the call should end."""
+        from . import calls, recordings
+        if getattr(m, "tool_call", None) and m.tool_call.function_calls:
+            await self._tool_calls(session, m.tool_call.function_calls)
+            return False
+        sc = m.server_content
+        if m.go_away is not None or sc is None:
+            return False
+        if sc.input_transcription and sc.input_transcription.text:
+            self.heard.append(sc.input_transcription.text)
+            self.diag["heard"] += 1
+            self.last_voice = time.time()
+        if sc.interrupted:  # they talked over Theta: drop what's still queued at Telnyx, right now
+            await self.ws.send_text(json.dumps({"event": "clear"}))
+            self._flush("theta")
+            self.sent_s, self.first_out = 0.0, None
+        if sc.model_turn:
+            if self.voice_at and not self.answered:  # the gap: caller stopped talking -> Theta's first audio
+                self.answered = True
+                self.diag.setdefault("reply_ms", []).append(int((time.time() - self.voice_at) * 1000))
+            if self.heard:
+                await self._they_said(self._flush("them"), session, calls, recordings)
+            for part in sc.model_turn.parts or []:
+                if part.inline_data and part.inline_data.data:
+                    self.diag["audio_out"] += 1
+                    if self.diag.get("ms") is not None and "first_audio" not in self.diag["ms"]:
+                        self.diag["ms"]["first_audio"] = self._ms()
+                    # Gemini's chunks can end mid-sample: processed on their own, the next chunk started a byte off
+                    # and played as full-volume static (the "blowing on the microphone" blast). Whole samples only,
+                    # in groups of 3 (24 kHz -> 16 kHz is 3 samples to 2); the rest waits for the next chunk
+                    data = self.carry + part.inline_data.data
+                    cut = len(data) - len(data) % 6
+                    self.carry = data[cut:]
+                    if cut:
+                        await self.to_telnyx(resample_24k_to_16k(data[:cut]))
+        if sc.output_transcription and sc.output_transcription.text:
+            self.said.append(sc.output_transcription.text)
+            self.diag["said"] += 1
+        if sc.turn_complete:
+            self.answered = False
+            said = self._flush("theta")
+            if not self.opened:
+                # the AI disclosure on calls to other people is the one thing not left to the model: checked
+                # against Gemini's transcript of its first turn (the disclosure sentence only, since the purpose
+                # is said in its own words). Calls with the user themselves aren't checked: a transcription slip
+                # ("Hey C" for "Hey Cee") used to stop Theta listening and hang up
+                self.diag["opening"] = said[:160]
+                if self.call["kind"] == "other" and not (disclosed(said, calls.disclosure())
+                                                         or (not said.strip() and self.sent_s > 1.5)):
+                    self.diag["end"] = "opening check failed"
+                    calls._update(self.cid, outcome="ended: Theta didn't say the opening as written")
+                    self.closed.set()
+                    return True
+                self.opened = True
+                self.started = self.last_voice = time.time()
+                self.sent_s, self.first_out = 0.0, None
+                return False
+            if self.ending or (said and calls._BYE.search(said)):
+                self.diag["end"] = self.diag["end"] or "Theta said goodbye"
+                await self._drain()
+                self.closed.set()
+                return True
+            self.sent_s, self.first_out = 0.0, None
+        return False
 
     async def _tool_calls(self, session, fcs):
         out = []
@@ -406,13 +441,15 @@ class Bridge:
     async def watchdog(self, session):
         """The opening first (once Telnyx is ready); then the time cap and long silence: a goodbye, then the end."""
         from . import calls
-        try:
-            await asyncio.wait_for(self.telnyx_started.wait(), 5)
-        except asyncio.TimeoutError:
-            pass  # speak anyway
-        await session.send_client_content(turns={"role": "user", "parts": [{"text": (
-            "[From the app, not the caller] The call just connected. Say your opening now, exactly as written.")}]},
-            turn_complete=True)
+        if not self.warm:
+            try:  # Telnyx's "start" normally comes first anyway; don't hold the opening long for it
+                await asyncio.wait_for(self.telnyx_started.wait(), 1.0)
+            except asyncio.TimeoutError:
+                pass
+            await session.send_client_content(turns={"role": "user", "parts": [{"text": (
+                "[From the app, not the caller] The call just connected. Say your opening now, exactly as written.")}]},
+                turn_complete=True)
+            self.diag.setdefault("ms", {})["opening_asked"] = self._ms()
         t0 = time.time()
         while not self.closed.is_set():
             await asyncio.sleep(1)
@@ -434,7 +471,21 @@ class Bridge:
                 self.closed.set()
 
     async def run(self):
+        from . import liveprewarm
         from .livevoice import voice
+        self.diag["ms"] = {}
+        w = liveprewarm.take(self.cid)
+        if w is not None and w.session is not None and not w.failed:  # Gemini already connected while it rang
+            self.warm = w
+            self.diag["ms"]["prewarmed"] = True
+            try:
+                await self._talk(w.session)
+            finally:
+                await liveprewarm.close(w)
+                save_diag(self)
+            self._flush("them")
+            self._flush("theta")
+            return
         try:  # affective dialog first; if this model or API version won't take it, the same call without it
             session_cm = connect(_instruction(self.call), voice(), affective=AFFECTIVE)
             session = await session_cm.__aenter__()
@@ -443,6 +494,7 @@ class Bridge:
                 raise
             session_cm = connect(_instruction(self.call), voice(), affective=False)
             session = await session_cm.__aenter__()
+        self.diag["ms"]["gemini_connected"] = self._ms()
         try:
             await self._talk(session)
         finally:
@@ -465,6 +517,9 @@ class Bridge:
         # reason, a bad config, a dropped socket) used to vanish here
         names = ("telnyx", "gemini", "watchdog")
         for name, r in zip(names, results):
+            if isinstance(r, BaseException) and type(r).__name__ == "WebSocketDisconnect":
+                self.diag["end"] = self.diag["end"] or "the phone line closed"  # Telnyx hung up: a normal end
+                continue
             if isinstance(r, BaseException) and not isinstance(r, asyncio.CancelledError):
                 self.diag["error"] = f"{name}: {type(r).__name__}: {str(r)[:300]}"
                 self.diag["end"] = self.diag["end"] or f"{name} failed"

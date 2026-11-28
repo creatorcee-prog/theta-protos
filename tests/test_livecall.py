@@ -273,6 +273,50 @@ src = open(livecall.__file__).read()
 check("end of speech is tuned for phone calls (high sensitivity, short silence)", "END_SENSITIVITY_HIGH" in src
       and livecall.SILENCE_MS <= 400)
 
+# Gemini's audio chunks can end mid-sample: the next chunk must not start a byte off (that played as loud static)
+class OddChunks(FakeSession):
+    async def send_client_content(self, **k):
+        self.notes.append(k)
+        if "Say your opening" in str(k):
+            NS = types.SimpleNamespace
+            whole = pcm(tone(4800, rate=24000))
+            parts = [whole[:1001], whole[1001:2999], whole[2999:]]  # odd-sized pieces
+            msgs = [NS(go_away=None, server_content=NS(input_transcription=None, interrupted=False, turn_complete=False,
+                       model_turn=NS(parts=[NS(inline_data=NS(data=x))]), output_transcription=NS(text="Hey, it's Theta." if i == 0 else None)))
+                    for i, x in enumerate(parts)]
+            msgs.append(NS(go_away=None, server_content=NS(input_transcription=None, interrupted=False, model_turn=None,
+                                                           output_transcription=None, turn_complete=True)))
+            await self.q.put(msgs)
+FAKE = OddChunks(); FAKE.cid = "c8"
+new_call("c8", kind="me"); calls._update("c8", state="live", t_answer=time.time(), message="hi")
+ev8 = asyncio.run(telnyx("c8", frames=10))
+out = b"".join(base64.b64decode(e["media"]["payload"]) for e in ev8 if e.get("event") == "media")
+smp = struct.unpack(f"<{len(out) // 2}h", out)
+q = {hz: goertzel(smp[:3000], hz) for hz in (220, 1000, 3000, 6000)}
+check("audio split mid-sample still plays as the same clean tone (no static)", max(q, key=q.get) == 220
+      and q[220] > 50 * max(q[h] for h in (1000, 3000, 6000)), q)
+check("the byte order stays little-endian whatever the caller's first second sounds like", all(
+    x.get("order") in ("little", None) for x in db.get_setting("livecall_diag")))
+
+# a call Theta places has its opening made while the phone rings; on answer it plays straight away
+from server import liveprewarm  # noqa: E402
+w = liveprewarm.Warm("c9")
+NS = types.SimpleNamespace
+for m in [NS(go_away=None, server_content=NS(input_transcription=None, interrupted=False, turn_complete=False,
+                 model_turn=NS(parts=[NS(inline_data=NS(data=pcm(tone(2400, rate=24000))))]), output_transcription=NS(text=None))),
+          NS(go_away=None, server_content=NS(input_transcription=None, interrupted=False, model_turn=None, output_transcription=None, turn_complete=True))]:
+    w.q.put_nowait(m)
+w.q.put_nowait(None)
+w.session = FakeSession(); w.session.cid = "c9"
+liveprewarm._warm["c9"] = w
+asked = []
+w.session.send_client_content = lambda **k: asked.append(k) or asyncio.sleep(0)
+new_call("c9", kind="me"); calls._update("c9", state="live", t_answer=time.time(), message="hi")
+t9 = time.time(); ev9 = asyncio.run(telnyx("c9", frames=5))
+d9 = [x for x in db.get_setting("livecall_diag") if x["call"] == "c9"][0]
+check("a prewarmed call plays its opening at once and isn't asked for it again", d9["ms"].get("prewarmed")
+      and d9["audio_out"] >= 1 and not any("Say your opening" in str(k) for k in asked), d9)
+
 # ---- the voice setting and samples
 check("30 voices, Puck by default", len(livevoice.VOICES) == 30 and livevoice.DEFAULT_VOICE == "Puck")
 try:
