@@ -17,7 +17,7 @@
   style.textContent = `
 :where(.card) { align-self: flex-start; width: min(100%, 340px); background: var(--card); border-radius: 22px; overflow: hidden; }
 .cards-in { padding: 14px 16px 15px; display: flex; flex-direction: column; gap: 10px; min-width: 0; font-size: 0.8824rem; line-height: 1.35; }
-.cards-in a { color: inherit; text-decoration: none; }
+.cards-in a, a.cards-in { color: inherit; text-decoration: none; } a.cards-in * { text-decoration: none; }  /* cards that are links (link, file) read as purple underlined links */
 .cards-kicker { font-size: 0.7059rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; min-width: 0; }
 .cards-kicker span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cards-title { font-size: 1rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
