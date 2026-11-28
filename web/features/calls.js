@@ -117,6 +117,27 @@
   const vsel = el("select"); vsel.setAttribute("aria-label", "Call voice");
   const vr = row("Voice", "What people hear when Theta calls. Natural voices sound like a person, not a robot.");
   vr.r.append(vsel);
+  // live (full-duplex) calls talk in one of Gemini's preset voices, the whole call through; Play makes a short sample
+  // in that voice with the same model (server/livevoice.py)
+  const lsel = el("select"); lsel.setAttribute("aria-label", "Live call voice");
+  const lplay = el("button", "btn-dark", "Play"); lplay.type = "button"; lplay.setAttribute("aria-label", "Play a sample of this voice");
+  const lr = row("Live call voice", "The voice on live calls, where people can talk over Theta and it stops to listen. Tap Play to hear it.");
+  const lbox = el("div"); lbox.style.cssText = "display:flex;gap:8px;align-items:center"; lbox.append(lsel, lplay); lr.r.append(lbox);
+  let lAudio = null;
+  lplay.addEventListener("click", async () => {
+    if (T.state.demo) { T.toast("Demo mode: samples play on the real server."); return; }
+    if (lAudio && !lAudio.paused) { lAudio.pause(); lplay.textContent = "Play"; return; }
+    lplay.disabled = true; lplay.textContent = "Loading…";
+    try {
+      const r = await T.http("/api/calls/voice_sample?voice=" + encodeURIComponent(lsel.value));
+      if (!r.ok) { let m = ""; try { m = (await r.json()).error; } catch (e) {} throw new Error(m || "HTTP " + r.status); }
+      lAudio = new Audio(URL.createObjectURL(await r.blob()));
+      lAudio.addEventListener("ended", () => { lplay.textContent = "Play"; });
+      await lAudio.play(); lplay.textContent = "Stop";
+    } catch (e) { lplay.textContent = "Play"; T.toast("Couldn't play a sample: " + ((e && e.message) || "try again"), 3600); }
+    finally { lplay.disabled = false; }
+  });
+  lsel.addEventListener("change", () => { if (lAudio) lAudio.pause(); lplay.textContent = "Play"; save({live_voice: lsel.value}).then(() => T.toast("Live call voice changed.", 2400)); });
   const elWrap = el("div", "calls-el"); elWrap.hidden = true;
   const elId = el("input", "calls-phone"); elId.placeholder = "Voice ID"; elId.autocomplete = "off"; elId.setAttribute("aria-label", "Voice ID");
   const elRef = el("input", "calls-phone"); elRef.placeholder = "Telnyx secret name"; elRef.autocomplete = "off"; elRef.setAttribute("aria-label", "Telnyx secret name");
@@ -169,7 +190,7 @@
     ol.append(li("Back here: enter your number and name, pick a voice, and tap ", b("Test call"), "."));
     setupBox.replaceChildren(el("h4", null, "Set up calls and texts (about 15 minutes)"), ol);
   }
-  g.append(setupBox, pr.r, nr.r, rr.r, recr.r, vr.r, elWrap, tr.r, note);
+  g.append(setupBox, pr.r, nr.r, rr.r, recr.r, lr.r, vr.r, elWrap, tr.r, note);
 
   let state = {};
   const status = () => {
@@ -184,6 +205,13 @@
     vsel.replaceChildren();
     for (const v of state.voices || []) { const o = el("option", null, v.label); o.value = v.id; vsel.append(o); }
     for (const [k, o] of Object.entries(OWN)) { const op = el("option", null, o.label); op.value = k; vsel.append(op); }
+    lsel.replaceChildren();
+    for (const v of state.live_voices || []) { const o = el("option", null, v.label); o.value = v.id; lsel.append(o); }
+    lsel.value = state.live_voice || "Puck";
+    lr.r.hidden = !(state.live_voices || []).length;
+    // with live calls on, the other voice only speaks on a call that couldn't go live
+    vr.s.textContent = state.live ? "Used only when a call can't go live (the turn-by-turn kind)."
+      : "What people hear when Theta calls. Natural voices sound like a person, not a robot.";
     const cur = state.voice || {};
     vsel.value = OWN[cur.kind] ? cur.kind : (cur.id || ((state.voices || [])[0] || {}).id || "");
     showOwn(vsel.value);
@@ -210,7 +238,10 @@
 
   async function load() {
     if (T.state.demo) {
-      state = {phone: "+13035551234", name: "Sam", call_on_red: true, configured: true, public_url: true, cap: 5, today: 1};
+      state = {phone: "+13035551234", name: "Sam", call_on_red: true, configured: true, public_url: true, cap: 5, today: 1, live: true,
+        live_voice: "Puck", live_voices: ["Zephyr bright", "Puck upbeat", "Charon informative", "Kore firm", "Aoede breezy", "Sulafat warm"]
+          .map(x => { const [n, d] = x.split(" "); return {id: n, label: `${n} (${d})`}; }),
+        voices: [{id: "natural-f", label: "Natural, warm (female)"}, {id: "natural-m", label: "Natural, calm (male)"}], voice: {id: "natural-f"}};
       fill(); demoSample(); return;
     }
     try { state = await T.api("/api/calls/settings"); fill(); } catch (e) { note.textContent = "Couldn't load call settings."; }

@@ -111,10 +111,14 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
 - Reminders: `reminders` {action: list | cancel | move} (a core tool) and POST /api/jobs/<id> {action}; remind_me
   only adds. Times in the context block carry their distance ("in 2 h 20 min"), worked out in code.
 - Live calls, full duplex (`server/livecall.py`, `server/asgi.py`): with Telnyx, `GEMINI_API_KEY` and the server
-  under uvicorn, an answered conversation call says the disclosure (in code), then TeXML `<Connect><Stream>` opens
+  under uvicorn, an answered conversation call (or any call to someone else) goes straight to TeXML `<Connect><Stream>`, which opens
   `wss://<host>/api/calls/stream/<call_id>` (bidirectional L16, 16 kHz). Only a live call's secret id gets a stream,
   once. Caller audio goes to the Gemini Live API; its 24 kHz audio is resampled to 16 kHz and sent back as Telnyx
-  `media` frames (20 ms); a barge-in sends Telnyx `clear`. Both sides are transcribed into the call's turns. In code:
+  `media` frames (20 ms); a barge-in sends Telnyx `clear`. One voice the whole call: the user's pick of Gemini's 30
+  preset voices (`server/livevoice.py`, Settings > Apps > Phone calls > Live call voice, default Puck; GET
+  /api/calls/voice_sample?voice= plays a sample made by the same model, cached). Gemini says the opening too, from
+  fixed text; nothing the caller says reaches it until then, and the call ends unless Gemini's own transcript of its
+  first turn has the disclosure word for word (or within 12 s). Both sides are transcribed into the call's turns. In code:
   5-minute cap and 40 s of silence end with a goodbye, Theta's goodbye hangs up once it's played, a voicemail
   greeting ends it, "don't record me" stops the recording, and there are no tools on a live call. L16 byte order is
   detected from the first second of speech (Telnyx documents little-endian). Otherwise calls stay turn by turn.

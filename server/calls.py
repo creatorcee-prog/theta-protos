@@ -447,19 +447,20 @@ def twiml_for(call, params, now=None):
             msg = opening + ("" if call["kind"] != "other" else " Thanks, goodbye.")
             _update(cid, turns=_add_turn(call, "theta", msg), outcome="left a voicemail")
             return _twiml(_say(msg), "<Hangup/>")
+        if call["conversation"] or call["kind"] == "other":
+            try:  # full duplex when it's set up (Telnyx + Gemini Live under ASGI, server/livecall.py): Gemini says the
+                # opening (one voice; livecall checks it word for word and records it), then both ways until either ends
+                from . import livecall
+                if livecall.ready():
+                    return _twiml(livecall.stream_xml(cid, public_base() or ""), "<Hangup/>")
+            except Exception:  # noqa: BLE001  anything off: the turn-by-turn call below
+                pass
         _update(cid, turns=_add_turn(call, "theta", opening))
         if call["kind"] in ("me", "alert") and not call["conversation"]:
             again = (" Again: " + call["message"]) if call["kind"] == "alert" else ""
             bye = " That's all. Bye." if call["kind"] == "me" else " Check the Theta app for details. Bye."
             _update(cid, turns=_add_turn(call, "theta", (again + bye).strip()))
             return _twiml(_say(opening), '<Pause length="1"/>', _say((again + bye).strip()), "<Hangup/>")
-        try:  # full duplex when it's set up (Telnyx + Gemini Live under ASGI, server/livecall.py): the disclosure is
-            # still said here, in code; then the call streams both ways until either side ends, then hangs up
-            from . import livecall
-            if livecall.ready():
-                return _twiml(_say(opening), livecall.stream_xml(cid, public_base() or ""), "<Hangup/>")
-        except Exception:  # noqa: BLE001  anything off: the turn-by-turn call below
-            pass
         return _twiml(_gather(cid, 1, opening), _redirect(cid, 1))
     try:
         turn = int(turn)
@@ -724,6 +725,12 @@ def settings_route(req, start):
             db.set_setting("record_calls", bool(body["record"]))
         if "voice" in body:
             db.set_setting("call_voice", _clean_voice(body["voice"]))
+        if "live_voice" in body:
+            from . import livevoice
+            try:
+                livevoice.set_voice(str(body["live_voice"]))
+            except ValueError:
+                raise HTTPError(400, "unknown voice") from None
         if "name" in body:
             db.set_setting("call_name", re.sub(r"[^\w .'-]", "", str(body.get("name") or "")).strip()[:40])
     elif req.method != "GET":
@@ -734,7 +741,13 @@ def settings_route(req, start):
                                 "cap": _cap(), "today": calls_today(now), "hours": list(HOURS),
                                 "record": db.get_setting("record_calls") is not False,
                                 "provider": _provider_name(), "voice": db.get_setting("call_voice") or {},
-                                "voices": _voices(), "setup": _setup()})
+                                "voices": _voices(), "setup": _setup(), **_live_info()})
+
+
+def _live_info():
+    from . import livecall, livevoice
+    return {"live": livecall.ready(), "live_voice": livevoice.voice(),
+            "live_voices": [{"id": n, "label": f"{n} ({d.lower()})"} for n, d in livevoice.VOICES]}
 
 
 def _setup():
@@ -818,7 +831,13 @@ def history_route(req, start_response):
     return respond_json(start_response, {"calls": history()})
 
 
-ROUTES = {"/api/calls/settings": settings_route, "/api/calls/test": test_route, "/api/calls/history": history_route}
+def _sample_route(req, start):
+    from . import livevoice
+    return livevoice.sample_route(req, start)
+
+
+ROUTES = {"/api/calls/settings": settings_route, "/api/calls/test": test_route, "/api/calls/history": history_route,
+          "/api/calls/voice_sample": _sample_route}
 def inbound_route(req, start):
     """Someone called Theta's number (the TeXML application's voice URL): a short line, then hang up. The owner's
     name is only said on a call the provider signed: this URL is public, and anyone could fetch it to learn the name."""

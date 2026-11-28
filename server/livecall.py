@@ -19,6 +19,11 @@ Byte order: Telnyx documents its L16 stream as little-endian (unlike RTP's big-e
 first second of real speech is checked both ways (speech is smooth, wrong-order audio looks like noise) and the
 order that reads as speech wins, for both directions. TELNYX_L16_ORDER=little|big pins it.
 
+Voice: one voice for the whole call, the user's pick of Gemini's preset voices (server/livevoice.py). Gemini says
+the opening too, so the voice never changes mid-call; the disclosure is still fixed text from code, and the call
+hangs up unless Gemini's own transcript of its first turn contains it (DISCLOSE_WITHIN seconds). The caller's audio
+isn't passed on until then, so Theta can't be drawn into talking before it has said who it is.
+
 Env: GEMINI_API_KEY; GEMINI_LIVE_MODEL (default gemini-3.8-live); CALLS_LIVE=0 turns this off.
 """
 import array
@@ -34,6 +39,7 @@ MODEL = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.8-live")
 FRAME = 640             # 20 ms of 16 kHz 16-bit audio, the frame size sent to Telnyx
 SILENCE_SECONDS = 40    # nobody's said anything for this long: end the call
 _open = set()           # call ids with a stream right now (one each)
+DISCLOSE_WITHIN = 12    # seconds for Gemini to say the opening once Telnyx is ready, or the call ends
 
 
 def ready():
@@ -126,21 +132,45 @@ def from_le(pcm_le, order):
 def _instruction(call):
     from . import calls
     base = calls._persona(call).replace(f" and end your reply with {calls.END}", "")
-    return (base + f"\nThis is a live voice call and you've already said: \"{calls._opening(call)}\" Don't repeat "
-            "it. Speak naturally and briefly; they can interrupt you at any time, so stop and listen when they do. "
-            "You have no tools on this call. When the call is done, say a short goodbye.")
+    return (base + f"\nThis is a live voice call. The very first thing you say, before anything else and even if "
+            f"they speak first, is exactly this, word for word: \"{calls._opening(call)}\" After that, don't repeat it. "
+            "Speak naturally and briefly; they can interrupt you at any time, so stop and listen when they do. You "
+            "have no tools on this call. When the call is done, say a short goodbye.")
 
 
-def connect(instruction):
-    """The Gemini Live session (an async context manager; tests replace this)."""
+def connect(instruction, voice_name="Puck"):
+    """The Gemini Live session in one of Gemini's preset voices (an async context manager; tests replace this)."""
     from google import genai
     from google.genai import types
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options={"api_version": "v1beta"})
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"], system_instruction=instruction,
+        speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name))),
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig())
     return client.aio.live.connect(model=MODEL, config=config)
+
+
+def _words(text):
+    import re
+    return re.findall(r"[a-z0-9']+", (text or "").lower().replace("\u2019", "'"))
+
+
+def disclosed(said, required):
+    """Did Theta's first turn say the required opening? Word for word in order, allowing for how speech-to-text
+    writes things (punctuation, case, one dropped word): at least 90% of the required words, in order, and both
+    "AI" and "assistant"."""
+    need, got = _words(required), _words(said)
+    if not need:
+        return True
+    i = hit = 0
+    for w in got:
+        if i < len(need) and w == need[i]:
+            hit, i = hit + 1, i + 1
+        elif i + 1 < len(need) and w == need[i + 1]:  # one word skipped by the transcriber
+            hit, i = hit + 1, i + 2
+    return hit / len(need) >= 0.9 and {"ai", "assistant"} <= set(got)
 
 
 class Bridge:
@@ -157,6 +187,8 @@ class Bridge:
         self.started = time.time()
         self.last_voice = time.time()
         self.ending = False
+        self.opened = False  # Theta has said the opening (checked against its own transcript)
+        self.telnyx_started = asyncio.Event()  # Telnyx's "start": its side of the stream is ready for audio
         self.closed = asyncio.Event()
 
     # -- transcript into the call's turns (server/calls.py writes the summary from them when the call ends)
@@ -186,9 +218,13 @@ class Bridge:
             ev = msg.get("event")
             if ev == "stop":
                 break
+            if ev == "start":
+                self.telnyx_started.set()
             if ev != "media" or (msg.get("media") or {}).get("track", "inbound") != "inbound":
                 continue
             raw = base64.b64decode((msg.get("media") or {}).get("payload") or "")
+            if not self.opened:  # nothing from them reaches the model until Theta has said who it is
+                continue
             if not self.order_known:
                 self.probe += raw
                 if len(self.probe) >= 32000:  # a second of audio
@@ -222,6 +258,15 @@ class Bridge:
                     self.said.append(sc.output_transcription.text)
                 if sc.turn_complete:
                     said = self._flush("theta")
+                    if not self.opened:
+                        if not disclosed(said, calls._opening(self.call)):  # the one thing not left to the model
+                            calls._update(self.cid, outcome="ended: Theta didn't say the opening as written")
+                            self.closed.set()
+                            return
+                        self.opened = True
+                        self.started = self.last_voice = time.time()
+                        self.sent_s, self.first_out = 0.0, None
+                        continue
                     if self.ending or (said and calls._BYE.search(said)):
                         await self._drain()
                         self.closed.set()
@@ -248,10 +293,23 @@ class Bridge:
             await asyncio.sleep(max(0.0, min(left, 12.0)) + 0.4)
 
     async def watchdog(self, session):
-        """Time cap and long silence: a goodbye from Theta, then the end."""
+        """The opening first (once Telnyx is ready); then the time cap and long silence: a goodbye, then the end."""
         from . import calls
+        try:
+            await asyncio.wait_for(self.telnyx_started.wait(), 5)
+        except asyncio.TimeoutError:
+            pass  # speak anyway
+        await session.send_client_content(turns={"role": "user", "parts": [{"text": (
+            "[From the app, not the caller] The call just connected. Say your opening now, exactly as written.")}]},
+            turn_complete=True)
+        t0 = time.time()
         while not self.closed.is_set():
             await asyncio.sleep(1)
+            if not self.opened:
+                if time.time() - t0 > DISCLOSE_WITHIN:
+                    calls._update(self.cid, outcome="ended: Theta didn't say the opening in time")
+                    self.closed.set()
+                continue
             over = time.time() - self.started >= calls.MAX_SECONDS
             quiet = time.time() - self.last_voice >= SILENCE_SECONDS
             if (over or quiet) and not self.ending:
@@ -263,7 +321,8 @@ class Bridge:
                 self.closed.set()
 
     async def run(self):
-        async with connect(_instruction(self.call)) as session:
+        from .livevoice import voice
+        async with connect(_instruction(self.call), voice()) as session:
             tasks = [asyncio.create_task(t) for t in (self.telnyx_to_gemini(session), self.gemini_to_telnyx(session),
                                                       self.watchdog(session))]
             done = asyncio.create_task(self.closed.wait())
