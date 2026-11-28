@@ -84,3 +84,42 @@ def dtmf_pcm(digits, rate=16000, tone_ms=160, gap_ms=90):
 
 def from_le(pcm_le, order):
     return pcm_le if order == "little" else _bytes(_samples(pcm_le, "little"), "big")
+
+
+# ---- G.711 (what the phone network sends: Telnyx's inbound stream is PCMU at 8 kHz by default, whatever codec
+# Theta's own outgoing audio uses) -> 16-bit linear PCM
+
+def _ulaw(b):
+    b = ~b & 0xFF
+    t = ((b & 0x0F) << 3) + 0x84
+    t <<= (b & 0x70) >> 4
+    return (0x84 - t) if b & 0x80 else (t - 0x84)
+
+
+def _alaw(b):
+    b ^= 0x55
+    t = (b & 0x0F) << 4
+    seg = (b & 0x70) >> 4
+    t = t + 8 if seg == 0 else ((t + 0x108) << (seg - 1))
+    return t if b & 0x80 else -t
+
+
+_ULAW = [_ulaw(i) for i in range(256)]
+_ALAW = [_alaw(i) for i in range(256)]
+
+
+def g711_to_pcm(raw, law="PCMU"):
+    """mu-law (PCMU) or A-law (PCMA) bytes -> little-endian 16-bit PCM at the same rate."""
+    table = _ULAW if law.upper() == "PCMU" else _ALAW
+    return array.array("h", (table[b] for b in raw)).tobytes() if sys.byteorder == "little" else \
+        _bytes(array.array("h", (table[b] for b in raw)), "little")
+
+
+def upsample_2x(pcm_le):
+    """8 kHz -> 16 kHz little-endian PCM (linear interpolation)."""
+    a = _samples(pcm_le, "little")
+    out = array.array("h", bytes(4 * len(a)))
+    for i, x in enumerate(a):
+        nx = a[i + 1] if i + 1 < len(a) else x
+        out[2 * i], out[2 * i + 1] = x, (x + nx) // 2
+    return _bytes(out, "little")

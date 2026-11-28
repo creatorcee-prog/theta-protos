@@ -126,7 +126,8 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   the transcript. Orders and charges only exactly as the approved purpose says, never card details. Both sides are transcribed into the call's turns. In code:
   5-minute cap and 40 s of silence end with a goodbye, Theta's goodbye hangs up once it's played, a voicemail
   greeting ends it, "don't record me" stops the recording, and the only tool on a live call is the keypad. L16 byte order is
-  detected from the first second of speech (Telnyx documents little-endian). Otherwise calls stay turn by turn.
+  the caller's audio is decoded from the format Telnyx declares in its start event (PCMU or PCMA at 8 kHz, the
+  phone network's default, or L16 with its byte order detected), then sent to Gemini at 16 kHz. Otherwise calls stay turn by turn.
 - Call recordings (`server/recordings.py`): on unless "record_calls" is off. Calls to others open with "This call is
   recorded."; an objection on the call stops it and the audio is discarded. Twilio's recording is downloaded to
   `<data>/recordings/<call id>.mp3`, deleted at Twilio, served at /api/calls/audio/<id> (byte ranges), and kept 90 days.

@@ -39,7 +39,7 @@ import re
 import sys
 import time
 
-from .callaudio import KEYS_OK, dtmf_pcm, from_le, guess_order, resample_24k_to_16k, roughness, to_le  # noqa: F401
+from .callaudio import KEYS_OK, g711_to_pcm, upsample_2x, dtmf_pcm, from_le, guess_order, resample_24k_to_16k, roughness, to_le  # noqa: F401
 
 ASGI = False            # set by server/asgi.py: the WebSocket route only exists under ASGI
 MODEL = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.8-live")
@@ -191,6 +191,7 @@ class Bridge:
         self.telnyx_started = asyncio.Event()  # Telnyx's "start": its side of the stream is ready for audio
         self.ccid = call.get("sid") or ""     # the call's Telnyx id, for send_dtmf (the stream's start may give the real one)
         self.presses = 0
+        self.in_enc, self.in_rate = "PCMU", 8000  # Telnyx's default for the caller's audio until "start" says otherwise
         self.diag = {"frames_in": 0, "held": 0, "to_gemini": 0, "audio_out": 0, "heard": 0, "said": 0, "order": None,
                      "format": None, "opening": "", "end": ""}
         self.closed = asyncio.Event()
@@ -225,6 +226,9 @@ class Bridge:
             if ev == "start":
                 st = msg.get("start") or {}
                 self.diag["format"] = st.get("media_format")
+                mf = st.get("media_format") or {}
+                self.in_enc = str(mf.get("encoding") or "PCMU").upper()  # the caller's audio as Telnyx sends it
+                self.in_rate = int(mf.get("sample_rate") or (16000 if self.in_enc == "L16" else 8000))
                 self.ccid = st.get("call_control_id") or self.ccid
                 self.telnyx_started.set()
             if ev != "media" or str((msg.get("media") or {}).get("track") or "inbound").startswith("outbound"):
@@ -234,15 +238,35 @@ class Bridge:
             if not self.opened:  # nothing from them reaches the model until Theta has said who it is
                 self.diag["held"] += 1
                 continue
-            if not self.order_known:
-                self.probe += raw
-                if len(self.probe) >= 32000:  # a second of audio
-                    got = guess_order(self.probe)
-                    if got:
-                        self.order, self.order_known = got, True
-                    self.probe = self.probe[-16000:] if not got else b""
-            await session.send_realtime_input(audio=types.Blob(data=to_le(raw, self.order), mime_type="audio/pcm;rate=16000"))
+            pcm = self.caller_pcm(raw)
+            if pcm is None:
+                continue
+            await session.send_realtime_input(audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000"))
             self.diag["to_gemini"] += 1
+
+    def caller_pcm(self, raw):
+        """The caller's audio as 16 kHz little-endian PCM for Gemini, from whatever Telnyx declared in "start":
+        PCMU / PCMA (G.711, the phone network's default) or L16 (byte order detected), at 8 or 16 kHz."""
+        if self.in_enc in ("PCMU", "PCMA"):
+            pcm = g711_to_pcm(raw, self.in_enc)
+        elif self.in_enc == "L16":
+            pcm = self._l16(raw)
+            if pcm is None:
+                return None
+        else:  # an encoding this bridge can't decode (OPUS, G722, AMR-WB): say so in the diagnostics
+            self.diag["end"] = f"caller audio is {self.in_enc}, which isn't decoded"
+            return None
+        return upsample_2x(pcm) if self.in_rate == 8000 else pcm
+
+    def _l16(self, raw):
+        if not self.order_known:
+            self.probe += raw
+            if len(self.probe) >= 32000:  # a second of audio
+                got = guess_order(self.probe)
+                if got:
+                    self.order, self.order_known = got, True
+                self.probe = self.probe[-16000:] if not got else b""
+        return to_le(raw, self.order)
 
     async def gemini_to_telnyx(self, session):
         from . import calls, recordings

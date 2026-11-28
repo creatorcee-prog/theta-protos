@@ -137,16 +137,27 @@ check("the HTTP app works the same through ASGI", h.get("ok") is True)
 import websockets  # noqa: E402
 
 
-async def telnyx(cid, frames=60, track="inbound"):
+def ulaw(samples):  # G.711 mu-law encoder (the reference algorithm), for a fake phone line
+    out = bytearray()
+    for x in samples:
+        sign = 0x80 if x < 0 else 0
+        x = min(32635, abs(x)) + 0x84
+        exp = max(0, x.bit_length() - 8)
+        out.append(~(sign | (exp << 4) | ((x >> (exp + 3)) & 0x0F)) & 0xFF)
+    return bytes(out)
+
+
+async def telnyx(cid, frames=60, track="inbound", fmt=("L16", 16000)):
     got = []
     async with websockets.connect(f"ws://127.0.0.1:{PORT}/api/calls/stream/{cid}") as ws:
         await ws.send(json.dumps({"event": "connected"}))
-        await ws.send(json.dumps({"event": "start", "start": {"media_format": {"encoding": "L16", "sample_rate": 16000}}}))
+        await ws.send(json.dumps({"event": "start", "start": {"media_format": {"encoding": fmt[0], "sample_rate": fmt[1]}}}))
         await asyncio.sleep(0.6)  # the opening plays first
-        audio = pcm(tone(16000 * 2), "little")
+        audio = pcm(tone(16000 * 2), "little") if fmt[0] == "L16" else ulaw(tone(8000 * 4, rate=8000))
+        step = 640 if fmt[0] == "L16" else 160  # 20 ms either way
         try:  # the server may hang up first (a call that fails its opening check)
             for i in range(frames):
-                await ws.send(json.dumps({"event": "media", "media": {"track": track, "payload": base64.b64encode(audio[i * 640:(i + 1) * 640]).decode()}}))
+                await ws.send(json.dumps({"event": "media", "media": {"track": track, "payload": base64.b64encode(audio[i * step:(i + 1) * step]).decode()}}))
         except websockets.ConnectionClosed:
             return got
         try:
@@ -227,6 +238,23 @@ check("on a call with the user, a greeting transcribed differently doesn't end i
 d = db.get_setting("livecall_diag")[0]
 check("each live call leaves diagnostics for the developer (frames in, to Gemini, why it ended)",
       d["call"] == "c5"[:6] and d["frames_in"] > 0 and d["to_gemini"] > 0 and d["end"], d)
+
+# the phone network's own format: Telnyx sends the caller as PCMU (mu-law) at 8 kHz by default. Decoding that as
+# L16 turned every caller into noise ("Theta can't hear me"); it has to arrive at Gemini as a clean 16 kHz tone
+FAKE = FakeSession()
+FAKE.cid = "c6"
+got_pcm = []
+real_send = FAKE.send_realtime_input
+async def keep(audio=None, **k):
+    got_pcm.append(audio.data); await real_send(audio=audio, **k)
+FAKE.send_realtime_input = keep
+new_call("c6"); calls._update("c6", state="live", t_answer=time.time())
+asyncio.run(telnyx("c6", frames=80, fmt=("PCMU", 8000)))
+heard = b"".join(got_pcm)
+smp = struct.unpack(f"<{len(heard) // 2}h", heard)[:3200]
+p = {hz: goertzel(smp, hz) for hz in (220, 440, 1000, 3000)} if smp else {}
+check("a PCMU 8 kHz caller reaches Gemini as clean 16 kHz audio (the 220 Hz tone, not noise)", smp and max(p, key=p.get) == 220
+      and p[220] > 20 * max(p[h] for h in (440, 1000, 3000)) and len(heard) == 4 * 160 * (len(got_pcm)), p)
 
 # ---- the voice setting and samples
 check("30 voices, Puck by default", len(livevoice.VOICES) == 30 and livevoice.DEFAULT_VOICE == "Puck")
