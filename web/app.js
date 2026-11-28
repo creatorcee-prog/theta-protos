@@ -216,6 +216,7 @@
   }
   const SHEETS = ["settings"];
   function render(st) {
+    $("toast").hidden = true;  // a toast belongs to the screen it was shown on
     st = st || {v: "home"};
     if (!S.authed) return;
     show(st.v === "chat" ? "chat" : "home");

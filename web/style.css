@@ -438,7 +438,9 @@ html.no-usage .usage.bare:not(:has(.voted)) { display: none; }
 .set-fine a { color: var(--accent); display: inline-block; margin-top: 4px; }
 
 .toast {
-  position: absolute; z-index: 40; left: 50%; transform: translateX(-50%); top: calc(var(--sat) + 12px); max-width: calc(100% - 32px);
+  /* above the message box and search bar, never over a page's title (it covered "Settings", "Usage", the chat name) */
+  position: absolute; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(var(--composer-h, calc(var(--sab) + 84px)) + 14px); max-width: calc(100% - 32px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
   padding: 10px 16px; border-radius: 999px; background: #2b2b2b; border: 1px solid #3a3a3a; font-size: 0.8235rem; animation: fadeUp .25s var(--ease);
   text-align: center;
 }
