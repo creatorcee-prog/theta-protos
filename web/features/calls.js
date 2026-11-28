@@ -108,6 +108,13 @@
   const tr = row("Test call", "Theta calls your number and says a short line.");
   tr.r.append(test);
 
+  // the 10-minute wait between calls to the same number (on by default; off while testing)
+  const gsw = el("label", "switch"), gap = el("input");
+  gap.type = "checkbox"; gap.setAttribute("switch", ""); gap.setAttribute("aria-label", "Wait between calls to the same number");
+  gsw.append(gap, el("i"));
+  const gr = row("Wait 10 minutes between calls", "Theta won't call the same number twice within 10 minutes. Turn it off while you're testing calls.");
+  gr.r.append(gsw);
+  gap.addEventListener("change", () => save({gap_off: !gap.checked}));
   const rsw = el("label", "switch"), rec = el("input");
   rec.type = "checkbox"; rec.setAttribute("switch", ""); rec.setAttribute("aria-label", "Record calls");
   rsw.append(rec, el("i"));
@@ -194,7 +201,7 @@
     ol.append(li("Back here: enter your number and name, pick a voice, and tap ", b("Test call"), "."));
     setupBox.replaceChildren(el("h4", null, "Set up calls and texts (about 15 minutes)"), ol);
   }
-  g.append(setupBox, pr.r, nr.r, rr.r, recr.r, lr.r, vr.r, elWrap, tr.r, note);
+  g.append(setupBox, pr.r, nr.r, rr.r, recr.r, gr.r, lr.r, vr.r, elWrap, tr.r, note);
 
   let state = {};
   const status = () => {
@@ -206,6 +213,7 @@
     else note.textContent = `Calls to others: ${state.today || 0} of ${state.cap ?? 5} today, ${(state.hours || [8, 21])[0]}:00–${(state.hours || [8, 21])[1]}:00 your time, each one only after you approve it.`;
   };
   const fill = () => {
+    gap.checked = !state.gap_off;
     phone.value = state.phone || ""; name.value = state.name || ""; red.checked = !!state.call_on_red; rec.checked = state.record !== false;
     vsel.replaceChildren();
     for (const v of state.voices || []) { const o = el("option", null, v.label); o.value = v.id; vsel.append(o); }

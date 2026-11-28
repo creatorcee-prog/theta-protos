@@ -245,3 +245,14 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   self-improvement log's internals and the server build. Off, connect cards and Settings > Apps say "Whoever runs
   your Theta can turn it on" (`app._plain`), storage is described plainly, and the model is told not to talk about
   server setup, models or costs. One flag for now; it becomes per account when there's more than one.
+- Scheduled calls (`server/calls.py`): call_someone and call_me take `at` / `in_minutes`. A call to someone else is
+  approved once (the card says when), then a "call" job dials it at that time with nobody at the phone; call_me
+  schedules directly. Calling hours and the daily limit are checked for the time of the call. Scheduled calls are
+  listed, moved and cancelled by the `reminders` tool. A reply that says "I'll call" with no call tool run is
+  caught by the honesty check.
+- Calls to Theta's number (POST /api/calls/inbound): the user, on a provider-signed call from their saved number,
+  gets a conversation with Theta (live when set up); anyone else, or an unsigned request, gets Theta taking a
+  message for them (the owner's name only on a signed call). Nothing is unlocked by a call: no tools beyond the
+  keypad, nothing private said. The transcript lands in the chat when the call ends; at most 30 a day.
+- The 10-minute wait between calls to the same number can be turned off in Settings > Apps > Phone calls
+  ("calls_gap_off"); calls to Theta never count toward it.

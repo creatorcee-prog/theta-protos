@@ -90,7 +90,9 @@ def _instruction(call):
     from . import calls
     who = calls.user_name() or "the user"
     opening = calls._opening(call)
-    if call["kind"] == "other":
+    if call["kind"] == "inbound":
+        job = calls._persona(call).split(" Reply in one or two")[0]
+    elif call["kind"] == "other":
         job = (f"You're Theta, an AI assistant, on a phone call for {who}. What this call is for: {call.get('purpose')}"
                + (f"\nNotes from {who}: {call.get('script')}" if call.get("script") else "")
                + f"\nStick to that. You can agree to an order or a charge only exactly as the purpose and notes describe it "
@@ -154,7 +156,8 @@ def disclosed(said, required):
             hit, i = hit + 1, i + 1
         elif i + 1 < len(need) and w == need[i + 1]:  # one word skipped by the transcriber
             hit, i = hit + 1, i + 2
-    return hit / len(need) >= 0.9 and {"ai", "assistant"} <= set(got)
+    # "AI assistant" must be said whenever the opening has it (every call to someone else does)
+    return hit / len(need) >= 0.9 and ({"ai", "assistant"} <= set(got) or not {"ai", "assistant"} <= set(need))
 
 
 class Bridge:
@@ -393,6 +396,8 @@ async def ws_endpoint(websocket):
         log(f"live call {cid[:6]}… ended with {type(e).__name__}: {str(e)[:160]}")
     finally:
         _open.discard(cid)
+        if call["kind"] == "inbound":  # nobody else reports the end of a call to Theta
+            calls._end_inbound(cid, delay=0)
         try:
             await websocket.close()
         except Exception:  # noqa: BLE001

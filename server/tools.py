@@ -221,7 +221,8 @@ def _remind_me(args, ctx):
 # ---- reminders: see, cancel or move what's already set (remind_me only adds)
 
 def _pending_reminders(bot):
-    return [j for j in db.jobs("pending", limit=100) if j.get("kind") == "remind"
+    """Reminders and scheduled calls (both are things set for later that the user may want to see or change)."""
+    return [j for j in db.jobs("pending", limit=100) if j.get("kind") in ("remind", "call")
             and (j.get("payload") or {}).get("bot", bot) == bot]
 
 
@@ -233,7 +234,8 @@ def _reminders(args, ctx):
         if not pend:
             return "No reminders are set."
         return "Pending reminders:\n" + "\n".join(
-            f"- id {j['id']}: {fmt_time(j['due_t'], now)}: {(j.get('payload') or {}).get('text', '')}" for j in pend)
+            f"- id {j['id']}: {fmt_time(j['due_t'], now)}: {'[call] ' if j['kind'] == 'call' else ''}"
+            f"{(j.get('payload') or {}).get('text', '')}" for j in pend)
     rid = args.get("id")
     if rid is None:
         raise ToolError("pass id (from action=list or the context block's reminder list)")
@@ -404,7 +406,7 @@ TOOLS = [
          "required": ["text"]}},
     {"name": "reminders", "risk": "write", "run": _reminders,
      "description": ("See, cancel or move reminders that are already set (remind_me only adds new ones). To change a "
-                     "reminder's time use action=move, never a second remind_me. Examples: {\"action\": \"list\"}, "
+                     "reminder's time use action=move, never a second remind_me. Scheduled calls are listed here too. Examples: {\"action\": \"list\"}, "
                      "{\"action\": \"cancel\", \"id\": 12}, {\"action\": \"move\", \"id\": 12, \"in_minutes\": 180}."),
      "params": {"type": "object", "properties": {
          "action": {"type": "string", "enum": ["list", "cancel", "move"]},
@@ -784,13 +786,14 @@ def context_block(bot="theta", now=None):
         plan = None
     lines.append("Saved plan:\n" + render_plan(plan) if plan else "Saved plan: none.")
     try:
-        pending = [j for j in db.jobs("pending", limit=20) if j.get("kind") == "remind"
+        pending = [j for j in db.jobs("pending", limit=20) if j.get("kind") in ("remind", "call")
                    and (j.get("payload") or {}).get("bot", bot) == bot]
     except Exception:
         pending = []
     if pending:
         lines.append("Pending reminders (for reference: mention one only if they ask or it bears on this message):\n" + "\n".join(
-            f"- id {j['id']}, {fmt_time(j['due_t'], now)}: {(j.get('payload') or {}).get('text', '')}" for j in pending[:10]))
+            f"- id {j['id']}, {fmt_time(j['due_t'], now)}: {'[scheduled call] ' if j['kind'] == 'call' else ''}"
+            f"{(j.get('payload') or {}).get('text', '')}" for j in pending[:10]))
     else:
         lines.append("Pending reminders: none.")
     try:

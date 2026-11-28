@@ -49,8 +49,8 @@ check("an incoming text reaches the model framed as outside content, not as its 
 
 # ---- the public call line
 s, out = call("POST", "/api/calls/inbound", b"From=%2B15550009999", "application/x-www-form-urlencoded")
-check("the public call line doesn't say the owner's name to an unsigned request", s == 200 and b"Cee" not in out
-      and b"its owner" in out, out[:200])
+check("the public call line doesn't say the owner's name to an unsigned request (it takes a message instead)",
+      s == 200 and b"Cee" not in out and b"take a message" in out, out[:200])
 
 # ---- repeat taps
 aid = db.add_approval({"tool": "send_email_draft", "args": {"to": "a@b.co", "subject": "s", "body": "b"}, "bot": "theta",

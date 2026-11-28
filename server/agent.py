@@ -328,8 +328,17 @@ _LATER = re.compile(r"(?i)\b(?:once|when|as soon as|the moment)\b[^.!?\n]{0,40}\
                     r"\b(?:i'?ll|i will)\b|\bi'?ll\b[^.!?\n]{0,60}\b(?:once|when|as soon as|the moment)\b[^.!?\n]{0,40}\bconnect")
 
 
+_CALL_PROMISE = re.compile(r"(?i)\b(?:i'?ll|i will|i'?m going to|gonna|i'?ve (?:set|scheduled) (?:it|a call)|scheduled to)\s+"
+                           r"(?:to\s+)?(?:call|phone|ring)\b|\b(?:i'?ll|i will) give (?:them|her|him|you|\w+) a (?:call|ring)\b")
+
+
 def unbacked_claim(text, info):
     """'' when the reply only claims what this turn's tools did, else what's missing (for CHECK_NOTE)."""
+    called = any(n.startswith("call_") for n in info.get("ok_tools", [])) or any(
+        str(a.get("tool") or "").startswith("call_") for a in info.get("approvals") or [])
+    if text and _CALL_PROMISE.search(text) and not called:
+        return ("it says you'll make a call, but no call tool ran (a reminder can't call anyone): use call_someone or "
+                "call_me, with at= or in_minutes= to call later")
     if text and _LATER.search(text) and not info.get("approvals") and not info.get("ok_tools"):
         return ("it promises to pick this up once something's connected, but no tool was called, so nothing will be "
                 "picked up (calling the send tool with the full content is what saves it and shows the connect card)")
