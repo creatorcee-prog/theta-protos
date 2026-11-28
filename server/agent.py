@@ -396,7 +396,18 @@ def run(route, messages, emit, info=None, ctx=None, on_tool_start=None, max_step
     active = tools.pick_tools(ctx.get("user_text") or _last_user_text(messages), ctx.get("recent_tools") or ())
     if ctx.get("routine") or ctx.get("all_tools"):  # unattended (a routine): nobody can steer it, so give it everything
         active = [t["name"] for t in tools.TOOLS]
-    ctx["load_tools"] = lambda names: [active.append(n) for n in names if n not in active]
+    try:  # an agent limited to some apps never sees the tools of the others (server/agents.py)
+        from . import agents
+        bot_id = ctx.get("bot") or "theta"
+        allowed = lambda n: agents.allows(bot_id, n)  # noqa: E731
+    except Exception:  # noqa: BLE001
+        allowed = lambda n: True  # noqa: E731
+    active[:] = [n for n in active if allowed(n)]
+    def _load(names):
+        added = [n for n in names if n not in active and allowed(n)]
+        active.extend(added)
+        return [n for n in names if allowed(n)]
+    ctx["load_tools"] = _load
     info["loaded"] = active
     msgs = _with_guide(messages)
     fails = {"streak": 0, "escalated": False, "last": None, "errors": []}

@@ -41,9 +41,19 @@ PING_SECONDS = 15
 APPROVAL_TTL = agent.APPROVAL_TTL  # 24 h
 _APPROVE_TEXT = re.compile(r"^\s*(approve|deny):(\d{1,12})\s*$", re.I)
 
-BOTS = [{"id": "theta", "name": "Theta",
-         "avatar": {"kind": "dot-globe", "theme": "theta", "color": "#7cc4ff"}}]
-BOT_IDS = {b["id"] for b in BOTS}
+class _BotIds:
+    """The agents that exist now (Theta and the ones the user made, server/agents.py), read live wherever a bot id
+    is checked: `bot in BOT_IDS`."""
+    def __contains__(self, bot):
+        from . import agents
+        return bot in agents.ids()
+
+    def __iter__(self):
+        from . import agents
+        return iter(sorted(agents.ids()))
+
+
+BOT_IDS = _BotIds()
 
 SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None, "bot_name": "Theta", "texts_auto": False,
                      "developer": True}  # developer details (setup steps, env vars, models, tokens): the owner's account
@@ -928,6 +938,28 @@ def _sse(event, data):
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
 
 
+def bots_route(req, start, p, m):
+    """Agents: GET /api/bots (all, with the apps an agent can be given), POST /api/bots (make one),
+    POST /api/bots/<id> (change it), DELETE /api/bots/<id> (remove it)."""
+    from . import agents
+    if p == "/api/bots" and m == "GET":
+        return respond_json(start, agents.all_agents() if req.query.get("full") != "1" else
+                            {"agents": agents.all_agents(), "apps": [{"key": k, "label": v[0]} for k, v in agents.APPS.items()],
+                             "colors": list(agents.COLORS)})
+    aid = p[len("/api/bots/"):] if p.startswith("/api/bots/") else None
+    try:
+        if p == "/api/bots" and m == "POST":
+            return respond_json(start, agents.create(req.json()))
+        if aid and m == "POST":
+            return respond_json(start, agents.update(aid, req.json()))
+        if aid and m == "DELETE":
+            agents.delete(aid)
+            return respond_json(start, {"ok": True})
+    except agents.AgentError as e:
+        raise HTTPError(400, str(e))
+    raise HTTPError(405, "method not allowed")
+
+
 def chat(req, start):
     body = req.json()
     bot = body.get("bot") or "theta"
@@ -1447,8 +1479,8 @@ def api(req, start):
     fn = ext.route(p)
     if fn:
         return fn(req, start)
-    if p == "/api/bots" and m == "GET":
-        return respond_json(start, BOTS)
+    if p == "/api/bots" or p.startswith("/api/bots/"):
+        return bots_route(req, start, p, m)
     if p == "/api/messages" and m == "GET":
         bot = req.query.get("bot") or "theta"
         msgs = db.messages(bot, before=req.int_arg("before"), limit=req.int_arg("limit", 50, 1, 200))

@@ -16,7 +16,9 @@
   // this app's version (the files the phone loaded); the server says its own in /api/health. Keep in step with
   // server/__init__.py (tests/test_web.py checks).
   const APP_VERSION = "0.4.0";
-  const BOT = "theta", POLL_MS = 20000, PAGE = 50, EARLIER = 30;
+  // BOT: the agent whose chat is open (Theta, or one the user made: server/agents.py, web/features/agents.js)
+  let BOT = "theta"; try { BOT = localStorage.getItem("theta:agent") || "theta"; } catch (e) {}
+  const POLL_MS = 20000, PAGE = 50, EARLIER = 30;
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } };
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const haptic = (kind, from) => { try { return window.ThetaHaptics ? window.ThetaHaptics.haptic(kind, from) : false; } catch (e) { return false; } };
@@ -27,6 +29,7 @@
     demo: Q.get("demo") === "1", demoAuto: false, authed: true, version: "", ready: false,
     msgs: new Map(), lastId: 0, inboxId: 0, oldestId: null, noMore: false, loadingEarlier: false,
     streaming: false, unread: 0, lastProactive: null, routes: new Map(), settings: null, connections: null,
+    agents: [], unreadBy: {},  // every agent, and unread replies from agents whose chat isn't open
   };
 
   // ---------------------------------------------------------------- API
@@ -714,6 +717,45 @@
   };
   for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) thread.addEventListener(ev, endSwipe);
 
+  // ---------------------------------------------------------------- agents: one chat each
+  const agentOf = id => S.agents.find(a => a.id === id) || null;
+  function agentName(id) {
+    const a = agentOf(id || BOT);
+    if (!a || a.id === "theta") return (S.settings && S.settings.bot_name) || "Theta";
+    return a.name;
+  }
+  // the header, the box and the header globe take on the open agent (Theta's own name and look come from Settings)
+  function applyAgent() {
+    const a = agentOf(BOT), name = agentName();
+    const cn = document.querySelector("#chat-name span"); if (cn) cn.textContent = name;
+    $("chat-name").setAttribute("aria-label", name);
+    if (ta) { ta.placeholder = "Ask " + name; ta.setAttribute("aria-label", "Message " + name); }
+    orbs.head.opt.color = a && a.color ? a.color : undefined; orbs.head._lk = null;
+    document.documentElement.dataset.agent = BOT;
+    Theta.emit("agents", {open: BOT});
+  }
+  async function loadAgents() {
+    try { const list = await api("/api/bots"); if (Array.isArray(list) && list.length) S.agents = list; } catch (e) {}
+    if (!S.agents.length) S.agents = [{id: "theta", name: "Theta", builtin: true}];
+    if (!agentOf(BOT)) { BOT = "theta"; store("theta:agent", null); }
+    Theta.emit("agents", {list: S.agents});
+    return S.agents;
+  }
+  // open another agent's chat: its own history, its own name and color. Not while a reply or queued message is
+  // still on its way (they belong to the chat that's open).
+  async function switchAgent(id) {
+    if (id === BOT) return true;
+    if (!agentOf(id)) await loadAgents();
+    if (!agentOf(id)) { toast("That agent isn't there anymore."); return false; }
+    if (S.streaming || later.length) { toast("One sec, " + agentName() + " is still answering."); return false; }
+    BOT = id; store("theta:agent", id === "theta" ? null : id);
+    S.msgs.clear(); S.oldestId = null; S.noMore = false; S.lastId = 0; delete S.unreadBy[id];
+    thread.replaceChildren(); applyAgent();
+    try { await loadHistory(); } catch (e) {}
+    toBottom(false);
+    return true;
+  }
+
   // ---------------------------------------------------------------- history
   async function loadHistory() {
     const d = await api(`/api/messages?bot=${BOT}&limit=${PAGE}`);
@@ -723,7 +765,7 @@
     regroup(); historyReceipt();
     S.inboxId = list.length ? list[list.length - 1].id : 0;
     S.noMore = list.length < PAGE;
-    $("earlier").textContent = S.noMore && list.length ? "This is the start of your chat with Theta." : "";
+    $("earlier").textContent = S.noMore && list.length ? `This is the start of your chat with ${agentName()}.` : "";
     emptyState();
   }
   async function loadEarlier() {
@@ -736,7 +778,7 @@
       thread.prepend(frag); regroup();
       scroller.scrollTop = top0 + (scroller.scrollHeight - h0); // keep the view where it was
       S.noMore = (d.messages || []).length < EARLIER;
-      $("earlier").textContent = S.noMore ? "This is the start of your chat with Theta." : "";
+      $("earlier").textContent = S.noMore ? `This is the start of your chat with ${agentName()}.` : "";
     } catch (e) { $("earlier").textContent = ""; }
     finally { S.loadingEarlier = false; }
   }
@@ -750,7 +792,14 @@
       // streaming has a lower id than that reply, and must not be skipped
       const d = await api(`/api/inbox?since=${S.inboxId}`);
       dock("offline", null); if (S.offline) { S.offline = false; renderHome(); }
-      for (const m of d.messages || []) { if (m.id > S.inboxId) S.inboxId = m.id; if (!S.msgs.has(m.id)) incoming(m); }
+      for (const m of d.messages || []) {
+        if (m.id > S.inboxId) S.inboxId = m.id;
+        if (m.bot && m.bot !== BOT) {  // another agent's chat: a badge on its button, not a bubble in this one
+          if (m.role === "assistant" && S.agents.some(a => a.id === m.bot)) { S.unreadBy[m.bot] = (S.unreadBy[m.bot] || 0) + 1; Theta.emit("agents", {unread: m.bot}); }
+          continue;
+        }
+        if (!S.msgs.has(m.id)) incoming(m);
+      }
     } catch (e) {
       if (!(e instanceof AuthError) && !e.status) { dock("offline", {err: true, icon: "i-bell", title: "Can't reach Theta right now", text: "Your messages are safe. I'll keep trying."}); if (!S.offline) { S.offline = true; renderHome(); } }
     }
@@ -1453,8 +1502,11 @@
     b.scrollIntoView({block: "center", behavior: REDUCE.matches ? "auto" : "smooth"});
     b.classList.add("target"); setTimeout(() => b.classList.remove("target"), 2200);
   }
-  $("home-bot").addEventListener("click", () => openChat());
-  $("home-new").addEventListener("click", () => { openChat(); setTimeout(() => ta.focus(), 50); });
+  // Home's big globe is always Theta (chips, finds and Home's other buttons hand their jobs to it); the agents row
+  // under it opens the others (web/features/agents.js)
+  const openTheta = async () => { if (BOT === "theta" || await switchAgent("theta")) openChat(); };
+  $("home-bot").addEventListener("click", openTheta);
+  $("home-new").addEventListener("click", async () => { await openTheta(); setTimeout(() => ta.focus(), 50); });
   $("home-me").addEventListener("click", () => go(Object.assign({}, cur(), {sheet: "settings"})));
   $("home-apps").addEventListener("click", () => go(Object.assign({}, cur(), {sheet: "settings", tab: "connections"})));
 
@@ -1866,6 +1918,7 @@
   async function loadAll() {
     if (!S.demo) { try { S.settings = Object.assign(S.settings || {}, await api("/api/settings")); } catch (e) { if (e instanceof AuthError) throw e; } }
     applyDev();
+    await loadAgents(); applyAgent();
     await loadHistory();
     S.ready = true;
     refreshPush();  // keep this phone's push sign-up current (fixes one made with an older server key)
@@ -1905,6 +1958,8 @@
   const SETTINGS_TAB = {"Web browsing": "connections", "Calendar": "connections", "Phone calls": "connections", "Sign-in": "security"};
   window.Theta = {
     api, post, http, toast, send, el, svg, store, md, state: S,
+    agents: {list: () => S.agents, current: () => BOT, name: agentName, switch: switchAgent, reload: loadAgents, apply: () => applyAgent(),
+             open: async id => { if (await switchAgent(id)) openChat(); }},
     open(id, tab) { go(Object.assign({}, cur(), {sheet: id}, tab ? {tab} : {})); },
     logo: c => appIcon(c), // the app tile used in Connections: a brand logo when web/logos.js has one
     // fn(message, rowEl, bubbleEl) runs for every message shown; add to rowEl, build DOM nodes only (no innerHTML)

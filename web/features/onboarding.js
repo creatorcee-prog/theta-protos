@@ -91,10 +91,11 @@
     if (!name || typeof name !== "string") return;
     botName = name;
     const hn = document.querySelector("#home-bot .home-name"); if (hn) hn.textContent = name;
-    const cn = document.querySelector("#chat-name span"); if (cn) cn.textContent = name;
-    const ta = $("c-text"); if (ta) { ta.placeholder = "Ask " + name; ta.setAttribute("aria-label", "Message " + name); }
+    const mine = !T.agents || T.agents.current() === "theta";  // another agent's chat keeps its own name (agents.js)
+    const cn = document.querySelector("#chat-name span"); if (cn && mine) cn.textContent = name;
+    const ta = $("c-text"); if (ta && mine) { ta.placeholder = "Ask " + name; ta.setAttribute("aria-label", "Message " + name); }
     $("home-bot") && $("home-bot").setAttribute("aria-label", "Open chat with " + name);
-    $("chat-name") && $("chat-name").setAttribute("aria-label", name);
+    if (mine && $("chat-name")) $("chat-name").setAttribute("aria-label", name);
     document.title = name;
     const inp = $("set-botname"); if (inp && document.activeElement !== inp) inp.value = name;
   }

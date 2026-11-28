@@ -540,7 +540,13 @@ def _load_tools(args, ctx):
         raise ToolError("none of those are tools; pick names from the list in your instructions")
     fn = (ctx or {}).get("load_tools")
     if callable(fn):
-        fn(known)
+        ok = fn(known)
+        if isinstance(ok, list) and set(ok) != set(known):  # an agent limited to some apps (server/agents.py)
+            no = [n for n in known if n not in ok]
+            known = list(ok)
+            if not known:
+                raise ToolError("those belong to apps this agent can't use: " + ", ".join(no) + ". Say it's a job for Theta.")
+            unknown = unknown + [n + " (not one of this agent's apps)" for n in no]
     return ("Loaded: " + ", ".join(known) + ". Call them in your next step." +
             (f" Not tools: {', '.join(unknown)}." if unknown else ""))
 

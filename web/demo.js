@@ -7,7 +7,9 @@
   const now = () => Math.floor(Date.now() / 1000);
   let nextId = 100;
   const msgs = [];
-  const add = (role, text, meta, t) => { const m = {id: nextId++, bot: "theta", role, text, t: t || now(), meta: meta || {}}; msgs.push(m); return m; };
+  let bot = "theta";  // the chat a demo turn belongs to (agents: each has its own)
+  const add = (role, text, meta, t) => { const m = {id: nextId++, bot, role, text, t: t || now(), meta: meta || {}}; msgs.push(m); return m; };
+  const agents = [];  // the demo's own agents (server/agents.py keeps the real ones)
 
   // a little history, so the chat isn't empty
   const H = now() - 3600 * 20;
@@ -96,7 +98,7 @@
         const m = msgs[i]; if (m.id <= user.id) break;
         if (m.role === "assistant" && (!m.meta.proactive || m.meta.reply_to === user.id)) { deleted.push(m.id); msgs.splice(i, 1); }
       }
-    } else user = add("user", String(body.text || ""), {client_id: body.client_id});
+    } else { bot = agents.some(a => a.id === body.bot) ? body.bot : "theta"; user = add("user", String(body.text || ""), {client_id: body.client_id}); }
     const r = reply(user.text);
     let cancelled = false;
     const stream = new ReadableStream({
@@ -116,7 +118,7 @@
         const meta = {model: r.route.model, tier: r.route.tier, why: r.route.why, reply_to: user.id, usage: usage(r)};
         if (r.sources) meta.sources = r.sources;
         if (edit) meta.edited = true;
-        const done = add("assistant", r.text, meta);
+        bot = user.bot; const done = add("assistant", r.text, meta); bot = "theta";
         send("done", done);
         if (!cancelled) ctl.close();
       },
@@ -139,10 +141,21 @@
     await sleep(60 + Math.random() * 80);
     if (p === "/api/health") return json({ok: true, version: "demo"});
     if (p === "/api/login") return json({ok: true});
-    if (p === "/api/bots") return json([{id: "theta", name: "Theta", avatar: {kind: "globe"}}]);
+    if (p === "/api/bots" && method === "GET") return json([{id: "theta", name: "Theta", builtin: true, avatar: {kind: "globe"}}].concat(agents));
+    if (p === "/api/bots" && method === "POST") {
+      const name = String(body.name || "").trim(); if (!name) return json({error: "a name is 1 to 24 letters"}, 400);
+      const a = {id: name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + (agents.length + 1), name, color: body.color || "#4cd07d", about: body.about || "",
+                 instructions: body.instructions || "", apps: body.apps === undefined ? null : body.apps, builtin: false};
+      agents.push(a); return json(a);
+    }
+    if (p.startsWith("/api/bots/")) {
+      const i = agents.findIndex(a => a.id === decodeURIComponent(p.slice(10))); if (i < 0) return json({error: "no such agent"}, 400);
+      if (method === "DELETE") { agents.splice(i, 1); return json({ok: true}); }
+      Object.assign(agents[i], body); return json(agents[i]);
+    }
     if (p === "/api/messages") {
       const before = Number(u.searchParams.get("before")) || Infinity, limit = Number(u.searchParams.get("limit")) || 50;
-      const list = msgs.filter(m => m.id < before);
+      const who = u.searchParams.get("bot") || "theta", list = msgs.filter(m => m.id < before && (m.bot || "theta") === who);
       return json({messages: list.slice(Math.max(0, list.length - limit))});
     }
     if (p === "/api/chat" && method === "POST") return chatStream(body);

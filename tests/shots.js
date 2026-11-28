@@ -479,6 +479,38 @@ async function waitUp(url) {
     }
     check(e3.length === 0, "desktop page has no errors" + (e3.length ? ": " + e3.join(" | ") : ""));
     await dctx.close();
+
+    { // agents: make one from a ready-made start on Home, chat with it, and Theta's chat stays its own
+      const actx = await browser.newContext({viewport: {width: 390, height: 844}, deviceScaleFactor: 2});
+      const pa = await actx.newPage(); const ea = []; pa.on("pageerror", e => ea.push(String(e)));
+      await pa.goto(base + "/?demo=1"); await pa.waitForSelector("#home:not([hidden]) .ag-row .ag-new", {timeout: 8000});
+      await pa.click(".ag-row .ag-new"); await pa.waitForSelector("#agent-edit:not([hidden]) .ag-starts button", {timeout: 4000});
+      await pa.click("#agent-edit .ag-starts button:first-child"); await sleep(200);
+      check(await pa.inputValue("#agent-edit #ag-name") === "Job hunter", "a ready-made start fills in the agent's form");
+      { const f = path.join(OUT, "14-agent-new.png"); await pa.screenshot({path: f}); console.log("shot " + f); }
+      await pa.click("#agent-edit .ag-save");
+      await pa.waitForSelector("#chat:not([hidden])", {timeout: 5000});
+      await sleep(600);
+      const head = await pa.evaluate(() => ({name: document.querySelector("#chat-name span").textContent, ph: document.getElementById("c-text").placeholder,
+        msgs: document.querySelectorAll("#thread .msg").length}));
+      check(head.name === "Job hunter" && head.ph === "Ask Job hunter", "the new agent's chat opens under its own name: " + JSON.stringify(head));
+      await pa.fill("#c-text", "Any new roles near me?"); await pa.click("#c-send");
+      await pa.waitForFunction(() => !window.ThetaApp.state.streaming && document.querySelectorAll("#thread .msg.a").length > 0, null, {timeout: 15000}).catch(() => {});
+      await sleep(400);
+      { const f = path.join(OUT, "15-agent-chat.png"); await pa.screenshot({path: f}); console.log("shot " + f); }
+      await pa.click("#chat-back"); await pa.waitForSelector("#home:not([hidden])"); await sleep(400);
+      { const f = path.join(OUT, "16-home-agents.png"); await pa.screenshot({path: f}); console.log("shot " + f); }
+      await pa.click("#home-bot"); await pa.waitForSelector("#chat:not([hidden])"); await sleep(600);
+      const back = await pa.evaluate(() => ({name: document.querySelector("#chat-name span").textContent,
+        leaked: [...document.querySelectorAll("#thread .msg.u")].some(e => e.textContent.includes("Any new roles"))}));
+      check(back.name !== "Job hunter" && !back.leaked, "Home's globe opens Theta's own chat, without the agent's messages: " + JSON.stringify(back));
+      await pa.click("#chat-back"); await pa.waitForSelector("#home:not([hidden])");
+      await pa.click(".ag-row .ag-chip:not(.ag-new)"); await sleep(700);
+      const again = await pa.evaluate(() => [...document.querySelectorAll("#thread .msg.u")].some(e => e.textContent.includes("Any new roles")));
+      check(again, "and the agent's chat still has its own messages");
+      check(ea.length === 0, "agents: no page errors" + (ea.length ? ": " + ea.join(" | ") : ""));
+      await actx.close();
+    }
   } catch (e) {
     problems.push(String(e && e.stack || e));
     console.error(e);

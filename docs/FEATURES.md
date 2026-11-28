@@ -257,3 +257,12 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   keypad, nothing private said. The transcript lands in the chat when the call ends; at most 30 a day.
 - The 10-minute wait between calls to the same number can be turned off in Settings > Apps > Phone calls
   ("calls_gap_off"); calls to Theta never count toward it.
+- Agents (`server/agents.py`, `web/features/agents.js`): assistants the user makes beside Theta, each with a name, a
+  color, what it's for, instructions in the user's words and the apps it may use (email, calendar, drive, texts,
+  calls, browser, bank, routines, images; search, memory and reminders always work). Stored in the setting "agents";
+  GET/POST /api/bots, POST/DELETE /api/bots/<id>. Each has its own chat (messages are kept per bot) and shares
+  what's remembered about the user. Its system prompt says who it is and what it's for (`agents.prompt_block`), and
+  a turn never offers it another app's tools, which load_tools also refuses (`agents.allows`). Home: Theta's globe
+  stays the main button and always opens Theta; a row under it opens each agent (with a count of replies waiting)
+  and "New agent", which has ready-made starts (Job hunter, Coach, Money, Trip planner, Study buddy). Edit or remove
+  one from its chat's ... menu or by long-pressing its button; removing hides its chat but keeps the messages.

@@ -196,6 +196,13 @@ def system_prompt(bot="theta", now=None, extra=None, tools=True):
     if isinstance(name, str) and name.strip() and name.strip() != "Theta":
         parts.insert(1, f"The user named you {name.strip()}. That's your name now: use it for yourself "
                         "wherever these instructions say Theta.")
+    try:  # an agent the user made: who it is, what it's for, their instructions, its apps (server/agents.py)
+        from . import agents
+        who = agents.prompt_block(bot)
+    except Exception:  # noqa: BLE001
+        who = ""
+    if who:
+        parts.insert(1, who)
     if tools:
         parts.append(TOOL_GUIDE)
     try:
