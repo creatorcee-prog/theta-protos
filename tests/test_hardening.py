@@ -60,4 +60,11 @@ n = len(db.messages("theta"))
 r = app.decide_approval(aid, "approve", bot="theta")
 check("tapping an approval that was already discarded adds no message and isn't ok", len(db.messages("theta")) == n
       and r["ok"] is False and r["status"] == 409, r)
+
+# ---- dead pages (a 404, a bot wall) are failures, never a link card or the reply's picture
+from server import browser
+check("error statuses and bot walls are dead pages; a real page isn't",
+      [browser.dead_page(*a) for a in [(404, "Crutchfield", "x"), (200, "Robot or human?", "hold"), (200, "Just a moment...", ""),
+                                       (403, "Sony", "x"), (200, "Sony WH-1000XM5 | Best Buy", "A" * 5000)]]
+      == ["not found", "blocked", "blocked", "blocked", ""])
 print("all hardening checks passed")

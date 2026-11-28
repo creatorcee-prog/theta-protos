@@ -218,6 +218,8 @@ svg { width: 22px; height: 22px; display: block; flex: none; }
   position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--composer-h, calc(var(--sab) + 84px)) + 12px); z-index: 6;
   display: flex; align-items: center; gap: 6px; padding: 8px 14px 8px 10px; border-radius: 999px; background: #2a2a2a; border: 1px solid #3a3a3a;
   font-size: 14px; animation: fadeUp .25s var(--ease);
+  /* a soft dark halo, so the text it floats over never reads through or collides with it */
+  box-shadow: 0 0 0 6px rgba(17,17,17,.55), 0 6px 22px 8px rgba(0,0,0,.6);
 }
 .jump svg { width: 18px; height: 18px; }
 

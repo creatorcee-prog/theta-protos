@@ -601,6 +601,31 @@ def _get_json(url, params, timeout=12):
         raise _err("couldn't reach the weather service; try again in a minute, or use web_search") from None
 
 
+_STATES = dict(x.split("=") for x in """AL=Alabama AK=Alaska AZ=Arizona AR=Arkansas CA=California CO=Colorado CT=Connecticut
+DE=Delaware FL=Florida GA=Georgia HI=Hawaii ID=Idaho IL=Illinois IN=Indiana IA=Iowa KS=Kansas KY=Kentucky LA=Louisiana
+ME=Maine MD=Maryland MA=Massachusetts MI=Michigan MN=Minnesota MS=Mississippi MO=Missouri MT=Montana NE=Nebraska
+NV=Nevada NH=New_Hampshire NJ=New_Jersey NM=New_Mexico NY=New_York NC=North_Carolina ND=North_Dakota OH=Ohio
+OK=Oklahoma OR=Oregon PA=Pennsylvania RI=Rhode_Island SC=South_Carolina SD=South_Dakota TN=Tennessee TX=Texas UT=Utah
+VT=Vermont VA=Virginia WA=Washington WV=West_Virginia WI=Wisconsin WY=Wyoming DC=District_of_Columbia""".split())
+
+
+def _geocode(place):
+    """The best match for "Salt Lake City, UT" / "Paris, France" / "Denver". Open-Meteo's search only matches a bare
+    place name (a "City, State" query finds nothing, which made every such weather call fail), so search the name and
+    use the rest to pick among the results."""
+    name, _, rest = place.partition(",")
+    res = (_get_json("https://geocoding-api.open-meteo.com/v1/search", {"name": name.strip(), "count": 10}) or {}).get("results") or []
+    if not res:
+        return None
+    rest = rest.strip().lower()
+    if rest:
+        want = {rest, _STATES.get(rest.upper(), "").replace("_", " ").lower()} - {""}
+        for r in res:
+            if want & {str(r.get("admin1") or "").lower(), str(r.get("country") or "").lower(), str(r.get("country_code") or "").lower()}:
+                return r
+    return res[0]
+
+
 def _t_weather(args, ctx):
     """Weather from Open-Meteo (free, no key): now, today's high and low, the next hours. Always shows a card."""
     from . import tools
@@ -614,10 +639,9 @@ def _t_weather(args, ctx):
         else:
             raise _err("say which place, e.g. place='Denver', or share a location in Settings")
     if lat is None:
-        g = _get_json("https://geocoding-api.open-meteo.com/v1/search", {"name": place, "count": 1})
-        hit = (g.get("results") or [None])[0]
+        hit = _geocode(place)
         if not hit:
-            raise _err(f"couldn't find a place called {place!r}; try 'City, State'")
+            raise _err(f"couldn't find a place called {place!r}; try just the city's name, e.g. place='Denver'")
         lat, lon = hit["latitude"], hit["longitude"]
         name = ", ".join(x for x in (hit.get("name"), hit.get("admin1")) if x)
     unit = "C" if str(args.get("unit") or "").upper().startswith("C") else "F"

@@ -271,7 +271,7 @@
     if (opts.onClick) b.addEventListener("click", opts.onClick);
     return b;
   }
-  const wrap = (cls, kids) => { const n = el("div", "cards-in " + (cls || "")); for (const k of kids) if (k) n.append(k); return n; };
+  const wrap = (cls, kids = []) => { const n = el("div", "cards-in " + (cls || "")); for (const k of kids) if (k) n.append(k); return n; };
   const kicker = (text, lead) => { const k = el("div", "cards-kicker"); if (lead) k.append(lead); k.append(el("span", null, text)); return k; };
   const num = (v, d) => (typeof v === "number" && isFinite(v) ? v : d);
   const fmt = (v, digits) => Number(v).toLocaleString(undefined, {minimumFractionDigits: digits, maximumFractionDigits: digits});

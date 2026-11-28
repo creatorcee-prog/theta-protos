@@ -97,9 +97,10 @@ async function waitUp(url) {
       await page.evaluate(() => { document.querySelector("#thread .pg").scrollIntoView({block: "center"});
         // and the live card while working: in progress spins, to come shows a clock
         const live = Theta.progressCard([{text: "Research completed", state: "done"}, {text: "Comparing findings", state: "active"}, {text: "Verification pending", state: "pending"}]);
-        live.id = "pg-live"; document.querySelector("#thread .pg").after(live); });
+        // shown in the finished card's place, so the shot never looks like two cards for one turn
+        const done = document.querySelector("#thread .pg"); live.id = "pg-live"; done.after(live); done.hidden = true; });
       await sleep(200); await shot("02d-progress");
-      await page.evaluate(() => document.getElementById("pg-live").remove());
+      await page.evaluate(() => { document.getElementById("pg-live").remove(); document.querySelector("#thread .pg").hidden = false; });
     }
     const usage0 = (await page.$$("#thread .usage .u-txt")).length;
     check(usage0 >= 2, "history replies show their token use");

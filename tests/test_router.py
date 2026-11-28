@@ -247,7 +247,12 @@ def main():
     if FAILED:
         print(f"\n{len(FAILED)} failed: {', '.join(FAILED)}")
         sys.exit(1)
-    print("\nall router checks passed")
+    router.CLASSIFIER = None
+check("shopping for the best price is live facts (search), not short chat",
+      router.decide("Find the best price on a pair of Sony WH-1000XM5 headphones.")[0] == "search")
+check("a reminder that says 'tonight' isn't a live-facts question",
+      router.decide("Remind me to call mom at 7pm tonight.")[0] != "search")
+print("\nall router checks passed")
 
 
 if __name__ == "__main__":

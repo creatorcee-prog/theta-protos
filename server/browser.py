@@ -285,6 +285,22 @@ class _Engine:
 _engine = _Engine()
 
 
+def shutdown(timeout=5):
+    """Close every page and stop Playwright's driver cleanly (on server stop). Without this, a SIGTERM left the
+    driver (a Node process) writing into a closed pipe, which died with an unhandled EPIPE in the logs."""
+    if _engine.thread is None or not _engine.thread.is_alive():
+        return
+
+    def stop(eng):
+        for key in list(eng.sessions):
+            eng.close(key)
+        eng.reap(now=float("inf"))
+    try:
+        _engine.call(stop, timeout=timeout)
+    except Exception:  # noqa: BLE001  best effort while shutting down
+        pass
+
+
 def _key(ctx):
     return str((ctx or {}).get("bot") or "theta")
 
@@ -710,6 +726,31 @@ def _goto(s, url):
 # ---------------------------------------------------------------- tools
 
 
+# A page that answered but isn't the page: an error status, or a bot wall (Cloudflare, Akamai, PerimeterX...). Such a
+# page used to become a link card and the reply's final screenshot ("404: Not Found" as the picture of a price hunt).
+_WALL = re.compile(r"(?i)\b(access denied|robot or human|are you a (?:robot|human)|just a moment|attention required|"
+                   r"verify(?:ing)? you are (?:a )?human|checking (?:if the site connection is secure|your browser)|"
+                   r"sorry for the wait|pardon our interruption|request blocked|bot (?:check|detection)|"
+                   r"page not found|404 not found|^404\b|403 forbidden|captcha|unusual traffic)")
+
+
+def host_of(url):
+    try:
+        return (urllib.parse.urlsplit(url).hostname or "").removeprefix("www.")
+    except ValueError:
+        return ""
+
+
+def dead_page(status, title, text):
+    """Why this page is useless ("blocked" / "not found" / "error"), or ""."""
+    if status and status >= 400:
+        return "not found" if status in (404, 410) else "blocked" if status in (401, 403, 429) else "error"
+    head = f"{title or ''}\n{' '.join(str(text or '').split())[:400]}"
+    if _WALL.search(title or "") or (len(str(text or "")) < 1500 and _WALL.search(head)):
+        return "not found" if re.search(r"(?i)404|not found", head) else "blocked"
+    return ""
+
+
 def _browse_open(args, ctx):
     _need()
     url = (args.get("url") or "").strip()
@@ -719,10 +760,19 @@ def _browse_open(args, ctx):
 
     def work(eng):
         s = eng.session(_key(ctx))
-        _goto(s, url)
+        resp = _goto(s, url)
         title, text, els = _snap(s)
-        return _render(s, title, text, els, find), title, s.page.url, text
-    out, title, final_url, text = _engine.call(work)
+        status = getattr(resp, "status", None) if resp is not None else None
+        return _render(s, title, text, els, find), title, s.page.url, text, status
+    out, title, final_url, text, status = _engine.call(work)
+    dead = dead_page(status, title, text)
+    if isinstance(ctx, dict):
+        ctx["last_page_dead"] = bool(dead)  # the reply's final screenshot skips a dead page
+    if dead:
+        _say(ctx, f"{host_of(final_url) or 'That site'} {'blocked the visit' if dead == 'blocked' else 'had no such page'}")
+        raise ToolError(f"{final_url} is {'a bot check / access-denied wall' if dead == 'blocked' else 'a dead page (' + dead + ')'}"
+                        f"{f', HTTP {status}' if status else ''}, not the content. Don't retry this site; use another "
+                        "source (a different store, or web_search). Don't cite or link it.")
     _say(ctx, f"Reading {title.strip()}" if (title or "").strip() else "")
     try:  # a link card for the page Theta opened, every time (https pages only)
         from . import cards

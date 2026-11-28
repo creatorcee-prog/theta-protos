@@ -499,7 +499,7 @@ def _agent_turn(bot, text, history, user, route, ack_text, emit, log_row, t0, ta
         rmeta["approvals"] = [a["id"] for a in approvals]
     if info.get("sources"):
         rmeta["sources"] = info["sources"]
-    if any(str(t).startswith("browse_") for t in info.get("tools") or []):
+    if any(str(t).startswith("browse_") for t in info.get("tools") or []) and not tctx.get("last_page_dead"):
         try:  # the last picture of Theta's screen, so the reply shows where the browser ended up
             from . import live
             shot = live.snapshot(bot)
@@ -1628,9 +1628,19 @@ def serve():
     start_ticker()
     httpd = make(host, port)
     log(f"theta-protos {__version__} on http://{host}:{port}")
+    import signal
+
+    def _term(*_a):  # a redeploy sends SIGTERM: shut down like Ctrl-C, so the cleanup below runs
+        raise KeyboardInterrupt
+    try:
+        signal.signal(signal.SIGTERM, _term)
+    except ValueError:  # not the main thread (tests)
+        pass
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         httpd.server_close()
+        if "server.browser" in sys.modules:  # stop the browser's driver before we go, so it doesn't crash on a dead pipe
+            sys.modules["server.browser"].shutdown()

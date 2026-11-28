@@ -21,9 +21,18 @@
     ["user", "Find me the cheapest arc floor lamp and when it'd get here"],
     ["assistant", "**$89 at Lamp Shop**, the lowest of 4 stores, free returns. Delivery quotes are still loading on two of them, so I'll check those again tonight.", {model: "deepseek-chat", tier: "quick", tools: ["progress_update", "web_search"], progress: [{text: "Research completed", state: "done"}, {text: "Comparing findings", state: "done"}, {text: "Verify delivery dates", state: "skipped"}]}],
     ["assistant", "Sorted your newsletters", {task: {title: "Sorted 214 newsletters into Later", state: "done"}}],
+    ["user", "Do I need a coat for the game tonight?"],
+    ["assistant", "Yes: it's **34°** and dropping to 21° by the time it ends, with light snow after 8.", {model: "deepseek-chat", tier: "quick", tools: ["weather"],
+      cards: [{type: "weather", place: "Denver, Colorado", temp: 34, condition: "light snow", hi: 38, lo: 21, unit: "F", as_of: "now",
+        hourly: [{time: "6 PM", temp: 33, condition: "cloudy"}, {time: "7 PM", temp: 31, condition: "light snow"}, {time: "8 PM", temp: 29, condition: "light snow"}, {time: "9 PM", temp: 27, condition: "light snow"}]},
+        {type: "link", url: "https://www.weather.gov/bou/", title: "Denver/Boulder forecast office", site: "weather.gov", summary: "Winter weather advisory until 5 AM. Snow 1 to 3 inches."}]}],
     ["assistant", "Evening brief: nothing urgent. Your package from the camera shop lands tomorrow before noon, and it's going down to **14°F** tonight, so the hose bib might want a cover.", {proactive: true, source: "brief", level: 3}],
   ];
   seed.forEach((s, i) => add(s[0], s[1], s[2], H + i * 600));
+  // the evening brief is stamped at this evening's 6:30 (it read "3:06 AM" when it shared the history's clock)
+  const ev = new Date(); ev.setHours(18, 30, 0, 0); if (ev.getTime() > Date.now()) ev.setDate(ev.getDate() - 1);
+  const brief = msgs.find(m => m.meta.source === "brief"); if (brief) brief.t = ev.getTime() / 1000;
+  msgs.sort((a, b) => a.t - b.t);
 
   const settings = (() => { try { return JSON.parse(localStorage.getItem("protos:demo-settings")) || null; } catch (e) { return null; } })()
     || {proactive: true, quiet: [22, 7], tz: "America/Denver", loc: null};

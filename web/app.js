@@ -728,7 +728,7 @@
   // beat (pacing, presentation only: never longer than a person typing those words would take from the moment
   // Theta read your message). A long or detailed reply streams as it's written. LONG_WAIT_MS: a short reply that
   // still isn't finished by then starts showing as it comes, so nothing ever hangs behind the globe.
-  const LONG_WAIT_MS = 6000;
+  const LONG_WAIT_MS = 1500;
   async function send(text, opts) {
     opts = opts || {};
     text = String(text || "").trim();

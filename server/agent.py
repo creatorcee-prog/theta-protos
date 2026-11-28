@@ -298,7 +298,7 @@ class Stopped(Exception):
 
 
 NOTE_MAX = 160  # longest note kept from the text before tool calls
-HOLD_MAX = 700  # text held back while it might turn out to come before tool calls
+HOLD_MAX = 220  # text held back while it might be a short note before tool calls (a note is at most NOTE_MAX); past that it streams
 MAX_NOTES = 2   # progress texts per turn: "On it, I'll..." and at most one update
 
 

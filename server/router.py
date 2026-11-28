@@ -106,6 +106,14 @@ _SEARCH = re.compile(
     r"|price of|stock price|stock market|bitcoin|btc|exchange rate|weather|forecast|score|who won|election"
     r"|open now|hours for|traffic|release date|just (happened|announced)|breaking)\b"
     r"|\b(20[2-9]\d)\b", re.I)
+# shopping and comparing prices are live facts too (they used to land on "short chat", then ran 16 browsing steps)
+_SHOP = re.compile(r"\b(best (?:price|deal)s?|cheapest|lowest price|deals? on|on sale|where (?:can i|to) buy|in stock|"
+                   r"compare (?:prices|stores)|price (?:check|match)|how much (?:is|are|does|do)|buy (?:a|an|the|some)\b)", re.I)
+# doing something with Theta's own tools (a reminder, the calendar, a message) isn't a live-facts question, even
+# when it says "tonight" or "today" ("Remind me to call mom at 7pm tonight" was routed to search)
+_ACTION = re.compile(r"^\s*(?:please\s+)?(?:remind me|set (?:a |an )?(?:reminder|alarm|timer)|add\b.*\b(?:calendar|list)|"
+                     r"schedule|cancel|move|reschedule|text|email|call|send|message|note that|remember|forget|delete|"
+                     r"book)\b", re.I)
 _THINK = re.compile(
     r"\b(why|compare|comparison|versus|vs\.?|should i|pros and cons|trade-?offs?|plan|planning|strategy"
     r"|step[- ]by[- ]step|explain how|how does|analy[sz]e|prove|derive|calculate|solve|estimate"
@@ -127,7 +135,7 @@ def _signals(text):
     s = set()
     if _CODE.search(text):
         s.add("code")
-    if _SEARCH.search(text):
+    if (_SEARCH.search(text) or _SHOP.search(text)) and not _ACTION.match(text):
         s.add("search")
     if _THINK.search(text):
         s.add("think")
