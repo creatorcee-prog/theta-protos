@@ -10,17 +10,17 @@
   const style = document.createElement("style");
   style.textContent = `
 .mc-keys { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0; }
-.mc-key { font-size: 0.7647rem; padding: 4px 10px; border-radius: 999px; background: #2a2a2a; color: var(--muted); }
-.mc-key.on { background: rgba(76, 208, 125, .16); color: #4cd07d; }
-.mc-tier { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid #262626; font-size: 0.8824rem; }
+.mc-key { font-size: var(--fs-s); padding: 4px 10px; border-radius: var(--r-pill); background: var(--fill); color: var(--muted); }
+.mc-key.on { background: rgba(76, 208, 125, .16); color: var(--good); }
+.mc-tier { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--raised); font-size: var(--fs-m); }
 .mc-tier b { font-weight: 500; }
-.mc-tier small { display: block; color: var(--muted); font-size: 0.7647rem; }
-.mc-tier .mc-m { text-align: right; color: #cfcfcf; font-size: 0.7941rem; overflow-wrap: anywhere; max-width: 55%; }
-.mc-tier .mc-m.none { color: #ff8a80; }
-.mc-res { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-top: 1px solid #262626; font-size: 0.8529rem; }
+.mc-tier small { display: block; color: var(--muted); font-size: var(--fs-s); }
+.mc-tier .mc-m { text-align: right; color: var(--text-2); font-size: var(--fs-s); overflow-wrap: anywhere; max-width: 55%; }
+.mc-tier .mc-m.none { color: var(--bad-text); }
+.mc-res { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-top: 1px solid var(--raised); font-size: var(--fs-sm); }
 .mc-dot { width: 20px; flex: none; font-weight: 700; }
-.mc-dot.ok { color: #4cd07d; } .mc-dot.bad { color: #ff8a80; }
-.mc-res small { display: block; color: var(--muted); font-size: 0.7647rem; overflow-wrap: anywhere; }
+.mc-dot.ok { color: var(--good); } .mc-dot.bad { color: var(--bad-text); }
+.mc-res small { display: block; color: var(--muted); font-size: var(--fs-s); overflow-wrap: anywhere; }
 `;
   document.head.append(style);
 

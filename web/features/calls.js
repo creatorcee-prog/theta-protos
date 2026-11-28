@@ -13,27 +13,27 @@
 .calls-card { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
 .calls-card .calls-top { display: flex; align-items: center; gap: 10px; }
 .calls-card .calls-ic { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
-  background: linear-gradient(145deg, #1f6f8b, #1b3f6b); font-size: 1rem; }
+  background: linear-gradient(145deg, #1f6f8b, #1b3f6b); font-size: var(--fs-body); }
 .calls-card .calls-who { font-weight: 600; display: block; }
-.calls-card .calls-sub { color: var(--muted); font-size: 0.8235rem; display: block; }
-.calls-card .calls-out { font-size: 0.9412rem; line-height: 1.38; }
-.calls-card details { font-size: 0.8824rem; }
+.calls-card .calls-sub { color: var(--muted); font-size: var(--fs-sm); display: block; }
+.calls-card .calls-out { font-size: var(--fs-callout); line-height: 1.38; }
+.calls-card details { font-size: var(--fs-m); }
 .calls-card summary { color: var(--accent); cursor: pointer; list-style: none; padding: 2px 0; }
 .calls-card summary::-webkit-details-marker { display: none; }
 .calls-card .calls-line { margin: 6px 0 0; line-height: 1.35; }
 .calls-card .calls-line b { color: var(--muted); font-weight: 500; margin-right: 6px; }
-.calls-phone { background: #2a2a2a; border: 0; border-radius: 12px; padding: 8px 12px; font-size: 0.9412rem; color: var(--text);
+.calls-phone { background: var(--fill); border: 0; border-radius: var(--r-m); padding: 8px 12px; font-size: var(--fs-callout); color: var(--text);
   width: 100%; max-width: 230px; outline: none; }
-.calls-phone:focus { box-shadow: 0 0 0 2px #3a3a3a; }
-.calls-note { color: var(--muted); font-size: 0.8235rem; margin: 0; padding: 0 0 12px; line-height: 1.35; }
-.calls-setup { background: #1d1d1d; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 4px 0 12px; font-size: 0.8529rem; line-height: 1.4; }
-.calls-setup h4 { margin: 0 0 6px; font-size: 0.8824rem; }
+.calls-phone:focus { box-shadow: 0 0 0 2px var(--fill-2); }
+.calls-note { color: var(--muted); font-size: var(--fs-sm); margin: 0; padding: 0 0 12px; line-height: 1.35; }
+.calls-setup { background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px 14px; margin: 4px 0 12px; font-size: var(--fs-sm); line-height: 1.4; }
+.calls-setup h4 { margin: 0 0 6px; font-size: var(--fs-m); }
 .calls-setup ol { margin: 6px 0 0; padding-left: 20px; }
 .calls-setup li { margin: 0 0 8px; }
-.calls-setup code { background: #2a2a2a; border-radius: 6px; padding: 1px 5px; font-size: 0.7647rem; word-break: break-all; }
-.calls-setup .cs-copy { margin-left: 6px; font-size: 0.7353rem; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+.calls-setup code { background: var(--fill); border-radius: var(--r-xs); padding: 1px 5px; font-size: var(--fs-s); word-break: break-all; }
+.calls-setup .cs-copy { margin-left: 6px; font-size: var(--fs-xs); color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
 .calls-setup .cs-vars { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.calls-setup .cs-var { font-size: 0.7353rem; border-radius: 999px; padding: 2px 9px; background: #2a2a2a; color: var(--muted); }
+.calls-setup .cs-var { font-size: var(--fs-xs); border-radius: var(--r-pill); padding: 2px 9px; background: var(--fill); color: var(--muted); }
 .calls-setup .cs-var.ok { background: #16351f; color: #8fe0a5; }
 .calls-sample { padding: 8px 0 14px; }
 .calls-sample .msg { max-width: 100%; }
@@ -301,23 +301,23 @@
   // ---------------------------------------------------------------- Call history: every call, with its transcript
   const hstyle = document.createElement("style");
   hstyle.textContent = `
-.ch-row { width: 100%; text-align: left; display: flex; gap: 12px; align-items: flex-start; padding: 12px 2px; border-top: 1px solid #262626; color: var(--text); }
+.ch-row { width: 100%; text-align: left; display: flex; gap: 12px; align-items: flex-start; padding: 12px 2px; border-top: 1px solid var(--raised); color: var(--text); }
 .ch-row:first-child { border-top: 0; }
-.ch-ic { width: 38px; height: 38px; border-radius: 50%; background: #262626; display: grid; place-items: center; flex: none; font-size: 1rem; }
+.ch-ic { width: 38px; height: 38px; border-radius: 50%; background: var(--raised); display: grid; place-items: center; flex: none; font-size: var(--fs-body); }
 .ch-txt { flex: 1; min-width: 0; }
-.ch-txt b { display: block; font-weight: 500; font-size: 0.9706rem; }
-.ch-txt small { display: block; color: var(--muted); font-size: 0.7941rem; }
-.ch-out { display: block; color: #cfcfcf; font-size: 0.8235rem; margin-top: 3px; }
+.ch-txt b { display: block; font-weight: 500; font-size: var(--fs-callout); }
+.ch-txt small { display: block; color: var(--muted); font-size: var(--fs-s); }
+.ch-out { display: block; color: var(--text-2); font-size: var(--fs-sm); margin-top: 3px; }
 .ch-tr { padding: 4px 0 12px 50px; display: flex; flex-direction: column; gap: 6px; }
-.ch-say { max-width: 88%; padding: 7px 11px; border-radius: 16px; font-size: 0.8529rem; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
-.ch-say.theta { background: #2c2c2e; align-self: flex-start; }
+.ch-say { max-width: 88%; padding: 7px 11px; border-radius: var(--r-l); font-size: var(--fs-sm); line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ch-say.theta { background: var(--fill); align-self: flex-start; }
 .ch-say.them { background: #0a84ff; color: #fff; align-self: flex-end; }
-.ch-who { font-size: 0.6765rem; color: var(--muted); margin: 0 4px -3px; }
+.ch-who { font-size: var(--fs-2xs); color: var(--muted); margin: 0 4px -3px; }
 .ch-who.r { align-self: flex-end; }
 .calls-el { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
-.calls-el select { background: #2a2a2a; border: 0; border-radius: 12px; padding: 10px 12px; font-size: 0.9412rem; color: var(--text); align-self: flex-start; }
+.calls-el select { background: var(--fill); border: 0; border-radius: var(--r-m); padding: 10px 12px; font-size: var(--fs-callout); color: var(--text); align-self: flex-start; }
 .ch-audio { width: 100%; height: 40px; margin-bottom: 6px; }
-.ch-rec { font-size: 0.7059rem; color: #ff8a80; margin-left: 6px; }
+.ch-rec { font-size: var(--fs-xs); color: var(--bad-text); margin-left: 6px; }
 `;
   document.head.append(hstyle);
   const fmtNum = n => (/^\+1\d{10}$/.test(String(n || "")) ? `+1 ${n.slice(2, 5)}-${n.slice(5, 8)}-${n.slice(8)}` : String(n || ""));

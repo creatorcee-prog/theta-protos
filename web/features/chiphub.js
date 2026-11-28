@@ -9,19 +9,19 @@
 
   const css = document.createElement("style");
   css.textContent = `
-.chh h4 { margin: 22px 4px 8px; font-size: 0.7647rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-.chh-item { border-top: 1px solid #2a2a2a; padding: 12px 16px 12px 0; }
+.chh h4 { margin: 22px 4px 8px; font-size: var(--fs-s); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.chh-item { border-top: 1px solid var(--fill); padding: 12px 16px 12px 0; }
 .chh-item:first-child { border-top: 0; }
 .chh-head { display: flex; gap: 12px; align-items: center; }
-.chh-ic { width: 38px; height: 38px; border-radius: 12px; background: #262628; display: grid; place-items: center; font-size: 1.1765rem; flex: none; }
+.chh-ic { width: 38px; height: 38px; border-radius: var(--r-m); background: var(--raised); display: grid; place-items: center; font-size: var(--fs-lg); flex: none; }
 .chh-tx { flex: 1; min-width: 0; text-align: left; color: var(--text); }
-.chh-tx b { display: block; font-size: 0.9706rem; font-weight: 500; }
-.chh-tx span { display: block; color: var(--muted); font-size: 0.7941rem; line-height: 1.35; }
-.chh-steps { white-space: pre-wrap; color: #cfcfcf; font-size: 0.8235rem; line-height: 1.45; margin: 10px 0 4px 50px; }
-.chh-from { margin: 4px 0 0 50px; font-size: 0.7353rem; color: var(--muted); }
+.chh-tx b { display: block; font-size: var(--fs-callout); font-weight: 500; }
+.chh-tx span { display: block; color: var(--muted); font-size: var(--fs-s); line-height: 1.35; }
+.chh-steps { white-space: pre-wrap; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; margin: 10px 0 4px 50px; }
+.chh-from { margin: 4px 0 0 50px; font-size: var(--fs-xs); color: var(--muted); }
 .chh-from a { color: var(--muted); }
 .chh-btns { display: flex; gap: 8px; margin: 10px 0 0 50px; flex-wrap: wrap; }
-.chh-src { width: 100%; box-sizing: border-box; background: #262628; border: 0; border-radius: 12px; padding: 10px 12px; color: var(--text); font: inherit; font-size: 0.8824rem; min-height: 70px; }
+.chh-src { width: 100%; box-sizing: border-box; background: var(--raised); border: 0; border-radius: var(--r-m); padding: 10px 12px; color: var(--text); font: inherit; font-size: var(--fs-m); min-height: 70px; }
 `;
   document.head.append(css);
 

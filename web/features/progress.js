@@ -8,10 +8,10 @@
   const {el} = T;
   const css = document.createElement("style");
   css.textContent = `
-.pg { background: #1f1f21; border: 1px solid #2c2c2e; border-radius: 20px; padding: 6px 14px; margin: 6px 0 8px; max-width: 340px; text-align: left; }
+.pg { background: #1f1f21; border: 1px solid var(--fill); border-radius: var(--r-l); padding: 6px 14px; margin: 6px 0 8px; max-width: 340px; text-align: left; }
 .msg .pg { margin: 2px 0 10px; }
-.pg-step { display: flex; align-items: center; gap: 12px; padding: 9px 0; font-size: 0.9118rem; line-height: 1.3; color: var(--text); }
-.pg-step + .pg-step { border-top: 1px solid #2a2a2c; }
+.pg-step { display: flex; align-items: center; gap: 12px; padding: 9px 0; font-size: var(--fs-m); line-height: 1.3; color: var(--text); }
+.pg-step + .pg-step { border-top: 1px solid var(--fill); }
 .pg-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; }
 .pg-step.done .pg-ic { border-radius: 50%; background: #30d158; }
 .pg-step.done .pg-ic svg { width: 13px; height: 13px; color: #0b2614; }

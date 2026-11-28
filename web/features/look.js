@@ -23,12 +23,12 @@
 .lk-row.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
 .lk-row.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px); mask-image: linear-gradient(90deg, transparent, #000 36px); }
 .lk-row.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
-.lk-tile { flex: none; width: 86px; scroll-snap-align: start; display: grid; justify-items: center; gap: 4px; padding: 6px 4px 8px; border-radius: 18px;
-  background: #1a1a1c; border: 2px solid transparent; color: var(--muted); font-size: 0.7647rem; }
+.lk-tile { flex: none; width: 86px; scroll-snap-align: start; display: grid; justify-items: center; gap: 4px; padding: 6px 4px 8px; border-radius: var(--r-l);
+  background: #1a1a1c; border: 2px solid transparent; color: var(--muted); font-size: var(--fs-s); }
 .lk-tile.on { border-color: var(--accent); color: var(--text); }
 .lk-tile canvas { width: 70px; height: 70px; display: block; }
 .lk-tile .lk-dot { width: 46px; height: 46px; border-radius: 50%; margin: 12px; }
-.lk-sec { display: block; color: var(--muted); font-size: 0.7647rem; margin: 12px 2px 6px; text-transform: uppercase; letter-spacing: .03em; }
+.lk-sec { display: block; color: var(--muted); font-size: var(--fs-s); margin: 12px 2px 6px; text-transform: uppercase; letter-spacing: .03em; }
 `;
   document.head.append(css);
 

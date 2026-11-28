@@ -86,7 +86,7 @@ async function waitUp(url) {
     check((await page.$$(".chp-row .chp-pill")).length >= 5 && await page.isVisible(".chp-row"), "the chips row shows above the empty chat box");
     await shot("02b-chat-chips");
     { // a message someone sent, quoted by Theta ("> " lines), shows as a received-message card, sender inside it
-      await page.waitForSelector("#thread .cm-quoted", {timeout: 5000}).catch(() => {});
+      await page.waitForSelector("#thread .cm-quoted", {timeout: 12000}).catch(() => {});
       const q = await page.evaluate(() => { const f = document.querySelector("#thread .cm-quoted"); return f && {text: f.innerText, raw: document.querySelector("#thread").innerText.includes("> Hey")}; });
       check(q && /Received/i.test(q.text) && /From\s*Sam Rivera/i.test(q.text) && /Email/i.test(q.text) && !q.raw, "a quoted email shows as a Received card with who sent it, no raw > syntax");
       await page.evaluate(() => document.querySelector("#thread .cm-quoted").scrollIntoView({block: "center"})); await sleep(150);

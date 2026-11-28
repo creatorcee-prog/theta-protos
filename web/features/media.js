@@ -9,9 +9,9 @@
 
   const style = document.createElement("style");
   style.textContent = `
-.media-img { display: block; max-width: 100%; width: 320px; height: auto; border-radius: 16px; margin: 8px 0; background: #1b1b1b; }
+.media-img { display: block; max-width: 100%; width: 320px; height: auto; border-radius: var(--r-l); margin: 8px 0; background: var(--sunk); }
 .media-img.broken { min-height: 48px; }
-.media-gone { color: var(--muted); font-size: 0.8235rem; }
+.media-gone { color: var(--muted); font-size: var(--fs-sm); }
 `;
   document.head.append(style);
 
