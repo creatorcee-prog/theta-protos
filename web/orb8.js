@@ -130,10 +130,14 @@
     gr.addColorStop(0, hsla(cur.hue, 80, 60, (0.16 + 0.1 * lv) * k)); gr.addColorStop(0.7, hsla(pal8(1, 0.4), 80, 50, 0.08 * k)); gr.addColorStop(1, hsla(cur.hue, 80, 45, 0.02 * k));
     g.fillStyle = gr; g.beginPath(); g.arc(c, c, R, 0, TAU); g.fill();
   }
-  let bloomCv = null;
+  let bloomCv = null, bloomN = 0, bloomFor = null;
   function bloom8(g, S, a = 0.55) { a *= 0.75;
     if (!bloomCv) { bloomCv = document.createElement("canvas"); bloomCv.width = bloomCv.height = 60; }
-    const b = bloomCv.getContext("2d"), cw = g.canvas.width, ch = g.canvas.height; b.globalCompositeOperation = "copy"; b.drawImage(g.canvas, 0, 0, 60, 60);
+    // the frame is shrunk into the bloom only every third frame (copying the whole canvas each frame was most of the
+    // glass styles' cost); a soft blur over slow light looks the same, and it's laid back every frame
+    const b = bloomCv.getContext("2d"), cw = g.canvas.width, ch = g.canvas.height;
+    bloomN = (bloomN + 1) % 3;
+    if (bloomN === 0 || bloomFor !== g.canvas) { b.globalCompositeOperation = "copy"; b.drawImage(g.canvas, 0, 0, 60, 60); bloomFor = g.canvas; }
     g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "lighter"; g.globalAlpha *= a; g.imageSmoothingQuality = "high";
     g.drawImage(bloomCv, 0, 0, cw, ch); g.restore();
   }
@@ -170,7 +174,7 @@
         const nrm = norm3(cross3([M[i + 1][0] - M[i][0], M[i + 1][1] - M[i][1], M[i + 1][2] - M[i][2]], Wv[i]));
         const u = i / N, f = Math.abs(nrm[2]), [hue, tone] = moment8(pal8(rb.k % 3) + 30 * (u - 0.5) - 30 * W.thinking, M[i][0], M[i][1], M[i][2]);
         for (const [k, a] of [[1, 0.07], [0.8, 0.09], [0.6, 0.12], [0.4, 0.14], [0.2, 0.17]]) Q.push([M[i][2] - k * 0.001, i, M, Wv, k, a, f, Math.sin(Math.PI * u), hue, tone]);
-        if (i % 2 === 0) SP.push([M[i], hue, Math.hypot(Wv[i][0], Wv[i][1]) * Math.sin(Math.PI * u)]);
+        if (i % 3 === 0) SP.push([M[i], hue, Math.hypot(Wv[i][0], Wv[i][1]) * Math.sin(Math.PI * u) * 1.15]);  // a glow every 3rd point
       }
     }
     Q.sort((a, b) => b[0] - a[0]);
