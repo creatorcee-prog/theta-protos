@@ -86,12 +86,14 @@ async function waitUp(url) {
     check((await page.$$(".chp-row .chp-pill")).length >= 5 && await page.isVisible(".chp-row"), "the chips row shows above the empty chat box");
     await shot("02b-chat-chips");
     { // a message someone sent, quoted by Theta ("> " lines), shows as a received-message card, sender inside it
+      await page.waitForSelector("#thread .cm-quoted", {timeout: 5000}).catch(() => {});
       const q = await page.evaluate(() => { const f = document.querySelector("#thread .cm-quoted"); return f && {text: f.innerText, raw: document.querySelector("#thread").innerText.includes("> Hey")}; });
       check(q && /Received/i.test(q.text) && /From\s*Sam Rivera/i.test(q.text) && /Email/i.test(q.text) && !q.raw, "a quoted email shows as a Received card with who sent it, no raw > syntax");
       await page.evaluate(() => document.querySelector("#thread .cm-quoted").scrollIntoView({block: "center"})); await sleep(150);
       await shot("02c-quoted-email");
     }
     { // a multi-step job's phases: a check for each done, and one it never finished shows as not done
+      await page.waitForSelector("#thread .pg .pg-step", {timeout: 5000}).catch(() => {});  // the history renders in pieces
       const pg = await page.evaluate(() => [...document.querySelectorAll("#thread .pg .pg-step")].map(r => r.className.split(" ")[1]));
       check(pg.join(",") === "done,done,skipped", "a reply keeps its progress card: " + pg.join(","));
       await page.evaluate(() => { document.querySelector("#thread .pg").scrollIntoView({block: "center"});

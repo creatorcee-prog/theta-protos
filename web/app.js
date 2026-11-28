@@ -794,7 +794,19 @@
     const markRead = () => { if (read) return; read = true; readAt = performance.now(); if (userMsg) receipt(row, "read"); };
 
     let route = null, reply = null, buf = "", shown = null, firstAt = 0, frame = 0, timer = 0, sawReact = false;
-    const draw = () => { frame = 0; if (!shown) return; shown.replaceChildren(md(buf, true)); follow(false); };
+    // streaming: finished paragraphs are rendered once and kept; only the paragraph still being written is rendered
+    // again each frame (it re-parsed the whole reply every frame: 100 ms frames and jumps on long answers)
+    let doneSrc = "", doneBox = null, tailBox = null;
+    const draw = () => {
+      frame = 0; if (!shown) return;
+      if (!doneBox) { doneBox = el("div", "md-done"); tailBox = el("div", "md-tail"); shown.replaceChildren(doneBox, tailBox); }
+      let cut = buf.lastIndexOf("\n\n");
+      while (cut > 0 && (buf.slice(0, cut).split("\u0060\u0060\u0060").length - 1) % 2) cut = buf.lastIndexOf("\n\n", cut - 1);  // never inside a code block
+      const done = cut > 0 ? buf.slice(0, cut) : "";
+      if (done !== doneSrc) { doneSrc = done; doneBox.replaceChildren(md(done)); }
+      tailBox.replaceChildren(md(cut > 0 ? buf.slice(cut + 2) : buf, true));
+      follow(false);
+    };
     const startShow = () => {
       if (shown || reply) return;
       clearTimeout(timer);

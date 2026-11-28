@@ -600,3 +600,6 @@ html:not(.dev) .dev-only, html:not(.dev) .usage:not(.edited):not(.bare), html:no
 .mem-line button::before, .hf-tile .x::before, .banner .round::before { content: ""; position: absolute; inset: -12px; }
 .hf-tile .x { position: absolute; }
 details > summary { min-height: 44px; display: flex; align-items: center; }
+
+/* streaming: the two halves of a reply being written (finished paragraphs, the one in progress) lay out as one */
+.md-done, .md-tail { display: contents; }
