@@ -279,6 +279,10 @@ async function waitUp(url) {
       await page.waitForSelector(sel, {timeout: 4000});
       await sleep(300);
       await shot(name);
+      if (pg === "usage") { // the workers' daily budget is set here, 5 cents to start
+        const v = await page.$eval("#set-worker-budget", e => e.selectedOptions[0].textContent).catch(() => "");
+        check(v === "5¢", "Settings > Usage has the workers' daily budget, at 5¢: " + v);
+      }
       if (pg === "chips") { // Suggested: skills from other agents, adapted; nothing is added until you tap Add
         await page.waitForSelector("#tab-chips .chh-item", {timeout: 4000}).catch(() => {});
         check(await page.$("#tab-chips .chh-item .chh-tx") !== null, "chips: suggested chips adapted from other agents' skills show");

@@ -231,8 +231,31 @@
     const ms = el("div", "group acc-form");
     for (const m of u.models) { const r = el("div", "use-model"); r.append(document.createTextNode(m.model), el("span", null, `${m.replies} · ${money(m.cost_usd)}`)); ms.append(r); }
     if (!u.models.length) ms.append(el("p", "acc-note", "No replies yet."));
-    page.replaceChildren(cards, el("h3", "sec", "Cost per day"), bars, lbl, el("h3", "sec", "By model (30 days)"), ms,
+    page.replaceChildren(workersGroup(), cards, el("h3", "sec", "Cost per day"), bars, lbl, el("h3", "sec", "By model (30 days)"), ms,
       el("p", "acc-note", "Costs are estimates from each provider's published prices; your provider's bill is the real number."));
+  }
+
+  // Workers: what all background workers and research helpers together may spend a day (server/workers.py)
+  const cents = v => v >= 1 ? "$" + v.toFixed(v % 1 ? 2 : 0) : (v * 100).toFixed((v * 100) % 1 ? 1 : 0) + "¢";
+  const BUDGETS = [[0, "Off"], [0.01, "1¢"], [0.02, "2¢"], [0.05, "5¢"], [0.1, "10¢"], [0.25, "25¢"], [0.5, "50¢"], [1, "$1"], [2, "$2"]];
+  function workersGroup() {
+    const wrap = el("div"), g = el("div", "group acc-form"), r = el("div", "row-set"), t = el("div", "txt");
+    const cur = Number((T.state.settings || {}).subagent_daily_usd ?? 0.05);
+    const sel = el("select"); sel.id = "set-worker-budget"; sel.setAttribute("aria-label", "Daily budget for workers");
+    const opts = BUDGETS.some(([v]) => Math.abs(v - cur) < 1e-9) ? BUDGETS : BUDGETS.concat([[cur, money(cur)]]).sort((a, b) => a[0] - b[0]);
+    for (const [v, l] of opts) { const o = el("option", null, l); o.value = String(v); o.selected = Math.abs(v - cur) < 1e-9; sel.append(o); }
+    const sub = el("span", null, "All of them together, a day. They run on DeepSeek; at about 0.1 to 0.2¢ a step, 5¢ is 3 to 6 jobs.");
+    t.append(el("b", null, "Daily budget"), sub); r.append(t, sel); g.append(r);
+    const used = el("p", "acc-note", ""); used.style.marginBottom = "18px";
+    (async () => { try { const w = await T.api("/api/workers"); used.textContent = w.cap_usd ? `Today: ${(w.spent_usd * 100).toFixed(1)}¢ used of ${cents(w.cap_usd)}.` : "Workers are off."; } catch (e) {} })();
+    sel.addEventListener("change", async () => {
+      const v = Number(sel.value);
+      try { await T.post("/api/settings", {subagent_daily_usd: v}); T.state.settings = Object.assign(T.state.settings || {}, {subagent_daily_usd: v});
+        T.toast(v ? `Workers can spend ${sel.selectedOptions[0].textContent} a day.` : "Workers are off. Theta does every job in its replies.");
+      } catch (e) { T.toast("Couldn't save that."); }
+    });
+    wrap.append(el("h3", "sec", "Workers"), g, used);
+    return wrap;
   }
 
   // ---------------------------------------------------------------- Data and storage

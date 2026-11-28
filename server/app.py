@@ -56,7 +56,8 @@ class _BotIds:
 BOT_IDS = _BotIds()
 
 SETTINGS_DEFAULTS = {"proactive": True, "quiet": [22, 7], "tz": persona.DEFAULT_TZ, "loc": None, "bot_name": "Theta", "texts_auto": False,
-                     "developer": True}  # developer details (setup steps, env vars, models, tokens): the owner's account
+                     "developer": True,
+                     "subagent_daily_usd": 0.05}  # what all workers together may spend a day (server/workers.py)  # developer details (setup steps, env vars, models, tokens): the owner's account
 
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
        "font-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; media-src 'self' blob:; "
@@ -1331,6 +1332,14 @@ def _clean_settings(body):
         out["texts_auto"] = bool(body["texts_auto"])
     if "developer" in body:
         out["developer"] = bool(body["developer"])
+    if "subagent_daily_usd" in body:  # Settings > Usage > Workers: 0 turns workers off
+        try:
+            usd = float(body["subagent_daily_usd"])
+        except (TypeError, ValueError):
+            raise HTTPError(400, "subagent_daily_usd must be a number of dollars")
+        if not 0 <= usd <= 5:
+            raise HTTPError(400, "the workers' daily budget is between $0 and $5")
+        out["subagent_daily_usd"] = round(usd, 4)
     if "bot_name" in body:
         n = re.sub(r"\s+", " ", str(body["bot_name"] or "")).strip()
         if not re.fullmatch(r"[\w .'-]{1,24}", n):

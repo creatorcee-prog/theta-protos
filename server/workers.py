@@ -134,6 +134,8 @@ def start(agent_id, title, goal, origin=None, reply_to=None, now=None):
         raise _err("say what the job is in `goal`")
     if sum(1 for j in _jobs() if j.get("state") == "running") >= MAX_RUNNING:
         raise _err(f"{MAX_RUNNING} workers are already running; wait for one, or do this in your reply")
+    if cap() <= 0:
+        raise _err("workers are turned off (Settings > Usage > Workers); do the job yourself in this reply")
     if left(now) < STEP_EST_USD * 2:
         raise _err(f"today's worker budget (${cap():.2f} for all workers) is used up; do it in your reply, or "
                    "tell the user it can run tomorrow")

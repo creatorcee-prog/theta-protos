@@ -129,4 +129,13 @@ models.available = lambda: ["anthropic"]
 r = str(tools.execute("start_job", {"title": "x", "goal": "y"}, {"bot": "theta"}))
 check("without a DeepSeek key no worker starts (workers are DeepSeek only)", "DeepSeek" in r, r)
 models.available = avail
+
+# ---------------------------------------------------------------- the budget is a setting in the app
+s, j = call("POST", "/api/settings", {"subagent_daily_usd": 0.25})
+check("Settings > Usage sets the workers' daily budget", s == 200 and j["subagent_daily_usd"] == 0.25 and abs(workers.cap() - 0.25) < 1e-9, j)
+s, j = call("POST", "/api/settings", {"subagent_daily_usd": 50})
+check("within $0 to $5", s == 400, j)
+s, j = call("POST", "/api/settings", {"subagent_daily_usd": 0})
+r = str(tools.execute("start_job", {"title": "x", "goal": "y"}, {"bot": "theta"}))
+check("0 turns workers off, and the agent is told so", s == 200 and "turned off" in r, r)
 print("all workers tests passed")

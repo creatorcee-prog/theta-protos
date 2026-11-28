@@ -272,7 +272,8 @@ Each feature gets `tests/test_<feature>.py`: stdlib only, no network (stub `urll
   runs the agent's apps unattended (sends still wait as approval cards) and posts the result in that agent's chat
   with a push; `agent_send {to, message}` hands a job to another agent by address, and the answer comes back to
   both chats; `jobs` lists them and stops one. Every worker runs on DeepSeek. All workers, the research helpers
-  included, share one daily budget, setting "subagent_daily_usd" (default $0.05): a worker stops before any step that
+  included, share one daily budget, set in Settings > Usage > Workers (setting "subagent_daily_usd", default $0.05,
+  $0 to $5; Off stops them): a worker stops before any step that
   could take the day past it, and none starts once it's used. GET /api/workers, POST /api/workers/<id>/stop. Home
   shows a Workers list under the agents (running and the last day's), with Stop; developer accounts also see the
   day's spend.
