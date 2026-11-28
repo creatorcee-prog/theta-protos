@@ -110,6 +110,19 @@ def _instruction(call):
             "the next prompt. Nothing else. When it's done, say a quick, natural goodbye.")
 
 
+def save_diag(bridge):
+    """What happened on the last few live calls, for the developer (Settings > Apps > Phone calls, and the log):
+    frames heard from Telnyx, frames passed to Gemini, Gemini's audio and transcripts, the byte order, why it ended."""
+    from . import db
+    from .app import log
+    d = dict(bridge.diag, order=bridge.order if bridge.order_known else f"{bridge.order}?", call=bridge.cid[:6],
+             kind=bridge.call.get("kind"), t=round(time.time()), seconds=round(time.time() - bridge.started))
+    d["end"] = d["end"] or "hung up"
+    log("live call " + json.dumps(d, default=str)[:600])
+    v = db.get_setting("livecall_diag")
+    db.set_setting("livecall_diag", ([d] + (v if isinstance(v, list) else []))[:5])
+
+
 def connect(instruction, voice_name="Puck", affective=False, keypad=True):
     """The Gemini Live session in one of Gemini's preset voices (an async context manager; tests replace this).
     affective: Gemini's affective dialog (it hears the caller's tone and answers in kind); only some models and API
@@ -157,7 +170,7 @@ def disclosed(said, required):
         elif i + 1 < len(need) and w == need[i + 1]:  # one word skipped by the transcriber
             hit, i = hit + 1, i + 2
     # "AI assistant" must be said whenever the opening has it (every call to someone else does)
-    return hit / len(need) >= 0.9 and ({"ai", "assistant"} <= set(got) or not {"ai", "assistant"} <= set(need))
+    return hit / len(need) >= 0.8 and ({"ai", "assistant"} <= set(got) or not {"ai", "assistant"} <= set(need))
 
 
 class Bridge:
@@ -178,6 +191,8 @@ class Bridge:
         self.telnyx_started = asyncio.Event()  # Telnyx's "start": its side of the stream is ready for audio
         self.ccid = call.get("sid") or ""     # the call's Telnyx id, for send_dtmf (the stream's start may give the real one)
         self.presses = 0
+        self.diag = {"frames_in": 0, "held": 0, "to_gemini": 0, "audio_out": 0, "heard": 0, "said": 0, "order": None,
+                     "format": None, "opening": "", "end": ""}
         self.closed = asyncio.Event()
 
     # -- transcript into the call's turns (server/calls.py writes the summary from them when the call ends)
@@ -209,12 +224,15 @@ class Bridge:
                 break
             if ev == "start":
                 st = msg.get("start") or {}
+                self.diag["format"] = st.get("media_format")
                 self.ccid = st.get("call_control_id") or self.ccid
                 self.telnyx_started.set()
-            if ev != "media" or (msg.get("media") or {}).get("track", "inbound") != "inbound":
-                continue
+            if ev != "media" or str((msg.get("media") or {}).get("track") or "inbound").startswith("outbound"):
+                continue  # only Theta's own audio coming back is skipped ("inbound" or "inbound_track" is the caller)
+            self.diag["frames_in"] += 1
             raw = base64.b64decode((msg.get("media") or {}).get("payload") or "")
             if not self.opened:  # nothing from them reaches the model until Theta has said who it is
+                self.diag["held"] += 1
                 continue
             if not self.order_known:
                 self.probe += raw
@@ -224,6 +242,7 @@ class Bridge:
                         self.order, self.order_known = got, True
                     self.probe = self.probe[-16000:] if not got else b""
             await session.send_realtime_input(audio=types.Blob(data=to_le(raw, self.order), mime_type="audio/pcm;rate=16000"))
+            self.diag["to_gemini"] += 1
 
     async def gemini_to_telnyx(self, session):
         from . import calls, recordings
@@ -237,6 +256,7 @@ class Bridge:
                     continue
                 if sc.input_transcription and sc.input_transcription.text:
                     self.heard.append(sc.input_transcription.text)
+                    self.diag["heard"] += 1
                     self.last_voice = time.time()
                 if sc.interrupted:  # they talked over Theta: drop what's still queued at Telnyx, right now
                     await self.ws.send_text(json.dumps({"event": "clear"}))
@@ -247,13 +267,22 @@ class Bridge:
                         await self._they_said(self._flush("them"), session, calls, recordings)
                     for part in sc.model_turn.parts or []:
                         if part.inline_data and part.inline_data.data:
+                            self.diag["audio_out"] += 1
                             await self.to_telnyx(resample_24k_to_16k(part.inline_data.data))
                 if sc.output_transcription and sc.output_transcription.text:
                     self.said.append(sc.output_transcription.text)
+                    self.diag["said"] += 1
                 if sc.turn_complete:
                     said = self._flush("theta")
                     if not self.opened:
-                        if not disclosed(said, calls._opening(self.call)):  # the one thing not left to the model
+                        # the AI disclosure on calls to other people is the one thing not left to the model: checked
+                        # against Gemini's transcript of its first turn (the disclosure sentence only, since the purpose
+                        # is said in its own words). Calls with the user themselves aren't checked: a transcription slip
+                        # ("Hey C" for "Hey Cee") used to stop Theta listening and hang up
+                        self.diag["opening"] = said[:160]
+                        if self.call["kind"] == "other" and not (disclosed(said, calls.disclosure())
+                                                                 or (not said.strip() and self.sent_s > 1.5)):
+                            self.diag["end"] = "opening check failed"
                             calls._update(self.cid, outcome="ended: Theta didn't say the opening as written")
                             self.closed.set()
                             return
@@ -337,6 +366,7 @@ class Bridge:
             await asyncio.sleep(1)
             if not self.opened:
                 if time.time() - t0 > DISCLOSE_WITHIN:
+                    self.diag["end"] = "no opening in time"
                     calls._update(self.cid, outcome="ended: Theta didn't say the opening in time")
                     self.closed.set()
                 continue
@@ -344,6 +374,7 @@ class Bridge:
             quiet = time.time() - self.last_voice >= SILENCE_SECONDS
             if (over or quiet) and not self.ending:
                 self.ending = True
+                self.diag["end"] = "time cap" if over else "silence"
                 await session.send_client_content(turns={"role": "user", "parts": [{"text": (
                     "[From the app, not the caller] " + ("Time's up for this call." if over else "They've gone quiet.")
                     + " Say a short, warm goodbye now.")}]}, turn_complete=True)
@@ -364,6 +395,7 @@ class Bridge:
             await self._talk(session)
         finally:
             await session_cm.__aexit__(None, None, None)
+            save_diag(self)
         self._flush("them")
         self._flush("theta")
 

@@ -849,7 +849,9 @@ def settings_route(req, start):
 
 def _live_info():
     from . import livecall, livevoice
-    return {"live": livecall.ready(), "live_voice": livevoice.voice(),
+    from . import account
+    diag = db.get_setting("livecall_diag") if account.developer() else None
+    return {"live": livecall.ready(), "live_voice": livevoice.voice(), "live_diag": diag if isinstance(diag, list) else [],
             "live_voices": [{"id": n, "label": f"{n} ({d.lower()})"} for n, d in livevoice.VOICES]}
 
 

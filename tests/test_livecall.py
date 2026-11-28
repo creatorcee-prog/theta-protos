@@ -48,7 +48,7 @@ check("the stream opens bidirectional L16 at 16 kHz on wss", 'url="wss://theta.e
       and 'bidirectionalCodec="L16"' in xml and 'bidirectionalSamplingRate="16000"' in xml and 'bidirectionalMode="rtp"' in xml)
 
 
-def new_call(cid, kind="other"):
+def new_call(cid, kind="other"):  # noqa: C901
     db._conn().execute("INSERT INTO calls (id, kind, to_number, name, purpose, conversation, state, t, bot) VALUES "
                        "(?, ?, '+15551230000', 'Shop', 'ask if they have the lamp in stock', 1, 'ringing', ?, 'theta')",
                        (cid, kind, time.time()))
@@ -137,7 +137,7 @@ check("the HTTP app works the same through ASGI", h.get("ok") is True)
 import websockets  # noqa: E402
 
 
-async def telnyx(cid, frames=60):
+async def telnyx(cid, frames=60, track="inbound"):
     got = []
     async with websockets.connect(f"ws://127.0.0.1:{PORT}/api/calls/stream/{cid}") as ws:
         await ws.send(json.dumps({"event": "connected"}))
@@ -146,7 +146,7 @@ async def telnyx(cid, frames=60):
         audio = pcm(tone(16000 * 2), "little")
         try:  # the server may hang up first (a call that fails its opening check)
             for i in range(frames):
-                await ws.send(json.dumps({"event": "media", "media": {"track": "inbound", "payload": base64.b64encode(audio[i * 640:(i + 1) * 640]).decode()}}))
+                await ws.send(json.dumps({"event": "media", "media": {"track": track, "payload": base64.b64encode(audio[i * 640:(i + 1) * 640]).decode()}}))
         except websockets.ConnectionClosed:
             return got
         try:
@@ -216,6 +216,17 @@ check("the '1' key is 697 Hz + 1209 Hz and no other key's tones", sorted(p, key=
 b = livecall.Bridge.__new__(livecall.Bridge); b.presses = 0
 check("only keypad characters can be pressed", "error" in asyncio.run(livecall.Bridge.press(b, "1; rm -rf"))
       and "error" in asyncio.run(livecall.Bridge.press(b, "")))
+
+# a call with the user: a transcription slip in the greeting ("Hey C" for "Hey Cee") must not stop Theta listening
+FAKE = FakeSession(opening_ok=False)
+FAKE.cid = "c5"
+new_call("c5", kind="me"); calls._update("c5", state="live", t_answer=time.time(), message="Your package is here")
+events = asyncio.run(telnyx("c5", track="inbound_track"))
+check("on a call with the user, a greeting transcribed differently doesn't end it, and 'inbound_track' audio reaches Gemini",
+      "opening" not in (calls.get_call("c5")["outcome"] or "") and FAKE.audio >= 32000, (calls.get_call("c5")["outcome"], FAKE.audio))
+d = db.get_setting("livecall_diag")[0]
+check("each live call leaves diagnostics for the developer (frames in, to Gemini, why it ended)",
+      d["call"] == "c5"[:6] and d["frames_in"] > 0 and d["to_gemini"] > 0 and d["end"], d)
 
 # ---- the voice setting and samples
 check("30 voices, Puck by default", len(livevoice.VOICES) == 30 and livevoice.DEFAULT_VOICE == "Puck")

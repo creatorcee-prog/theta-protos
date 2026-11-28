@@ -145,6 +145,8 @@
     finally { lplay.disabled = false; }
   });
   lsel.addEventListener("change", () => { if (lAudio) lAudio.pause(); lplay.textContent = "Play"; save({live_voice: lsel.value}).then(() => T.toast("Live call voice changed.", 2400)); });
+  // the last few live calls, for the developer: where the audio went (dev-only, from server/livecall.py save_diag)
+  const diagBox = el("div", "fine dev-only"); diagBox.style.cssText = "padding:0 16px 10px;white-space:pre-wrap;font-size:12.5px";
   const elWrap = el("div", "calls-el"); elWrap.hidden = true;
   const elId = el("input", "calls-phone"); elId.placeholder = "Voice ID"; elId.autocomplete = "off"; elId.setAttribute("aria-label", "Voice ID");
   const elRef = el("input", "calls-phone"); elRef.placeholder = "Telnyx secret name"; elRef.autocomplete = "off"; elRef.setAttribute("aria-label", "Telnyx secret name");
@@ -201,7 +203,7 @@
     ol.append(li("Back here: enter your number and name, pick a voice, and tap ", b("Test call"), "."));
     setupBox.replaceChildren(el("h4", null, "Set up calls and texts (about 15 minutes)"), ol);
   }
-  g.append(setupBox, pr.r, nr.r, rr.r, recr.r, gr.r, lr.r, vr.r, elWrap, tr.r, note);
+  g.append(setupBox, pr.r, nr.r, rr.r, recr.r, gr.r, lr.r, diagBox, vr.r, elWrap, tr.r, note);
 
   let state = {};
   const status = () => {
@@ -222,6 +224,11 @@
     for (const v of state.live_voices || []) { const o = el("option", null, v.label); o.value = v.id; lsel.append(o); }
     lsel.value = state.live_voice || "Puck";
     lr.r.hidden = !(state.live_voices || []).length;
+    const dg = state.live_diag || [];
+    diagBox.textContent = dg.length ? "Last live calls:\n" + dg.map(d => `${new Date(d.t * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})} ${d.kind}, ${d.seconds}s: `
+      + `heard ${d.frames_in} frames (${d.held} held before the opening), sent ${d.to_gemini} to Gemini, ${d.audio_out} audio back, `
+      + `transcripts ${d.heard} in / ${d.said} out, byte order ${d.order}, ended: ${d.end}`
+      + (d.opening ? `\n   opening heard as: "${d.opening}"` : "")).join("\n") : "";
     // with live calls on, the other voice only speaks on a call that couldn't go live
     vr.s.textContent = state.live ? "Used only when a call can't go live (the turn-by-turn kind)."
       : "What people hear when Theta calls. Natural voices sound like a person, not a robot.";
