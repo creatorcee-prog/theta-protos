@@ -151,10 +151,12 @@
       if (st.inner && q.s < 0.28) r *= 0.58;  // an inner shell
       let x = q.bx, y = q.by, z = q.bz;
       const th = Math.max(this.sw.thinking, st.flow ? 0.45 : 0);
-      if (th > 0.01) { // swirl in latitude bands: the poles turn faster than the equator
-        const a = lon + t * (1.5 + Math.abs(lat)) * 1.2 * th + th * Math.sin(lat * 6 + t * 2) * 0.25;
-        const sx = Math.cos(a) * Math.cos(lat), sz = Math.sin(a) * Math.cos(lat);
-        x += (sx - x) * th; z += (sz - z) * th; r *= 1 - 0.06 * th * Math.abs(Math.sin(t * 3));
+      if (this.swirl) { // swirl in latitude bands: the poles turn faster than the equator. Each dot is always ON the sphere,
+        // turned by the swirl built up so far, which stays when thinking ends. (Blending between its swirled and home
+        // positions cut straight through the globe and pinched it into a vertical streak whenever thinking handed over
+        // to speaking.)
+        const a = lon + this.swirl * (1.5 + Math.abs(lat)) + th * Math.sin(lat * 6 + t * 2) * 0.25, cl = Math.cos(lat);
+        x = Math.cos(a) * cl; z = Math.sin(a) * cl; r *= 1 - 0.06 * th * Math.abs(Math.sin(t * 3));
       }
       return [x * r, y * r, z * r];
     }
@@ -182,6 +184,7 @@
       const t = this.clock;
       // states ease in and out
       for (const k in this.sw) this.sw[k] += ((this.state === k ? 1 : 0) - this.sw[k]) * Math.min(1, dt * 4);
+      this.swirl = (this.swirl || 0) + dt * (still ? 0.35 : 1) * 1.2 * Math.max(this.sw.thinking, this._st().flow ? 0.45 : 0);
       let target = 0;
       if (this.state === "speaking") target = 0.18 + 0.25 * Math.max(0, Math.sin(t * 13) * Math.sin(t * 5.3 + 1.2)) + 0.75 * this.burst;
       else if (this.state === "thinking") target = 0.1;

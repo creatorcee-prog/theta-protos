@@ -790,6 +790,8 @@
       pend.setAttribute("aria-label", liveText);
       drawLive(); follow(false);
     };
+    // a status line within a second, always: the server's own activity ("Searching the web…") replaces it when it comes
+    const thinkT = setTimeout(() => { if (!live && !shown && !reply) setLive({text: "Thinking"}); }, 700);
     let read = false, readAt = 0;
     const markRead = () => { if (read) return; read = true; readAt = performance.now(); if (userMsg) receipt(row, "read"); };
 
@@ -863,7 +865,7 @@
         } else if (ev === "done") reply = data;
         else if (ev === "error") throw new Error((data && data.error) || "Theta hit an error");
       });
-      clearTimeout(timer); clearInterval(liveTick);
+      clearTimeout(timer); clearTimeout(thinkT); clearInterval(liveTick);
       if (!reply || reply.id == null) throw new Error("The reply was cut off");
       if (route) S.routes.set(reply.id, route);
       reply.meta = Object.assign({}, reply.meta || {});
